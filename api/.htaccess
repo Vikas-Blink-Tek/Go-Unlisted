@@ -1,0 +1,10 @@
+# Protect db_config.php from being accessed directly
+<Files "db_config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Block error logs from web access
+<FilesMatch "\.(log)$">
+    Require all denied
+</FilesMatch>

@@ -1,0 +1,42 @@
+# Production .htaccess — copy to public_html/.htaccess
+
+RewriteEngine On
+
+# Block sensitive files
+<FilesMatch "^(schema\.sql|db_config\.example\.php|\.env|\.installed|HOSTINGER_UPLOAD\.txt)$">
+    Require all denied
+</FilesMatch>
+
+# Block setup scripts from public web (use setup.php only, then delete it)
+RewriteRule ^scripts/ - [F,L]
+<Files "setup.php">
+    <IfModule mod_authz_core.c>
+        Require all granted
+    </IfModule>
+</Files>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    SetEnvIf Request_URI "^/admin" admin_area
+    Header set X-Robots-Tag "noindex, nofollow" env=admin_area
+</IfModule>
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# API passthrough
+RewriteRule ^api/ - [L]
+
+# React SPA
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]
+
+Options -Indexes

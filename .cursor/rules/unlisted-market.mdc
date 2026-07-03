@@ -1,0 +1,144 @@
+---
+description: India unlisted / pre-IPO share market domain knowledge for GO UNLISTED UX and admin panel
+alwaysApply: true
+---
+
+# India Unlisted Share Market — GO UNLISTED Context
+
+**Read this before building any feature.** The user should not have to re-explain how unlisted stock businesses work.
+
+## What we sell
+
+- **Unlisted shares**: equity of private companies not on NSE/BSE (OTC / off-market).
+- **Pre-IPO shares**: subset where IPO is expected; buyers bet on listing upside.
+- **Not exchange-traded**: no live order book; price is **quoted by the platform/dealer** from inventory they source from promoters, employees (ESOP), or other holders.
+
+## How unlisted dealers / platform owners actually operate
+
+### Inventory sourcing (back office)
+- Buy lots from promoters, employees, early investors, or other brokers at a **buy/cost price**.
+- Hold inventory or arrange on-demand sourcing when buyer pays.
+- Track **margin** = sell price − buy price − ops cost per share.
+- Mark availability: **In Stock**, **Limited**, **On Request**, **Out of Stock**.
+
+### Pricing (not market-driven)
+- Price set manually from last trade, funding round valuation, demand, and competitor quotes.
+- Update when new inventory arrives or market sentiment shifts.
+- Show **indicative price** + price history chart (admin-maintained, not live exchange data).
+- Display **min lot** and **min investment** (price × min qty) prominently.
+
+### Listing catalog (what admin must manage per stock)
+Every listing on GO UNLISTED needs these fields — **never ship a stock without description**:
+
+| Field | Purpose |
+|-------|---------|
+| Company name, ticker, sector | Discovery & cards |
+| **Description** (required, 2–4 sentences) | Detail page — business model, why invest |
+| Sell price, min qty | Checkout calculation |
+| Buy/cost price (admin only) | Margin tracking |
+| Revenue, valuation, growth, founded | Trust metrics on detail page |
+| Listing type | Pre-IPO / Unlisted / Delisted / ESOP |
+| IPO timeline | e.g. "Expected H2 2026", "DRHP filed" |
+| Lock-in months | Post-IPO lock-in (often 6 months for pre-IPO allotments) |
+| Key highlights (bullets) | Investment thesis bullets |
+| Risk notes | Illiquidity, no guaranteed IPO, loss risk |
+| Availability status | In Stock / Limited / On Request |
+| Featured flag | Homepage promotion |
+| Logo initials + gradient | Card branding |
+
+### Buyer journey (design UX around this)
+
+1. **Discover** — browse companies, filters (sector, min investment, trending), no login required.
+2. **Research** — detail page: description, highlights, IPO timeline, valuation, risks, min lot, price chart.
+3. **Intent** — select quantity, see total + 1% platform fee + stamp duty note.
+4. **Payment** — NEFT / IMPS / UPI ID / Scan QR (GO UNLISTED flow). Guest checkout OK.
+5. **Post-payment** — buyer shares UTR; ops verifies against bank statement.
+6. **KYC** (dashboard, not blocking browse) — PAN, demat 16-digit, CMR/CML from broker.
+7. **Settlement** — off-market demat transfer via CDSL/NSDL; 24–72 hours typical.
+8. **Post-purchase** — hold until IPO/exit; track order + transfer in dashboard.
+
+**UX principle**: never block browse or detail views. KYC in dashboard. Payment before full KYC is OK for GO UNLISTED (ops verifies before transfer).
+
+## Settlement mechanics (admin panel must support)
+
+| Stage | Admin action |
+|-------|----------------|
+| Checkout initiated | Track abandoned checkouts |
+| Order placed | Status: Pending Verification |
+| Payment received | Match UTR to bank credit, verify amount |
+| KYC check | PAN, demat, CMR on file before transfer |
+| Transfer initiated | Off-market DIS / CDSL Easiest / NSDL Speed-e |
+| Shares credited | Mark Confirmed, notify buyer (SMS/WhatsApp) |
+| Failed / refund | Rejected / Refunded with ops notes |
+
+**Order statuses**: `Pending Verification` → `Confirmed` → (future: `Transfer Initiated` → `Completed`) | `Rejected` | `Cancelled` | `Refunded`
+
+## Documents & compliance fields
+
+- **PAN** — mandatory for transfer
+- **Demat** — 16 digits, CDSL or NSDL
+- **CMR/CML** — Client Master Report from DP; confirms DP ID, client ID, linked bank
+- **Aadhaar** — identity (KYC module)
+- **Cancelled cheque** — bank verification
+- **UTR / payment reference** — collected after payment
+- **Rule**: bank account and demat must belong to same person (no third-party payments)
+
+## Pricing & fees
+
+- Platform **commission** ~1% on trade value
+- **Stamp duty** 0.015% on off-market transfer (buyer)
+- Min lot per share — show **min investment** on cards and detail
+
+## Regulatory & risk (disclaimers)
+
+- GO UNLISTED is **not a SEBI-registered broker** — state in footer/disclaimer.
+- All shares must be **dematerialized** (SEBI rule).
+- Transfers via CDSL/NSDL off-market infrastructure (legal when documented).
+- **Pre-IPO lock-in**: often 6 months from listing for pre-IPO allotments.
+- **Tax**: STCG ≤24 months (slab rate); LTCG >24 months (12.5% post Jul 2024).
+- **Risks**: illiquidity, limited financials, fraud risk, IPO may not happen — surface on every detail page.
+
+## Admin panel — full owner checklist
+
+Build and maintain these without user prompting:
+
+1. **Stocks & Listings** — add/edit/delete, full profile (description required), pricing, inventory, featured
+2. **Verify Payments** — UTR match queue
+3. **Abandoned Checkouts** — follow-up leads
+4. **All Orders** — full pipeline view
+5. **Manual Order** — phone/WhatsApp deals entered by ops
+6. **Cancel / Refund** — reversal workflow
+7. **Users & KYC** — PAN, demat, bank, approve/reject
+8. **Employees** — role-based access (master vs employee)
+9. **Articles / Blog** — SEO content
+10. **Reports & Export** — orders, revenue, CSV
+11. **Site Settings** — bank details, UPI, QR, disclaimer, contact
+
+**Employee role**: orders pipeline only — no catalog, settings, or pricing.
+
+## Competitor patterns (Sharescart, UnlistedZone, IPO360, Precize)
+
+- Free browsing with indicative prices
+- Rich detail pages per company
+- WhatsApp / call CTA for high-ticket deals
+- "How it works" 4-step explainer
+- Trust: transfer SLA 24–48h, company count, years in business
+- KYC in dashboard after first intent
+
+## GO UNLISTED product decisions (do not reverse without asking)
+
+- **Browse & details**: always public
+- **Checkout**: Quantity → Payment Mode → confirm transfer (no Razorpay in current flow)
+- **Guest checkout**: allowed
+- **Dashboard**: MPIN login — orders, KYC, watchlist
+- **Admin**: `/admin/login`, master + employee roles
+- **Payment verification**: manual UTR match (production ops)
+- **MSG91**: OTP for user auth
+- **Theme**: light, matches gounlisted.in
+
+## When building new features — ask yourself
+
+1. Does this match how a real unlisted dealer runs ops?
+2. Does the admin have every field they need without editing code?
+3. Is the buyer informed (description, risks, min investment) before paying?
+4. Can ops verify payment → KYC → transfer without leaving the admin panel?

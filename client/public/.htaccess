@@ -1,0 +1,18 @@
+RewriteEngine On
+
+# Block search engines from admin panel
+<IfModule mod_headers.c>
+  SetEnvIf Request_URI "^/admin" admin_area
+  Header set X-Robots-Tag "noindex, nofollow" env=admin_area
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "DENY"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# API — pass through to PHP
+RewriteRule ^api/ - [L]
+
+# React SPA — all other routes serve index.html
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.html [L]

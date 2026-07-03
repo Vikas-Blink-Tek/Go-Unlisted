@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+client/node_modules/
+client/dist/
+
+# Environment & secrets
+api/db_config.php
+api/db_config.local.php
+.env
+.env.*
+
+# Build artifacts
+deploy/package/
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+api/php_errors.log
+*.log
+
+# IDE
+.vscode/
+.idea/
