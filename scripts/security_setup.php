@@ -29,8 +29,4 @@ echo "Extra employees removed: {$results['employees_deleted']}\n";
 echo "Master admin ({$results['admin']}): " . MASTER_ADMIN_EMAIL . "\n";
 echo "Admin panel: /admin/login\n";
 
-if (empty(getenv('MSG91_AUTH_KEY')) && empty($msg91_auth_key ?? '')) {
-    echo "\nOptional: set MSG91_AUTH_KEY in api/db_config.php for OTP SMS.\n";
-}
-
 $conn->close();

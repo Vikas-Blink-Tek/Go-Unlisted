@@ -255,7 +255,7 @@ fi
 REG_EMAIL="testuser$(date +%s)@example.com"
 OTP_RES=$(curl -s -c /tmp/gu_reg.txt -b /tmp/gu_reg.txt -X POST "$API?action=sendOtp" \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"$REG_EMAIL\",\"phone\":\"9876543210\"}")
+  -d "{\"email\":\"$REG_EMAIL\"}")
 echo "$OTP_RES" | php -r 'exit(json_decode(file_get_contents("php://stdin"))->success??false?0:1);' \
   && ok "sendOtp for registration" || bad "sendOtp failed: $OTP_RES"
 
@@ -270,7 +270,7 @@ if [[ -n "$DEV_OTP" ]]; then
     && ok "verifyOtp" || bad "verifyOtp failed: $VERIFY"
   SAVE=$(curl -s -c /tmp/gu_reg.txt -b /tmp/gu_reg.txt -X POST "$API?action=saveUser" \
     -H "Content-Type: application/json" \
-    -d "{\"name\":\"Test User\",\"email\":\"$REG_EMAIL\",\"phone\":\"9876543210\",\"password\":\"5678\",\"kycStatus\":\"Not Submitted\"}")
+    -d "{\"name\":\"Test User\",\"email\":\"$REG_EMAIL\",\"phone\":\"\",\"password\":\"5678\",\"kycStatus\":\"Not Submitted\"}")
   echo "$SAVE" | php -r 'exit(json_decode(file_get_contents("php://stdin"))->success??false?0:1);' \
     && ok "saveUser after OTP verification" || bad "saveUser failed: $SAVE"
 else

@@ -8,7 +8,6 @@ import { setCsrfToken } from '../api/csrf';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { blockEmailInput, blockNewPasswordInput, blockTelInput, blockTextInput } from '../utils/autofill';
-import { isValidIndianMobile, normalizeIndianPhone } from '../utils/phone';
 import { isValidMpin } from '../utils/mpin';
 
 export default function AuthPage() {
@@ -60,10 +59,6 @@ export default function AuthPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!isValidIndianMobile(regForm.phone)) {
-      setError('Enter a valid 10-digit Indian mobile number (starts with 6–9)');
-      return;
-    }
     if (!isValidMpin(regForm.mpin)) {
       setError('MPIN must be 4-6 digits');
       return;
@@ -74,17 +69,13 @@ export default function AuthPage() {
     }
     setLoading(true);
     try {
-      const phone = normalizeIndianPhone(regForm.phone);
-      const otpRes = await sendOtp(regForm.email, phone);
+      const otpRes = await sendOtp(regForm.email);
       if (!otpRes.success) throw new Error(otpRes.error || 'Failed to send OTP');
-      if (!otpRes.dev_mode && !otpRes.sms_sent) {
-        throw new Error(otpRes.error || 'Could not send OTP to your phone. Check the number and try again.');
-      }
       setShowOtp(true);
-      if (otpRes.sms_sent) {
-        showToast(`OTP sent to +91 ${phone}`, 'success');
-      } else if (otpRes.dev_mode) {
+      if (otpRes.dev_mode) {
         showToast('Dev mode: OTP is in api/php_errors.log on the server', 'info');
+      } else {
+        showToast(`OTP sent to ${regForm.email}`, 'success');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -94,14 +85,13 @@ export default function AuthPage() {
   };
 
   const completeRegistration = async (otp: string) => {
-    const phone = normalizeIndianPhone(regForm.phone);
-    const verifyRes = await verifyOtp(phone, otp);
+    const verifyRes = await verifyOtp(regForm.email, otp);
     if (!verifyRes.success) throw new Error(verifyRes.error || 'Invalid OTP');
 
     const saveRes = await saveUser({
       name: regForm.name,
       email: regForm.email,
-      phone,
+      phone: regForm.phone.replace(/\D/g, '').slice(0, 10),
       password: regForm.mpin,
       role: 'user',
       kycStatus: 'Not Submitted',
@@ -205,23 +195,22 @@ export default function AuthPage() {
                   <input className="form-input" placeholder="Rahul Sharma" required value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} {...blockTextInput({ name: 'register-full-name' })} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Phone Number *</label>
+                  <label className="form-label">Phone Number (Optional)</label>
                   <input
                     className="form-input"
                     placeholder="9876543210"
                     inputMode="numeric"
                     maxLength={10}
-                    required
                     value={regForm.phone}
                     onChange={(e) => setRegForm({ ...regForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                     {...blockTelInput({ name: 'register-phone' })}
                   />
-                  <p className="form-hint" style={{ marginTop: '0.35rem' }}>We&apos;ll send a one-time code to verify this number</p>
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Email Address</label>
+                <label className="form-label">Email Address *</label>
                 <input className="form-input" placeholder="you@example.com" required value={regForm.email} onChange={(e) => setRegForm({ ...regForm, email: e.target.value })} {...blockEmailInput({ name: 'register-email' })} />
+                <p className="form-hint" style={{ marginTop: '0.35rem' }}>We&apos;ll send a one-time code to verify this email</p>
               </div>
               <div className="form-grid">
                 <div className="form-group">
@@ -258,7 +247,7 @@ export default function AuthPage() {
                 <input className="form-input" placeholder="Enter referral code" style={{ textTransform: 'uppercase' }} value={regForm.referral} onChange={(e) => setRegForm({ ...regForm, referral: e.target.value.toUpperCase() })} {...blockTextInput({ name: 'register-referral' })} />
               </div>
               <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                {loading ? 'Sending OTP...' : 'Verify Phone & Create Account'}
+                {loading ? 'Sending OTP...' : 'Verify Email & Create Account'}
               </button>
               <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--muted)', marginTop: '1rem' }}>
                 By registering, you agree to our Terms of Service and Privacy Policy.
@@ -270,17 +259,15 @@ export default function AuthPage() {
 
       {showOtp && (
         <OtpModal
-          phone={normalizeIndianPhone(regForm.phone)}
-          title="Verify Your Phone"
-          subtitle={`Enter the 6-digit code sent to +91 ${normalizeIndianPhone(regForm.phone)}`}
+          email={regForm.email}
+          title="Verify Your Email"
+          subtitle={`Enter the 6-digit code sent to ${regForm.email}`}
           onClose={() => setShowOtp(false)}
           onVerify={completeRegistration}
           onResend={async () => {
-            const phone = normalizeIndianPhone(regForm.phone);
-            const res = await sendOtp(regForm.email, phone);
+            const res = await sendOtp(regForm.email);
             if (!res.success) throw new Error(res.error || 'Failed to resend');
-            if (!res.dev_mode && !res.sms_sent) throw new Error(res.error || 'SMS failed');
-            showToast(`OTP resent to +91 ${phone}`, 'info');
+            showToast(`OTP resent to ${regForm.email}`, 'info');
           }}
         />
       )}

@@ -56,7 +56,7 @@ GO-UNLISTED — HOSTINGER UPLOAD (5 steps)
 ADMIN LOGIN: https://yourdomain.com/admin/login
 Use the master admin email from schema.sql. Change the default password immediately after first login.
 
-Optional: add MSG91 keys in api/db_config.php for registration OTP SMS.
+Optional: ensure Hostinger mail() is enabled so registration OTP emails are delivered.
 EOF
 
 echo ""

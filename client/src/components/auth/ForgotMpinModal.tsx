@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import OtpModal from './OtpModal';
-import { resetMpin, sendResetOtp, verifyOtpEmail } from '../../api/auth';
+import { resetMpin, sendResetOtp, verifyOtp } from '../../api/auth';
 import { isValidMpin } from '../../utils/mpin';
 import AutofillBlocker from '../forms/AutofillBlocker';
 import { blockNewPasswordInput, blockTextInput } from '../../utils/autofill';
@@ -42,7 +42,7 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
 
   const handleOtpVerified = async (otp: string) => {
     if (!email) throw new Error('Account email not found. Please try again.');
-    const res = await verifyOtpEmail(email, otp);
+    const res = await verifyOtp(email, otp);
     if (!res.success) throw new Error(res.error || 'Invalid OTP');
     setStep('mpin');
   };

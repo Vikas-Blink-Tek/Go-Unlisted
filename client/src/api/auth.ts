@@ -31,30 +31,16 @@ export function checkAuth() {
   }>('checkAuth', 'GET');
 }
 
-export function sendOtp(email: string, phone: string) {
+export function sendOtp(email: string) {
   return apiRequest<{
     success: boolean;
     message?: string;
-    sms_sent?: boolean;
-    sms_error?: string;
     dev_mode?: boolean;
     error?: string;
-  }>(
-    'sendOtp',
-    'POST',
-    { email, phone },
-  );
+  }>('sendOtp', 'POST', { email });
 }
 
-export function verifyOtp(phone: string, otp: string) {
-  return apiRequest<{ success: boolean; message?: string; error?: string }>('verifyOtp', 'POST', {
-    phone,
-    otp,
-  });
-}
-
-/** @deprecated Use verifyOtp(phone, otp) for registration; email only for password reset */
-export function verifyOtpEmail(email: string, otp: string) {
+export function verifyOtp(email: string, otp: string) {
   return apiRequest<{ success: boolean; message?: string; error?: string }>('verifyOtp', 'POST', {
     email,
     otp,

@@ -252,74 +252,31 @@ function isValidIndianMobile($phone) {
     return (bool) preg_match('/^[6-9]\d{9}$/', $p);
 }
 
-function phoneOtpIdentifier($phone) {
-    return 'phone:' . normalizeIndianPhone($phone);
-}
-
-function issueRegistrationOtp($conn, $phone, $email, $msg91_auth_key, $msg91_template_id, $msg91_sender_id) {
-    $phoneNorm = normalizeIndianPhone($phone);
-    if (!isValidIndianMobile($phoneNorm)) {
-        return ['success' => false, 'error' => 'Enter a valid 10-digit Indian mobile number (starts with 6–9)'];
-    }
-
+function issueOtpForEmail($conn, $email) {
     $email = strtolower(trim($email));
-    if (!isValidEmail($email)) {
-        return ['success' => false, 'error' => 'Invalid email address'];
-    }
-
-    $dupPhone = $conn->prepare('SELECT id FROM users WHERE phone = ? LIMIT 1');
-    $dupPhone->bind_param('s', $phoneNorm);
-    $dupPhone->execute();
-    if ($dupPhone->get_result()->num_rows > 0) {
-        return ['success' => false, 'error' => 'This phone number is already registered. Try logging in instead.'];
-    }
-
-    $dupEmail = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
-    $dupEmail->bind_param('s', $email);
-    $dupEmail->execute();
-    if ($dupEmail->get_result()->num_rows > 0) {
-        return ['success' => false, 'error' => 'This email is already registered. Try logging in instead.'];
-    }
-
     $otp = sprintf('%06d', random_int(100000, 999999));
     $otpHash = password_hash($otp, PASSWORD_DEFAULT);
-    $identifier = phoneOtpIdentifier($phoneNorm);
 
     $stmt = $conn->prepare('INSERT INTO otps (identifier, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))');
-    $stmt->bind_param('ss', $identifier, $otpHash);
+    $stmt->bind_param('ss', $email, $otpHash);
     $stmt->execute();
 
+    $subject = 'Your Go-Unlisted Verification Code';
+    $message = "Welcome to Go-Unlisted!\n\nYour OTP code is: $otp\n\nThis code will expire in 10 minutes. Do not share this code with anyone.";
+    $headers = 'From: noreply@gounlisted.com';
+    @mail($email, $subject, $message, $headers);
+
     $localDev = getenv('GU_DEV_MODE') === '1' || isLocalDev();
-    $smsResult = null;
-
-    if (!empty($msg91_auth_key)) {
-        $smsResult = sendMsg91Otp($msg91_auth_key, $phoneNorm, $otp, $msg91_template_id ?? '', $msg91_sender_id ?? 'GOUNLS');
-        if (!$smsResult['success']) {
-            error_log('MSG91 registration OTP failed for ' . formatMsg91Mobile($phoneNorm) . ': ' . json_encode($smsResult));
-        }
-    } else {
-        $smsResult = ['success' => false, 'error' => 'SMS gateway not configured on server'];
-    }
-
-    if (!$localDev && (!$smsResult || !$smsResult['success'])) {
-        return [
-            'success' => false,
-            'error' => $smsResult['error'] ?? 'Could not send OTP to your phone. Please check the number and try again.',
-        ];
-    }
-
     if ($localDev) {
-        error_log("DEV OTP for phone {$phoneNorm} (reg): {$otp}");
+        error_log("DEV OTP for {$email}: {$otp}");
     }
 
     return [
         'success' => true,
         'message' => $localDev
-            ? 'OTP generated (local dev — check api/php_errors.log)'
-            : 'OTP sent to your phone',
-        'sms_sent' => $smsResult['success'] ?? false,
+            ? 'OTP generated (local dev — check api/php_errors.log if email did not arrive)'
+            : 'OTP sent to your email',
         'dev_mode' => $localDev,
-        'phone' => $phoneNorm,
     ];
 }
 
@@ -342,50 +299,6 @@ function seedDemoUserIfEmpty(mysqli $conn): void {
     );
     $stmt->bind_param('ssssssss', $id, $name, $phone, $email, $hash, $role, $referral, $kyc);
     $stmt->execute();
-}
-
-function issueOtpForEmail($conn, $email, $phone, $msg91_auth_key, $msg91_template_id, $msg91_sender_id) {
-    $email = strtolower(trim($email));
-    $otp = sprintf('%06d', random_int(100000, 999999));
-    $otpHash = password_hash($otp, PASSWORD_DEFAULT);
-
-    $stmt = $conn->prepare('INSERT INTO otps (identifier, otp_code, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 10 MINUTE))');
-    $stmt->bind_param('ss', $email, $otpHash);
-    $stmt->execute();
-
-    $subject = 'Your Go-Unlisted Verification Code';
-    $message = "Welcome to Go-Unlisted!\n\nYour OTP code is: $otp\n\nThis code will expire in 10 minutes. Do not share this code with anyone.";
-    $headers = 'From: noreply@gounlisted.com';
-    @mail($email, $subject, $message, $headers);
-
-    $smsResult = null;
-    $phoneNorm = normalizeIndianPhone($phone);
-    if (!empty($phoneNorm) && strlen($phoneNorm) === 10 && !empty($msg91_auth_key)) {
-        $smsResult = sendMsg91Otp($msg91_auth_key, $phoneNorm, $otp, $msg91_template_id ?? '', $msg91_sender_id ?? 'GOUNLS');
-        if (!$smsResult['success']) {
-            error_log('MSG91 failed for ' . formatMsg91Mobile($phoneNorm) . ': ' . json_encode($smsResult));
-        }
-    } elseif (!empty($phoneNorm) && strlen($phoneNorm) === 10 && empty($msg91_auth_key)) {
-        $smsResult = ['success' => false, 'error' => 'MSG91_AUTH_KEY not configured'];
-    }
-
-    $response = ['success' => true, 'message' => 'OTP sent successfully'];
-    if (getenv('GU_DEV_MODE') === '1' || isLocalDev()) {
-        error_log("DEV OTP for {$email}: {$otp}");
-        $response['dev_mode'] = true;
-        $response['message'] = 'OTP generated (local dev — check api/php_errors.log if email/SMS did not arrive)';
-    }
-    if ($smsResult !== null) {
-        $response['sms_sent'] = $smsResult['success'];
-        if (!$smsResult['success']) {
-            $response['sms_error'] = $smsResult['error'] ?? 'SMS delivery failed';
-            if (empty($msg91_auth_key)) {
-                $response['sms_error'] = 'SMS not configured — add MSG91 key in api/db_config.local.php';
-            }
-        }
-    }
-
-    return $response;
 }
 
 function sanitizeArticleHtml($html) {
@@ -506,109 +419,6 @@ function normalizeIndianPhone($phone) {
     return $phone;
 }
 
-function formatMsg91Mobile($phone) {
-    $phone = normalizeIndianPhone($phone);
-    if (strlen($phone) !== 10) {
-        return null;
-    }
-    return '91' . $phone;
-}
-
-function sendMsg91Otp($authKey, $phone, $otp, $templateId = '', $senderId = 'GOUNLS') {
-    if (empty($authKey)) {
-        return ['success' => false, 'error' => 'MSG91 not configured'];
-    }
-
-    $mobile = formatMsg91Mobile($phone);
-    if ($mobile === null) {
-        return ['success' => false, 'error' => 'Invalid phone number (need 10-digit Indian mobile)'];
-    }
-
-    $curl = curl_init();
-    $headers = [
-        'authkey: ' . $authKey,
-        'content-type: application/json',
-        'accept: application/json',
-    ];
-
-    if (!empty($templateId)) {
-        // MSG91 SendOTP v5 — requires DLT-approved template for India
-        $payload = [
-            'template_id' => $templateId,
-            'mobile' => $mobile,
-            'otp' => $otp,
-            'otp_length' => strlen($otp),
-            'otp_expiry' => 10,
-        ];
-        if (!empty($senderId)) {
-            $payload['sender'] = $senderId;
-        }
-        curl_setopt_array($curl, [
-            CURLOPT_URL => 'https://api.msg91.com/api/v5/otp',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => $headers,
-        ]);
-    } else {
-        // Legacy API — send our own OTP text (no template_id configured)
-        curl_setopt_array($curl, [
-            CURLOPT_URL => 'https://api.msg91.com/api/sendotp.php',
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_POSTFIELDS => http_build_query([
-                'authkey' => $authKey,
-                'mobile' => $mobile,
-                'message' => "Your Go-Unlisted OTP is $otp. Valid for 10 minutes. Do not share with anyone.",
-                'sender' => $senderId,
-                'otp' => $otp,
-                'otp_length' => strlen($otp),
-                'otp_expiry' => 10,
-            ]),
-            CURLOPT_HTTPHEADER => [
-                'accept: application/json',
-            ],
-        ]);
-    }
-
-    $response = curl_exec($curl);
-    $httpCode = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    $err = curl_error($curl);
-    curl_close($curl);
-
-    if ($err) {
-        error_log('MSG91 cURL error: ' . $err);
-        return ['success' => false, 'error' => $err];
-    }
-
-    $result = json_decode($response, true);
-    error_log('MSG91 response (HTTP ' . $httpCode . '): ' . $response);
-
-    $ok = false;
-    if (is_array($result)) {
-        $type = strtolower((string) ($result['type'] ?? ''));
-        $msg = strtolower((string) ($result['message'] ?? ''));
-        $ok = $type === 'success'
-            || str_contains($msg, 'success')
-            || !empty($result['request_id'])
-            || ($result['status'] ?? '') === 'success';
-    } elseif (is_string($response) && stripos($response, 'success') !== false) {
-        $ok = true;
-    }
-
-    if (!$ok && $httpCode >= 200 && $httpCode < 300 && is_string($response) && preg_match('/otp sent/i', $response)) {
-        $ok = true;
-    }
-
-    return [
-        'success' => $ok,
-        'response' => $result ?: $response,
-        'error' => $ok ? null : (is_array($result) ? ($result['message'] ?? json_encode($result)) : (string) $response),
-    ];
-}
-
 // CSRF — validate all state-changing POSTs except public auth entry points
 ensureCsrfToken();
 $csrfExempt = [
@@ -664,34 +474,24 @@ switch ($action) {
     // -----------------------------------------
     case 'sendOtp':
         $data = getPostData();
-        $email = $data['email'] ?? '';
-        $phone = $data['phone'] ?? '';
+        $email = strtolower(trim($data['email'] ?? ''));
 
-        if (empty($phone)) {
+        if (empty($email) || !isValidEmail($email)) {
             http_response_code(400);
-            sendResponse(["error" => "Phone number is required"]);
-            break;
-        }
-        if (!isValidIndianMobile($phone)) {
-            http_response_code(400);
-            sendResponse(["error" => "Enter a valid 10-digit Indian mobile number"]);
-            break;
-        }
-        if (empty($email)) {
-            http_response_code(400);
-            sendResponse(["error" => "Email is required"]);
-            break;
-        }
-        if (!isValidEmail($email)) {
-            http_response_code(400);
-            sendResponse(["error" => "Invalid email address"]);
+            sendResponse(["error" => "Valid email address is required"]);
             break;
         }
 
-        $phoneNorm = normalizeIndianPhone($phone);
-        $rateKey = phoneOtpIdentifier($phoneNorm);
+        $dupEmail = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
+        $dupEmail->bind_param('s', $email);
+        $dupEmail->execute();
+        if ($dupEmail->get_result()->num_rows > 0) {
+            http_response_code(409);
+            sendResponse(['error' => 'This email is already registered. Try logging in instead.']);
+            break;
+        }
 
-        if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $rateKey, 5, 15)) {
+        if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $email, 5, 15)) {
             http_response_code(429);
             sendResponse(["error" => "Too many OTP requests. Please try again in 15 minutes."]);
             break;
@@ -701,10 +501,10 @@ switch ($action) {
             sendResponse(["error" => "Too many requests from your network. Please try again later."]);
             break;
         }
-        recordAttempt($conn, 'otp_send_attempts', 'identifier', $rateKey);
+        recordAttempt($conn, 'otp_send_attempts', 'identifier', $email);
         recordIpAttempt($conn, 'otp_ip_attempts');
 
-        sendResponse(issueRegistrationOtp($conn, $phone, $email, $msg91_auth_key, $msg91_template_id ?? '', $msg91_sender_id ?? 'GOUNLS'));
+        sendResponse(issueOtpForEmail($conn, $email));
         break;
 
     case 'sendResetOtp':
@@ -748,7 +548,7 @@ switch ($action) {
         recordAttempt($conn, 'otp_send_attempts', 'identifier', $email);
         recordIpAttempt($conn, 'otp_ip_attempts');
 
-        $response = issueOtpForEmail($conn, $email, $phone, $msg91_auth_key, $msg91_template_id ?? '', $msg91_sender_id ?? 'GOUNLS');
+        $response = issueOtpForEmail($conn, $email);
         $response['email'] = $email;
         sendResponse($response);
         break;
@@ -793,7 +593,6 @@ switch ($action) {
 
     case 'verifyOtp':
         $data = getPostData();
-        $phone = normalizeIndianPhone($data['phone'] ?? '');
         $email = strtolower(trim($data['email'] ?? ''));
         $otp = $data['otp'] ?? '';
 
@@ -803,17 +602,13 @@ switch ($action) {
             break;
         }
 
-        $usePhone = isValidIndianMobile($phone);
-        $useEmail = !$usePhone && !empty($email) && isValidEmail($email);
-
-        if (!$usePhone && !$useEmail) {
+        if (empty($email) || !isValidEmail($email)) {
             http_response_code(400);
-            sendResponse(["error" => "Valid phone number or email is required"]);
+            sendResponse(["error" => "Valid email address is required"]);
             break;
         }
 
-        $identifier = $usePhone ? phoneOtpIdentifier($phone) : $email;
-        $rateKey = $identifier;
+        $rateKey = $email;
 
         if (!isLocalDev() && checkRateLimit($conn, 'otp_attempts', 'identifier', $rateKey, 10, 15)) {
             http_response_code(429);
@@ -827,7 +622,7 @@ switch ($action) {
         }
 
         $stmt = $conn->prepare("SELECT id, otp_code FROM otps WHERE identifier = ? AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
-        $stmt->bind_param("s", $identifier);
+        $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
 
@@ -837,17 +632,10 @@ switch ($action) {
                 $delStmt->bind_param("i", $row['id']);
                 $delStmt->execute();
 
-                if ($usePhone) {
-                    if (!isset($_SESSION['phone_verified'])) {
-                        $_SESSION['phone_verified'] = [];
-                    }
-                    $_SESSION['phone_verified'][$phone] = time();
-                } else {
-                    if (!isset($_SESSION['otp_verified'])) {
-                        $_SESSION['otp_verified'] = [];
-                    }
-                    $_SESSION['otp_verified'][$email] = time();
+                if (!isset($_SESSION['otp_verified'])) {
+                    $_SESSION['otp_verified'] = [];
                 }
+                $_SESSION['otp_verified'][$email] = time();
 
                 sendResponse(["success" => true, "message" => "OTP verified"]);
                 break;
@@ -1126,24 +914,26 @@ switch ($action) {
                 http_response_code(400);
                 sendResponse(["error" => "Invalid email address"]);
             }
+            $emailNorm = strtolower(trim($data['email'] ?? ''));
+            $verifiedAt = $_SESSION['otp_verified'][$emailNorm] ?? null;
+            if (!$verifiedAt || (time() - $verifiedAt) > 900) {
+                http_response_code(403);
+                sendResponse(["error" => "Email verification required. Enter the OTP sent to your email."]);
+            }
+            unset($_SESSION['otp_verified'][$emailNorm]);
+
             $phoneNorm = normalizeIndianPhone($phone);
-            if (!isValidIndianMobile($phoneNorm)) {
+            if ($phoneNorm !== '' && !isValidIndianMobile($phoneNorm)) {
                 http_response_code(400);
                 sendResponse(["error" => "Invalid phone number"]);
             }
-            $verifiedAt = $_SESSION['phone_verified'][$phoneNorm] ?? null;
-            if (!$verifiedAt || (time() - $verifiedAt) > 900) {
-                http_response_code(403);
-                sendResponse(["error" => "Phone verification required. Enter the OTP sent to your mobile."]);
-            }
-            unset($_SESSION['phone_verified'][$phoneNorm]);
             $phone = $phoneNorm;
 
-            if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', phoneOtpIdentifier($phoneNorm), 10, 60)) {
+            if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $emailNorm, 10, 60)) {
                 http_response_code(429);
                 sendResponse(["error" => "Too many registration attempts. Please try again later."]);
             }
-            recordAttempt($conn, 'otp_send_attempts', 'identifier', phoneOtpIdentifier($phoneNorm));
+            recordAttempt($conn, 'otp_send_attempts', 'identifier', $emailNorm);
         }
 
         if ($exists) {
@@ -1158,8 +948,13 @@ switch ($action) {
             $stmt->execute();
         } else {
             $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-            $dup = $conn->prepare('SELECT id FROM users WHERE email = ? OR phone = ?');
-            $dup->bind_param('ss', $email, $phone);
+            if ($phone !== '') {
+                $dup = $conn->prepare('SELECT id FROM users WHERE email = ? OR phone = ?');
+                $dup->bind_param('ss', $emailNorm, $phone);
+            } else {
+                $dup = $conn->prepare('SELECT id FROM users WHERE email = ?');
+                $dup->bind_param('s', $emailNorm);
+            }
             $dup->execute();
             if ($dup->get_result()->num_rows > 0) {
                 http_response_code(409);
