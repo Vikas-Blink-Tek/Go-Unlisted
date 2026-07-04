@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/format';
 import { getInventoryBadge, isShareUnavailable } from '../../utils/inventory';
 import ShareSparkline from './ShareSparkline';
+import CompanyLogo from './CompanyLogo';
 import type { Share } from '../../types';
 
 interface ShareCardProps {
@@ -41,7 +42,7 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
 
       <div className="share-card-header">
         <div className="share-company">
-          <div className="company-logo" style={{ background: share.logoGradient }}>{share.logoInitials}</div>
+          <CompanyLogo share={share} />
           <div>
             <div className="company-name">{share.name}</div>
             <div className="company-ticker">{share.ticker}</div>

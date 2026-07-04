@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatCurrency } from '../../utils/format';
 import type { Share } from '../../types';
 
@@ -7,13 +7,30 @@ interface ReturnsCalculatorProps {
 }
 
 export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
-  const [shareId, setShareId] = useState(shares[0]?.id || '');
+  const list = useMemo(
+    () => [...shares].sort((a, b) => a.name.localeCompare(b.name)),
+    [shares],
+  );
+
+  const [shareId, setShareId] = useState('');
   const [amount, setAmount] = useState(50000);
   const [gain, setGain] = useState(50);
 
-  const share = shares.find((s) => s.id === shareId) || shares[0];
+  // Keep selection valid when stocks are added, updated, or removed
+  useEffect(() => {
+    if (!list.length) {
+      setShareId('');
+      return;
+    }
+    setShareId((current) =>
+      list.some((s) => s.id === current) ? current : list[0].id,
+    );
+  }, [list]);
+
+  const share = list.find((s) => s.id === shareId) ?? list[0] ?? null;
+
   const calc = useMemo(() => {
-    if (!share) return null;
+    if (!share || !share.price || share.price <= 0) return null;
     const fee = amount * 0.01;
     const investable = amount - fee;
     const qty = Math.floor(investable / share.price);
@@ -24,9 +41,24 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
     return { qty, invested, profit, estValue, multiplier };
   }, [share, amount, gain]);
 
+  if (!list.length) {
+    return (
+      <section className="section" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-2)', paddingTop: '3.5rem', paddingBottom: '3.5rem' }}>
+        <div className="container">
+          <div className="section-header">
+            <div className="section-tag">Returns Simulator</div>
+            <h2 className="section-title">Pre-IPO Returns <span>Calculator</span></h2>
+            <p className="section-subtitle">Add stocks in admin to simulate returns here.</p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (!share || !calc) return null;
 
   const dashOffset = 440 - (440 * Math.min(gain, 300)) / 300;
+  const unitPrice = share.price;
 
   return (
     <section className="section" style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-2)', paddingTop: '3.5rem', paddingBottom: '3.5rem' }}>
@@ -41,11 +73,21 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
           <div className="calc-inputs">
             <div className="form-group">
               <label className="form-label">Select Pre-IPO Company</label>
-              <select className="form-input" value={shareId} onChange={(e) => setShareId(e.target.value)}>
-                {shares.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+              <select
+                className="form-input"
+                value={share.id}
+                onChange={(e) => setShareId(e.target.value)}
+              >
+                {list.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {formatCurrency(s.price)}
+                  </option>
                 ))}
               </select>
+              <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--muted)' }}>
+                Live price {formatCurrency(unitPrice)}
+                {share.minQty > 0 ? ` · Min ${share.minQty} shares` : ''}
+              </div>
             </div>
 
             <div className="slider-container">
@@ -82,6 +124,7 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
             </div>
 
             <div className="calc-metrics">
+              <div className="calc-metric-row"><span className="lbl">Share Price</span><span className="val">{formatCurrency(unitPrice)}</span></div>
               <div className="calc-metric-row"><span className="lbl">Shares Purchased</span><span className="val">{calc.qty}</span></div>
               <div className="calc-metric-row"><span className="lbl">Total Invested</span><span className="val">{formatCurrency(calc.invested)}</span></div>
               <div className="calc-metric-row"><span className="lbl">Est. Profit</span><span className="val" style={{ color: 'var(--green)' }}>{formatCurrency(calc.profit)}</span></div>

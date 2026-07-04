@@ -22,7 +22,7 @@ import AdminReportsPanel from './panels/AdminReportsPanel';
 import AdminSharePricesPanel from './panels/AdminSharePricesPanel';
 
 export default function AdminDashboard() {
-  const { activePanel } = useAdminPanel();
+  const { activePanel, setActivePanel } = useAdminPanel();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
@@ -38,7 +38,15 @@ export default function AdminDashboard() {
   const users = usersQuery.data || [];
   const initiated = initiatedQuery.data || [];
   const pendingOrders = orders.filter((o) => isPendingOrder(o.status));
-  const confirmedRevenue = orders.filter((o) => o.status.toLowerCase().includes('confirm')).reduce((s, o) => s + (o.totalPaid || 0), 0);
+  const confirmedOrders = orders.filter((o) => {
+    const s = o.status.toLowerCase();
+    return s.includes('confirm') || s.includes('transfer') || s.includes('completed');
+  });
+  const confirmedRevenue = confirmedOrders.reduce((s, o) => s + (o.totalPaid || 0), 0);
+  const totalOrderValue = orders.reduce((s, o) => s + (o.totalPaid || 0), 0);
+  const recentSignups = [...users]
+    .sort((a, b) => String(b.id).localeCompare(String(a.id)))
+    .slice(0, 5);
 
   const statusMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
@@ -78,19 +86,77 @@ export default function AdminDashboard() {
     <>
       {activePanel === 'dashboard' && (
         <>
-          <div className="stats-grid">
-            <div className="stat-card stat-card-highlight"><div className="stat-value">{pendingOrders.length}</div><div className="stat-label">Awaiting Verification</div></div>
-            <div className="stat-card"><div className="stat-value">{initiated.length}</div><div className="stat-label">Abandoned Checkouts</div></div>
-            <div className="stat-card"><div className="stat-value">{users.length}</div><div className="stat-label">Registered Users</div></div>
-            <div className="stat-card"><div className="stat-value">{formatCurrency(confirmedRevenue)}</div><div className="stat-label">Confirmed Revenue</div></div>
+          <AdminSectionHeader
+            compact
+            title="Orders · Signups · Revenue"
+            subtitle="No order lists here — use Verify Payments or All Orders in the sidebar"
+          />
+          <div className="stats-grid stats-grid--dashboard">
+            <div className="stat-card stat-card-highlight">
+              <div className="stat-value">{orders.length}</div>
+              <div className="stat-label">Orders</div>
+              <div className="stat-sub">{pendingOrders.length} pending · {confirmedOrders.length} confirmed</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{users.length}</div>
+              <div className="stat-label">User Signups</div>
+              <div className="stat-sub">Registered investors</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-value">{formatCurrency(confirmedRevenue)}</div>
+              <div className="stat-label">Revenue</div>
+              <div className="stat-sub">
+                Confirmed payments
+                {totalOrderValue > confirmedRevenue ? ` · ${formatCurrency(totalOrderValue)} all orders` : ''}
+              </div>
+            </div>
           </div>
-          <div className="admin-workflow-hint">
-            <strong>Today's workflow:</strong> Verify payments → Approve KYC → Initiate demat transfer → Follow up abandoned checkouts
+
+          <div className="dashboard-summary-grid">
+            <div className="dashboard-summary-card">
+              <h3>At a glance</h3>
+              <div className="dashboard-mini-stats">
+                <div>
+                  <span>Pending payments</span>
+                  <strong>{pendingOrders.length}</strong>
+                </div>
+                <div>
+                  <span>Pending order value</span>
+                  <strong>{formatCurrency(pendingOrders.reduce((s, o) => s + (o.totalPaid || 0), 0))}</strong>
+                </div>
+                <div>
+                  <span>Abandoned checkouts</span>
+                  <strong>{initiated.length}</strong>
+                </div>
+              </div>
+              <div className="dashboard-quick-actions">
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => setActivePanel('pending')}>
+                  Verify Payments
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('orders')}>
+                  All Orders
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('users')}>
+                  Users &amp; KYC
+                </button>
+              </div>
+            </div>
+            <div className="dashboard-summary-card">
+              <h3>Recent signups</h3>
+              {!recentSignups.length ? (
+                <p className="dashboard-summary-note">No users yet.</p>
+              ) : (
+                <ul className="dashboard-signup-list">
+                  {recentSignups.map((u) => (
+                    <li key={u.id}>
+                      <strong>{u.name || 'Investor'}</strong>
+                      <span>{u.email}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
-          <AdminSectionHeader compact title="Payments to Verify" subtitle="Click a row for buyer, UTR, and KYC details" badge={`${pendingOrders.length} pending`} />
-          <AdminOrdersSection orders={pendingOrders} users={users} showActions onVerify={verify} onReject={reject} limit={6} />
-          <AdminSectionHeader compact title="Recent Orders" subtitle="Latest activity across the platform" />
-          <AdminOrdersSection orders={orders} users={users} limit={5} />
         </>
       )}
 

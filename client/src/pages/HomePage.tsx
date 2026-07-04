@@ -1,16 +1,119 @@
 import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShares } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
+import CompanyLogo from '../components/shares/CompanyLogo';
 import ReturnsCalculator from '../components/home/ReturnsCalculator';
 import ShareSparkline from '../components/shares/ShareSparkline';
 import { formatCurrency } from '../utils/format';
+import type { Share } from '../types';
+
+function MarketActivityCard({ share }: { share: Share }) {
+  const history = share.priceHistory?.['3M']?.length
+    ? share.priceHistory['3M']
+    : [share.price * 0.92, share.price * 0.95, share.price * 0.97, share.price * 0.99, share.price];
+
+  // Same layout/size as the original static hero cards — used inside the rotator
+  return (
+    <Link to={`/shares/${share.id}`} className="hero-card market-scroll-card">
+      <div className="hero-card-top">
+        <div className="hero-card-company">
+          <CompanyLogo share={share} className="hero-logo-sm" />
+          <div>
+            <div className="hero-company-name">{share.name}</div>
+            <div className="hero-sector">{share.sector} · {share.listingType || 'Pre-IPO'}</div>
+          </div>
+        </div>
+        <div className="hero-price-badge">{formatCurrency(share.price)}</div>
+      </div>
+      <div className="hero-chart-wrap">
+        <ShareSparkline data={history} positive={share.changePositive !== false} height={56} />
+      </div>
+      <div className="hero-card-bottom">
+        <div className="hero-card-meta">
+          Min {share.minQty} shares · {formatCurrency(share.price * share.minQty)}
+        </div>
+        {share.growth ? (
+          <div className={`hero-change ${share.changePositive === false ? 'neg' : 'pos'}`}>
+            {share.changePositive === false ? '▼' : '▲'} {share.growth}
+          </div>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+/** Continuous upward scroll — always 2 cards visible, slower rotation. */
+function MarketActivityScroller({ items }: { items: Share[] }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const pausedRef = useRef(false);
+  const [paused, setPaused] = useState(false);
+  pausedRef.current = paused;
+
+  // Exactly 2 cards on screen (or 1 if only one starred)
+  const visibleCount = Math.min(2, Math.max(1, items.length));
+  // Slower: ~5.5s per card for a calm, professional loop
+  const durationSec = Math.max(10, items.length * 5.5);
+
+  const scrollItems = useMemo(() => [...items, ...items], [items]);
+  const shouldScroll = items.length > visibleCount || items.length > 1;
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track || items.length === 0 || !shouldScroll) return;
+
+    let raf = 0;
+    let start = performance.now();
+    let pausedAt = 0;
+
+    const tick = (now: number) => {
+      if (pausedRef.current) {
+        if (!pausedAt) pausedAt = now;
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      if (pausedAt) {
+        start += now - pausedAt;
+        pausedAt = 0;
+      }
+      const loopPx = track.scrollHeight / 2;
+      if (loopPx > 0) {
+        const progress = ((now - start) / 1000 / durationSec) % 1;
+        track.style.transform = `translate3d(0, ${-progress * loopPx}px, 0)`;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      track.style.transform = '';
+    };
+  }, [items, durationSec, shouldScroll]);
+
+  return (
+    <div
+      className="market-scroll-viewport"
+      style={{ ['--market-visible' as string]: String(visibleCount) }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div ref={trackRef} className={`market-scroll-track${shouldScroll ? ' is-moving' : ''}`}>
+        {scrollItems.map((share, i) => (
+          <MarketActivityCard key={`${share.id}-${i}`} share={share} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function HomePage() {
-  const { shares, getShareById } = useShares();
-  const phonepe = getShareById('phonepe');
-  const zepto = getShareById('zepto');
-  const featuredList = shares.filter((s) => s.isFeatured);
-  const featured = featuredList.length ? featuredList.slice(0, 4) : shares.slice(0, 4);
+  const { shares } = useShares();
+  /** Only starred stocks — never fall back to unstarred listings */
+  const starred = useMemo(
+    () => shares.filter((s) => !!s.isFeatured),
+    [shares],
+  );
 
   return (
     <div className="view active" id="view-home">
@@ -78,52 +181,20 @@ export default function HomePage() {
 
           <div className="hero-visual">
             <div className="hero-ticker-bar">
-              <span style={{ fontSize: '0.78rem', fontWeight: 500 }}>Market Activity</span>
+              <span style={{ fontSize: '0.78rem', fontWeight: 500 }}>
+                Market Activity
+                {starred.length > 0 ? ` · ${starred.length} starred` : ''}
+              </span>
               <div className="hero-ticker-live">LIVE</div>
             </div>
 
-            {phonepe && (
-              <Link to={`/shares/${phonepe.id}`} className="hero-card">
-                <div className="hero-card-top">
-                  <div className="hero-card-company">
-                    <div className="hero-logo-sm" style={{ background: phonepe.logoGradient }}>PP</div>
-                    <div>
-                      <div className="hero-company-name">PhonePe</div>
-                      <div className="hero-sector">Fintech · Pre-IPO</div>
-                    </div>
-                  </div>
-                  <div className="hero-price-badge">{formatCurrency(phonepe.price)}</div>
-                </div>
-                <div className="hero-chart-wrap">
-                  <ShareSparkline data={phonepe.priceHistory['3M']} positive={phonepe.changePositive} height={60} />
-                </div>
-                <div className="hero-card-bottom">
-                  <div className="hero-card-meta">Min {phonepe.minQty} shares · {formatCurrency(phonepe.price * phonepe.minQty)}</div>
-                  <div className="hero-change pos">▲ +4.1%</div>
-                </div>
-              </Link>
-            )}
-
-            {zepto && (
-              <Link to={`/shares/${zepto.id}`} className="hero-card">
-                <div className="hero-card-top">
-                  <div className="hero-card-company">
-                    <div className="hero-logo-sm" style={{ background: zepto.logoGradient }}>ZP</div>
-                    <div>
-                      <div className="hero-company-name">Zepto</div>
-                      <div className="hero-sector">Quick Commerce · Pre-IPO</div>
-                    </div>
-                  </div>
-                  <div className="hero-price-badge">{formatCurrency(zepto.price)}</div>
-                </div>
-                <div className="hero-chart-wrap">
-                  <ShareSparkline data={zepto.priceHistory['3M']} positive={zepto.changePositive} height={60} />
-                </div>
-                <div className="hero-card-bottom">
-                  <div className="hero-card-meta">Min {zepto.minQty} shares · {formatCurrency(zepto.price * zepto.minQty)}</div>
-                  <div className="hero-change pos">▲ +3.2%</div>
-                </div>
-              </Link>
+            {starred.length === 0 ? (
+              <div className="market-scroll-empty">
+                <p>No starred stocks yet</p>
+                <span>Star listings in admin (★) to show them here</span>
+              </div>
+            ) : (
+              <MarketActivityScroller items={starred} />
             )}
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
@@ -137,7 +208,9 @@ export default function HomePage() {
               </div>
               <div style={{ flex: 1, background: 'rgba(122,193,66,0.08)', border: '1px solid rgba(122,193,66,0.2)', borderRadius: 12, padding: '10px 14px', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.68rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>Sectors</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)' }}>5+</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)' }}>
+                  {new Set(shares.map((s) => s.sector)).size}+
+                </div>
               </div>
             </div>
           </div>
@@ -147,15 +220,27 @@ export default function HomePage() {
       <section className="section" style={{ paddingTop: '3rem' }}>
         <div className="container">
           <div className="section-header">
-            <div className="section-tag">★ Featured Listings</div>
+            <div className="section-tag">★ Starred Listings</div>
             <h2 className="section-title">Top Pre-IPO <span>Opportunities</span></h2>
-            <p className="section-subtitle">Handpicked high-growth companies approaching their IPO. Limited shares available — act before they list.</p>
+            <p className="section-subtitle">
+              {starred.length
+                ? 'Stocks starred by our team — also shown in Market Activity.'
+                : 'Star stocks in admin to feature them here. Browse all listings below.'}
+            </p>
           </div>
-          <div className="shares-grid">
-            {featured.map((share) => (
-              <ShareCard key={share.id} share={share} />
-            ))}
-          </div>
+          {starred.length > 0 ? (
+            <div className="shares-grid">
+              {starred.map((share) => (
+                <ShareCard key={share.id} share={share} />
+              ))}
+            </div>
+          ) : (
+            <div className="shares-grid">
+              {shares.slice(0, 4).map((share) => (
+                <ShareCard key={share.id} share={share} />
+              ))}
+            </div>
+          )}
           <div className="text-center mt-3">
             <Link to="/shares" className="btn btn-outline" style={{ padding: '11px 28px' }}>View All Listings →</Link>
           </div>

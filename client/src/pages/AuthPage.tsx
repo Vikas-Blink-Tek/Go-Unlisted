@@ -12,11 +12,14 @@ import { isValidMpin } from '../utils/mpin';
 
 export default function AuthPage() {
   const [tab, setTab] = useState<'login' | 'register'>('login');
-  const { login, setUser } = useAuth();
+  const { login, setUser, user, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string })?.from || '/';
+  const navState = (location.state as { from?: string; reason?: string; tab?: 'login' | 'register' } | null) ?? {};
+  const from = navState.from || '/';
+  const portfolioGate = navState.reason === 'portfolio';
+  const paymentGate = navState.reason === 'payment';
 
   const [loginForm, setLoginForm] = useState({ email: '', mpin: '' });
   const [regForm, setRegForm] = useState({ name: '', email: '', phone: '', mpin: '', confirmMpin: '', referral: '' });
@@ -25,13 +28,28 @@ export default function AuthPage() {
   const [showOtp, setShowOtp] = useState(false);
   const [showForgotMpin, setShowForgotMpin] = useState(false);
 
+  // Always start with empty fields — never show browser-saved emails
   useEffect(() => {
+    setLoginForm({ email: '', mpin: '' });
+    setError('');
+  }, [location.key]);
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate(from === '/login' ? '/dashboard' : from, { replace: true });
+    }
+  }, [authLoading, user, from, navigate]);
+
+  useEffect(() => {
+    if (navState.tab === 'register' || navState.tab === 'login') {
+      setTab(navState.tab);
+    }
     const ref = new URLSearchParams(window.location.search).get('ref');
     if (ref) {
       setTab('register');
       setRegForm((f) => ({ ...f, referral: ref.toUpperCase() }));
     }
-  }, []);
+  }, [navState.tab]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,35 +157,45 @@ export default function AuthPage() {
             <button type="button" className={`auth-tab${tab === 'register' ? ' active' : ''}`} onClick={() => setTab('register')}>Register</button>
           </div>
 
+          {portfolioGate && (
+            <div className="auth-gate-banner">
+              Login to view your portfolio, orders, and KYC status.
+            </div>
+          )}
+          {paymentGate && (
+            <div className="auth-gate-banner">
+              Login or sign up to continue payment. Guest checkout is not allowed.
+            </div>
+          )}
+
           {error && <div className="form-error show" style={{ marginBottom: '0.75rem' }}>{error}</div>}
 
           {tab === 'login' ? (
-            <form id="login-form" onSubmit={handleLogin} autoComplete="on">
+            <form id="login-form" onSubmit={handleLogin} autoComplete="off" style={{ position: 'relative' }}>
+              <AutofillBlocker />
               <div className="form-group">
                 <label className="form-label">Email or Phone Number</label>
                 <input
-                  type="text"
                   className="form-input"
                   placeholder="you@example.com or 9876543210"
                   required
-                  autoComplete="username"
                   value={loginForm.email}
                   onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                  {...blockTextInput({ name: 'login-id', autoComplete: 'off' })}
                 />
               </div>
               <div className="form-group">
                 <label className="form-label">MPIN</label>
                 <input
-                  type="password"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   className="form-input mpin-input"
                   placeholder="4-6 digit MPIN"
                   required
-                  autoComplete="current-password"
                   value={loginForm.mpin}
                   onChange={(e) => setLoginForm({ ...loginForm, mpin: onMpinInput(e.target.value) })}
+                  {...blockNewPasswordInput({ name: 'login-mpin' })}
                 />
                 <p className="auth-forgot-wrap">
                   <button type="button" className="auth-forgot-link" onClick={() => setShowForgotMpin(true)}>

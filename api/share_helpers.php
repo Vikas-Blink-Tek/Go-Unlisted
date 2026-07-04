@@ -1,11 +1,34 @@
 <?php
 
-function defaultPriceHistory(float $price): array {
+/**
+ * Indicative price path ending at $price.
+ * $rising true = chart goes up (green); false = chart goes down (red).
+ * $growthPct e.g. 0.15 for 15% move over the period.
+ */
+function defaultPriceHistory(float $price, bool $rising = true, float $growthPct = 0.15): array {
+    $points = 13;
+    $move = max(0.02, min(2.0, abs($growthPct)));
+    $start = $rising ? ($price / (1 + $move)) : ($price * (1 + $move));
+    $series = [];
+    for ($i = 0; $i < $points; $i++) {
+        $t = $i / ($points - 1);
+        $ease = $t * $t * (3 - 2 * $t);
+        $wobble = sin($i * 1.7) * $price * 0.008;
+        $series[] = max(1, round(($start + ($price - $start) * $ease + $wobble) * 100) / 100);
+    }
+    $series[$points - 1] = $price;
     return [
-        '3M' => array_fill(0, 13, $price),
-        '6M' => array_fill(0, 13, $price),
-        '1Y' => array_fill(0, 13, $price),
+        '3M' => $series,
+        '6M' => $series,
+        '1Y' => $series,
     ];
+}
+
+function parseGrowthFraction(string $growth): float {
+    if (preg_match('/-?\d+(\.\d+)?/', str_replace(',', '', $growth), $m)) {
+        return max(0.02, min(2.0, abs((float) $m[0]) / 100));
+    }
+    return 0.15;
 }
 
 function defaultChartLabels(): array {
@@ -40,7 +63,7 @@ function seedDefaultSharesIfEmpty(mysqli $conn): void {
 
     foreach (getDefaultSharesSeed() as $row) {
         [$id, $name, $ticker, $sector, $color, $price, $minQty, $initials, $gradient, $founded, $revenue, $valuation, $growth, $positive] = $row;
-        $history = json_encode(defaultPriceHistory((float) $price));
+        $history = json_encode(defaultPriceHistory((float) $price, (bool) $positive, parseGrowthFraction((string) $growth)));
         $labels = json_encode(defaultChartLabels());
         $stmt->bind_param(
             'sssssdississsiss',
@@ -83,6 +106,10 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
     $history = json_decode($row['price_history'] ?? '', true);
     $labels = json_decode($row['chart_labels'] ?? '', true);
     $highlights = json_decode($row['key_highlights'] ?? '', true);
+    $fundamentals = json_decode($row['fundamentals'] ?? '', true);
+    if (!is_array($fundamentals)) {
+        $fundamentals = [];
+    }
 
     if (!is_array($history) || empty($history)) {
         $history = defaultPriceHistory($price);
@@ -111,6 +138,7 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'changePositive' => (bool) $row['change_positive'],
         'logoInitials' => $row['logo_initials'] ?? '',
         'logoGradient' => $row['logo_gradient'] ?? 'linear-gradient(135deg, #003478, #0050a8)',
+        'logoUrl' => trim($row['logo_url'] ?? ''),
         'priceHistory' => $history,
         'chartLabels' => $labels,
         'listingType' => $row['listing_type'] ?? 'Pre-IPO',
@@ -118,8 +146,18 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'inventoryStatus' => $row['inventory_status'] ?? 'In Stock',
         'keyHighlights' => $highlights,
         'riskNotes' => $row['risk_notes'] ?? '',
-        'lockInMonths' => isset($row['lock_in_months']) ? (int) $row['lock_in_months'] : 6,
-        'isFeatured' => !empty($row['is_featured']),
+        'lockInMonths' => isset($row['lock_in_months']) ? (int) $row['lock_in_months'] : 0,
+        'isin' => trim($row['isin'] ?? ''),
+        'week52High' => trim($fundamentals['week52High'] ?? ''),
+        'week52Low' => trim($fundamentals['week52Low'] ?? ''),
+        'marketCap' => trim($fundamentals['marketCap'] ?? ''),
+        'peRatio' => trim($fundamentals['peRatio'] ?? ''),
+        'pbRatio' => trim($fundamentals['pbRatio'] ?? ''),
+        'debtEquity' => trim($fundamentals['debtEquity'] ?? ''),
+        'roe' => trim($fundamentals['roe'] ?? ''),
+        'bookValue' => trim($fundamentals['bookValue'] ?? ''),
+        'faceValue' => trim($fundamentals['faceValue'] ?? ''),
+        'isFeatured' => ((int) ($row['is_featured'] ?? 0)) === 1,
         'isBuiltin' => (bool) $row['is_builtin'],
         'lastUpdated' => $row['updated_at'] ?? null,
     ];

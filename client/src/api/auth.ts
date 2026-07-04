@@ -9,11 +9,13 @@ export function loginUser(email: string, password: string) {
 }
 
 export function loginAdmin(email: string, password: string) {
-  return apiRequest<{ success: boolean; id?: string; isMaster?: boolean; error?: string }>(
-    'loginAdmin',
-    'POST',
-    { email, password },
-  );
+  return apiRequest<{
+    success: boolean;
+    id?: string;
+    isMaster?: boolean;
+    permissions?: string[];
+    error?: string;
+  }>('loginAdmin', 'POST', { email, password });
 }
 
 export function logout() {
@@ -26,6 +28,7 @@ export function checkAuth() {
     type?: 'admin' | 'user';
     id?: string;
     isMaster?: boolean;
+    permissions?: string[];
     user?: User;
     csrfToken?: string;
   }>('checkAuth', 'GET');

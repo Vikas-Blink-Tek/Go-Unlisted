@@ -17,6 +17,8 @@ export interface Share {
   changePositive: boolean;
   logoInitials: string;
   logoGradient: string;
+  /** Optional company logo image path (e.g. uploads/shares/xxx.png) */
+  logoUrl?: string;
   priceHistory: Record<ChartPeriod, number[]>;
   chartLabels: Record<ChartPeriod, string[]>;
   listingType?: string;
@@ -26,6 +28,18 @@ export interface Share {
   keyHighlights?: string[];
   riskNotes?: string;
   lockInMonths?: number;
+  /** Optional ISIN (e.g. INE312K01010) */
+  isin?: string;
+  /** Optional key-data metrics — all optional (show N/A when empty) */
+  week52High?: string;
+  week52Low?: string;
+  marketCap?: string;
+  peRatio?: string;
+  pbRatio?: string;
+  debtEquity?: string;
+  roe?: string;
+  bookValue?: string;
+  faceValue?: string;
   isFeatured?: boolean;
   lastUpdated?: string | null;
   isBuiltin?: boolean;
@@ -68,6 +82,7 @@ export interface Order {
   method?: string;
   paymentMethod?: string;
   transactionId?: string;
+  utr?: string;
   opsNote?: string;
   orderSource?: string;
   date?: string;

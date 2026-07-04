@@ -30,6 +30,8 @@ cp "$ROOT/scripts/production_reset.php" "$DEPLOY/scripts/"
 
 # Uploads directory security
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true
+mkdir -p "$DEPLOY/uploads/shares"
+cp "$ROOT/uploads/shares/.htaccess" "$DEPLOY/uploads/shares/" 2>/dev/null || true
 
 # Never ship logs or install locks
 rm -f "$DEPLOY/api/php_errors.log" "$DEPLOY/api/.installed"

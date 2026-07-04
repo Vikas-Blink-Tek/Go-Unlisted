@@ -53,7 +53,12 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
             <div className="admin-drawer-grid">
               <div><span>Amount</span><strong>{formatCurrency(order.totalPaid || order.total || 0)}</strong></div>
               <div><span>Method</span><strong>{order.method || order.paymentMethod || '—'}</strong></div>
-              <div><span>UTR / Ref</span><strong style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{order.transactionId || '—'}</strong></div>
+              <div>
+                <span>UTR / Txn ID</span>
+                <strong className="admin-utr-code" style={{ maxWidth: '100%' }}>
+                  {order.transactionId || order.utr || '—'}
+                </strong>
+              </div>
               <div><span>Date</span><strong>{order.date ? formatDate(order.date) : '—'}</strong></div>
             </div>
           </section>

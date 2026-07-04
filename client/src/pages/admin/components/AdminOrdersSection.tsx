@@ -92,7 +92,7 @@ export default function AdminOrdersSection({ orders, users, showActions, onVerif
                 <th>Buyer</th>
                 <th>Share</th>
                 <th>Amount</th>
-                <th>UTR</th>
+                <th>UTR / Txn ID</th>
                 <th>Status</th>
                 {showActions && <th>Actions</th>}
               </tr>
@@ -107,7 +107,11 @@ export default function AdminOrdersSection({ orders, users, showActions, onVerif
                   </td>
                   <td>{o.companyName || o.shareName}</td>
                   <td>{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                  <td style={{ fontSize: '0.72rem', fontFamily: 'monospace' }}>{o.transactionId || '—'}</td>
+                  <td>
+                    <code className="admin-utr-code" title="Payment reference from buyer">
+                      {o.transactionId || o.utr || '—'}
+                    </code>
+                  </td>
                   <td><span className={`status-badge ${getOrderStatusClass(o.status)}`}>{getOrderStatusLabel(o.status)}</span></td>
                   {showActions && (
                     <td style={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>

@@ -5,12 +5,20 @@ import { AdminPanelProvider, panelsForRole, useAdminPanel, type AdminPanelId } f
 import { adminNavIcon } from './adminNavIcons';
 
 function AdminShell() {
-  const { activePanel, setActivePanel, isMaster } = useAdminPanel();
+  const { activePanel, setActivePanel, isMaster, permissions, loading } = useAdminPanel();
   const navigate = useNavigate();
-  const panels = panelsForRole(isMaster);
+  const panels = panelsForRole(isMaster, permissions);
   const current = panels.find((p) => p.id === activePanel);
   const groups = [...new Set(panels.map((p) => p.group))];
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="admin-login-screen">
+        <p style={{ color: 'var(--muted)' }}>Loading permissions...</p>
+      </div>
+    );
+  }
 
   const handleLogout = async () => {
     await logout();

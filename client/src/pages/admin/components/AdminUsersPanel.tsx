@@ -9,13 +9,37 @@ type Props = {
   users: User[];
 };
 
+type KycForm = {
+  kycPan: string;
+  kycDemat: string;
+  bankAccount: string;
+  ifsc: string;
+  rejectReason: string;
+};
+
+function userToForm(u: User): KycForm {
+  return {
+    kycPan: u.kycPan || '',
+    kycDemat: u.kycDemat || '',
+    bankAccount: u.bankAccount || '',
+    ifsc: u.ifsc || '',
+    rejectReason: u.kycRejectReason || '',
+  };
+}
+
 export default function AdminUsersPanel({ users }: Props) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [kycFilter, setKycFilter] = useState('all');
   const [detail, setDetail] = useState<User | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
+  const [form, setForm] = useState<KycForm>({
+    kycPan: '',
+    kycDemat: '',
+    bankAccount: '',
+    ifsc: '',
+    rejectReason: '',
+  });
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -23,33 +47,97 @@ export default function AdminUsersPanel({ users }: Props) {
       if (kycFilter === 'review' && u.kycStatus !== 'Under Review') return false;
       if (kycFilter === 'verified' && u.kycStatus !== 'Verified') return false;
       if (kycFilter === 'rejected' && u.kycStatus !== 'Rejected') return false;
+      if (kycFilter === 'not' && u.kycStatus !== 'Not Submitted') return false;
       if (!q) return true;
       return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.phone.includes(q);
     });
   }, [users, search, kycFilter]);
 
-  const kycMutation = useMutation({
-    mutationFn: (payload: { user: User; kycStatus: string; kycRejectReason?: string }) =>
-      saveUser({
+  const openCheck = (u: User) => {
+    setDetail(u);
+    setForm(userToForm(u));
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: {
+      user: User;
+      kycStatus: string;
+      kycRejectReason?: string;
+      fields?: Partial<KycForm>;
+    }) => {
+      const f: KycForm = { ...form, ...payload.fields };
+      return saveUser({
         id: payload.user.id,
         name: payload.user.name,
         email: payload.user.email,
         phone: payload.user.phone,
         kycStatus: payload.kycStatus,
         kycRejectReason: payload.kycRejectReason || '',
-      }),
+        kycPan: f.kycPan.trim().toUpperCase(),
+        kycDemat: f.kycDemat.trim(),
+        bankAccount: f.bankAccount.trim(),
+        ifsc: f.ifsc.trim().toUpperCase(),
+      });
+    },
     onSuccess: (_, vars) => {
-      showToast(vars.kycStatus === 'Verified' ? 'KYC approved' : 'KYC rejected', 'success');
+      const msg =
+        vars.kycStatus === 'Verified'
+          ? 'KYC approved'
+          : vars.kycStatus === 'Rejected'
+            ? 'KYC rejected'
+            : 'KYC details saved';
+      showToast(msg, 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setDetail(null);
-      setRejectReason('');
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
+  const setField = (patch: Partial<KycForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  const approve = (user: User) => {
+    if (!confirm(`Approve KYC for ${user.name}?`)) return;
+    saveMutation.mutate({
+      user,
+      kycStatus: 'Verified',
+      fields: detail?.id === user.id ? form : userToForm(user),
+    });
+  };
+
+  const reject = (user: User) => {
+    const reason = (detail?.id === user.id ? form.rejectReason : user.kycRejectReason || '').trim();
+    if (!reason) {
+      showToast('Enter a rejection reason', 'warning');
+      if (detail?.id !== user.id) openCheck(user);
+      return;
+    }
+    if (!confirm(`Reject KYC for ${user.name}?`)) return;
+    saveMutation.mutate({
+      user,
+      kycStatus: 'Rejected',
+      kycRejectReason: reason,
+      fields: detail?.id === user.id ? form : { ...userToForm(user), rejectReason: reason },
+    });
+  };
+
+  const saveDetails = () => {
+    if (!detail) return;
+    saveMutation.mutate({
+      user: detail,
+      kycStatus: detail.kycStatus === 'Not Submitted' && form.kycPan ? 'Under Review' : detail.kycStatus,
+      kycRejectReason: form.rejectReason,
+      fields: form,
+    });
+  };
+
   return (
     <div>
-      <AdminSectionHeader compact title="Users & KYC" subtitle="Approve or reject KYC before initiating demat transfer" badge={`${users.length} users`} />
+      <AdminSectionHeader
+        compact
+        title="Users & KYC"
+        subtitle="Check KYC details, edit if needed, then approve or reject"
+        badge={`${users.length} users`}
+      />
 
       <div className="stock-list-toolbar">
         <input
@@ -61,6 +149,7 @@ export default function AdminUsersPanel({ users }: Props) {
         />
         <select className="report-filter-input" value={kycFilter} onChange={(e) => setKycFilter(e.target.value)}>
           <option value="all">All KYC statuses</option>
+          <option value="not">Not Submitted</option>
           <option value="review">Under Review</option>
           <option value="verified">Verified</option>
           <option value="rejected">Rejected</option>
@@ -70,28 +159,65 @@ export default function AdminUsersPanel({ users }: Props) {
       <div className="price-table-wrap">
         <table className="data-table">
           <thead>
-            <tr><th>Name</th><th>Email</th><th>Phone</th><th>KYC</th><th>PAN</th><th>Demat</th><th>Actions</th></tr>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>KYC</th>
+              <th>PAN</th>
+              <th>Demat</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
             {filtered.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
                 <td>{u.email}</td>
-                <td>{u.phone}</td>
+                <td>{u.phone || '—'}</td>
                 <td>
-                  <span className={`status-badge ${u.kycStatus === 'Verified' ? 'status-confirmed' : u.kycStatus === 'Rejected' ? 'status-cancelled' : 'status-pending'}`}>
+                  <span
+                    className={`status-badge ${
+                      u.kycStatus === 'Verified'
+                        ? 'status-confirmed'
+                        : u.kycStatus === 'Rejected'
+                          ? 'status-cancelled'
+                          : 'status-pending'
+                    }`}
+                  >
                     {u.kycStatus}
                   </span>
                 </td>
                 <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{u.kycPan || '—'}</td>
                 <td>{u.kycDemat ? `****${u.kycDemat.slice(-4)}` : '—'}</td>
-                <td style={{ whiteSpace: 'nowrap' }}>
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setDetail(u); setRejectReason(u.kycRejectReason || ''); }}>Review</button>
-                  {u.kycStatus === 'Under Review' && (
-                    <>
-                      <button type="button" className="btn btn-primary btn-sm" onClick={() => kycMutation.mutate({ user: u, kycStatus: 'Verified' })}>Approve</button>
-                    </>
-                  )}
+                <td>
+                  <div className="kyc-row-actions">
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => openCheck(u)}>
+                      Check KYC
+                    </button>
+                    {(u.kycStatus === 'Under Review' || u.kycStatus === 'Rejected' || (u.kycPan && u.kycStatus !== 'Verified')) && (
+                      <button
+                        type="button"
+                        className="btn btn-sm kyc-approve-btn"
+                        disabled={saveMutation.isPending}
+                        onClick={() => approve(u)}
+                      >
+                        Approve
+                      </button>
+                    )}
+                    {(u.kycStatus === 'Under Review' || u.kycStatus === 'Verified') && (
+                      <button
+                        type="button"
+                        className="btn btn-sm kyc-reject-btn"
+                        disabled={saveMutation.isPending}
+                        onClick={() => {
+                          openCheck(u);
+                        }}
+                      >
+                        Reject
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -108,47 +234,111 @@ export default function AdminUsersPanel({ users }: Props) {
       {detail && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
           <div className="modal-card admin-kyc-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{detail.name}</h3>
-            <p className="modal-subtitle">{detail.email} · {detail.phone}</p>
-            <div className="admin-drawer-grid" style={{ margin: '1rem 0' }}>
-              <div><span>PAN</span><strong>{detail.kycPan || '—'}</strong></div>
-              <div><span>Demat</span><strong>{detail.kycDemat || '—'}</strong></div>
-              <div><span>Bank</span><strong>{detail.bankAccount ? `****${detail.bankAccount.slice(-4)}` : '—'}</strong></div>
-              <div><span>IFSC</span><strong>{detail.ifsc || '—'}</strong></div>
+            <h3>Check KYC — {detail.name}</h3>
+            <p className="modal-subtitle">
+              {detail.email}
+              {detail.phone ? ` · ${detail.phone}` : ''}
+            </p>
+
+            <div className="kyc-status-line">
+              Status:{' '}
+              <span
+                className={`status-badge ${
+                  detail.kycStatus === 'Verified'
+                    ? 'status-confirmed'
+                    : detail.kycStatus === 'Rejected'
+                      ? 'status-cancelled'
+                      : 'status-pending'
+                }`}
+              >
+                {detail.kycStatus}
+              </span>
             </div>
-            <p>KYC status: <strong>{detail.kycStatus}</strong></p>
+
             {detail.kycRejectReason && (
-              <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Previous rejection: {detail.kycRejectReason}</p>
+              <p className="kyc-reject-note">Previous rejection: {detail.kycRejectReason}</p>
             )}
-            {detail.kycStatus === 'Under Review' && (
-              <>
-                <div className="form-group" style={{ marginTop: '1rem' }}>
-                  <label className="form-label">Rejection reason (if rejecting)</label>
-                  <input className="form-input" placeholder="e.g. Invalid PAN format" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
-                </div>
-                <button type="button" className="btn btn-primary btn-full" disabled={kycMutation.isPending} onClick={() => kycMutation.mutate({ user: detail, kycStatus: 'Verified' })}>
-                  Approve KYC
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-full mt-1"
-                  style={{ color: '#ef4444' }}
-                  disabled={kycMutation.isPending}
-                  onClick={() => {
-                    if (!rejectReason.trim()) {
-                      showToast('Enter a rejection reason', 'warning');
-                      return;
-                    }
-                    if (confirm('Reject this KYC submission?')) {
-                      kycMutation.mutate({ user: detail, kycStatus: 'Rejected', kycRejectReason: rejectReason.trim() });
-                    }
-                  }}
-                >
-                  Reject KYC
-                </button>
-              </>
-            )}
-            <button type="button" className="btn btn-ghost btn-full mt-1" onClick={() => setDetail(null)}>Close</button>
+
+            <p className="kyc-edit-hint">Edit fields if the user made a mistake, then Approve or Reject.</p>
+
+            <div className="form-group">
+              <label className="form-label">PAN</label>
+              <input
+                className="form-input"
+                value={form.kycPan}
+                onChange={(e) => setField({ kycPan: e.target.value.toUpperCase() })}
+                placeholder="ABCDE1234F"
+                maxLength={10}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Demat (16 digits)</label>
+              <input
+                className="form-input"
+                value={form.kycDemat}
+                onChange={(e) => setField({ kycDemat: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                placeholder="1234567890123456"
+                maxLength={16}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Bank account</label>
+              <input
+                className="form-input"
+                value={form.bankAccount}
+                onChange={(e) => setField({ bankAccount: e.target.value.replace(/\D/g, '') })}
+                placeholder="Account number"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">IFSC</label>
+              <input
+                className="form-input"
+                value={form.ifsc}
+                onChange={(e) => setField({ ifsc: e.target.value.toUpperCase() })}
+                placeholder="SBIN0001234"
+                maxLength={11}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Rejection reason (required only if rejecting)</label>
+              <input
+                className="form-input"
+                value={form.rejectReason}
+                onChange={(e) => setField({ rejectReason: e.target.value })}
+                placeholder="e.g. PAN does not match name on demat"
+              />
+            </div>
+
+            <div className="kyc-modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary btn-full"
+                disabled={saveMutation.isPending}
+                onClick={() => approve(detail)}
+              >
+                ✓ Approve KYC
+              </button>
+              <button
+                type="button"
+                className="btn btn-full kyc-reject-btn"
+                disabled={saveMutation.isPending}
+                onClick={() => reject(detail)}
+              >
+                ✕ Reject KYC
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-full"
+                disabled={saveMutation.isPending}
+                onClick={saveDetails}
+              >
+                Save details only
+              </button>
+              <button type="button" className="btn btn-ghost btn-full" onClick={() => setDetail(null)}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

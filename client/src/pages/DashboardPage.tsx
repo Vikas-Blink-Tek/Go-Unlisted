@@ -45,8 +45,27 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    if (!authLoading && !user) navigate('/login');
+    if (!authLoading && !user) {
+      navigate('/login', {
+        replace: true,
+        state: { from: '/dashboard', reason: 'portfolio' },
+      });
+    }
   }, [user, authLoading, navigate]);
+
+  if (authLoading) {
+    return (
+      <div className="view" id="view-dashboard">
+        <div className="page-header">
+          <p className="page-subtitle">Loading your portfolio…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   useEffect(() => {
     if (user) {

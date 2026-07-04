@@ -1,6 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import PriceChart from '../components/shares/PriceChart';
+import CompanyLogo from '../components/shares/CompanyLogo';
 import { useShares } from '../hooks/useShares';
 import { formatCurrency } from '../utils/format';
 import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
@@ -34,6 +35,26 @@ export default function ShareDetailPage() {
   const onRequest = isShareOnRequest(share.inventoryStatus);
   const invBadge = getInventoryBadge(share.inventoryStatus);
 
+  /** All key-data fields optional except price & lot — empty shows N/A (client request) */
+  const na = (v?: string | number | null) => {
+    if (v === null || v === undefined || v === '') return 'N/A';
+    return String(v);
+  };
+  const fundamentals: { label: string; value: string }[] = [
+    { label: 'Indicative price', value: formatCurrency(share.price) },
+    { label: 'Lot size', value: share.minQty.toLocaleString('en-IN') },
+    { label: '52-wk high', value: na(share.week52High) },
+    { label: '52-wk low', value: na(share.week52Low) },
+    { label: 'Market cap', value: na(share.marketCap || share.valuation) },
+    { label: 'P/E ratio', value: na(share.peRatio) },
+    { label: 'P/B ratio', value: na(share.pbRatio) },
+    { label: 'Debt / Equity', value: na(share.debtEquity) },
+    { label: 'ROE', value: na(share.roe) },
+    { label: 'Book value', value: na(share.bookValue) },
+    { label: 'Face value', value: na(share.faceValue) },
+    { label: 'ISIN', value: na(share.isin) },
+  ];
+
   return (
     <div className="view" id="view-detail">
       <div className="detail-page-wrap">
@@ -48,16 +69,17 @@ export default function ShareDetailPage() {
           </div>
           <div className="detail-hero-price">
             <strong>{formatCurrency(share.price)}</strong>
-            <span className={`detail-yoy ${share.changePositive ? 'pos' : 'neg'}`}>{share.growth} YoY</span>
+            {share.growth && <span className={`detail-yoy ${share.changePositive ? 'pos' : 'neg'}`}>{share.growth} YoY</span>}
           </div>
         </div>
 
         <div className="detail-company-header" style={{ marginBottom: '1rem' }}>
-          <div className="detail-logo" style={{ background: share.logoGradient }}>{share.logoInitials}</div>
+          <CompanyLogo share={share} className="detail-logo" />
           <div>
             <h1 className="detail-title">{share.name}</h1>
             <div className="detail-subtitle">
               {share.ticker}
+              {share.listingType && <span style={{ marginLeft: 8 }}>{share.listingType}</span>}
               {invBadge && <span className={`inventory-badge inventory-${invBadge.toLowerCase().replace(/\s+/g, '-')}`} style={{ marginLeft: 8 }}>{invBadge}</span>}
             </div>
           </div>
@@ -65,37 +87,25 @@ export default function ShareDetailPage() {
 
         <p className="detail-desc">{share.description}</p>
 
-        {(share.keyHighlights?.length || share.ipoTimeline) && (
+        {share.keyHighlights && share.keyHighlights.length > 0 && (
           <div className="detail-extra-block">
-            {share.ipoTimeline && (
-              <div className="detail-ipo-banner">
-                <span className="detail-ipo-label">{share.listingType || 'Pre-IPO'}</span>
-                <strong>{share.ipoTimeline}</strong>
-                {share.lockInMonths ? <span className="detail-ipo-lock">· {share.lockInMonths}mo post-IPO lock-in may apply</span> : null}
+            <ul className="detail-highlights">
+              {share.keyHighlights.map((h) => <li key={h}>{h}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <div className="detail-fundamentals">
+          <div className="detail-fundamentals-label">Key Data</div>
+          <div className="detail-fundamentals-grid">
+            {fundamentals.map((f) => (
+              <div key={f.label} className="detail-fundamentals-item">
+                <span>{f.label}</span>
+                <strong className={f.value === 'N/A' ? 'is-na' : undefined}>{f.value}</strong>
               </div>
-            )}
-            {share.keyHighlights && share.keyHighlights.length > 0 && (
-              <ul className="detail-highlights">
-                {share.keyHighlights.map((h) => <li key={h}>{h}</li>)}
-              </ul>
-            )}
+            ))}
           </div>
-        )}
-
-        <ul className="detail-meta-list">
-          <li><span>Founded</span><strong>{share.founded}</strong></li>
-          <li><span>Revenue</span><strong>{share.revenue}</strong></li>
-          <li><span>Valuation</span><strong>{share.valuation}</strong></li>
-          <li><span>Min Investment</span><strong>{formatCurrency(share.price * share.minQty)}</strong></li>
-          {share.inventoryStatus && <li><span>Availability</span><strong>{share.inventoryStatus}</strong></li>}
-        </ul>
-
-        {share.riskNotes && (
-          <div className="detail-risk-box">
-            <strong>Investment risks</strong>
-            <p>{share.riskNotes}</p>
-          </div>
-        )}
+        </div>
 
         <div className="chart-section">
           <div className="chart-header">

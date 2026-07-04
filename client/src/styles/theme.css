@@ -1025,6 +1025,21 @@ ul {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.14);
   letter-spacing: 0.5px;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.company-logo--img {
+  padding: 0;
+  text-shadow: none;
+  background: #fff !important;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.company-logo--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .company-name {

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../hooks/useSiteSettings';
 import type { LegalModalType } from './LegalModal';
 import { whatsappUrl } from '../../utils/whatsapp';
@@ -36,6 +37,7 @@ type Props = {
 };
 
 export default function SiteFooter({ onLegalOpen }: Props) {
+  const { user } = useAuth();
   const { settings } = useSiteSettings();
 
   const email = settings.email;
@@ -66,7 +68,13 @@ export default function SiteFooter({ onLegalOpen }: Props) {
             <div className="footer-links">
               <Link to="/shares" className="footer-link">Browse Shares</Link>
               <Link to="/about" className="footer-link">How It Works</Link>
-              <Link to="/dashboard" className="footer-link">Portfolio</Link>
+              <Link
+                to={user ? '/dashboard' : '/login'}
+                state={user ? undefined : { from: '/dashboard', reason: 'portfolio' }}
+                className="footer-link"
+              >
+                Portfolio
+              </Link>
               <Link to="/login" className="footer-link">Login / Register</Link>
             </div>
           </div>

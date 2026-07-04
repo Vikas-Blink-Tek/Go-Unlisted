@@ -6,7 +6,13 @@ export function getOrders() {
 }
 
 export function saveOrder(order: Record<string, unknown>) {
-  return apiRequest<{ success: boolean }>('saveOrder', 'POST', order);
+  return apiRequest<{
+    success: boolean;
+    orderId?: string;
+    transactionId?: string;
+    status?: string;
+    totalPaid?: number;
+  }>('saveOrder', 'POST', order);
 }
 
 export function updateOrderStatus(orderId: string, status: string, opsNote?: string) {

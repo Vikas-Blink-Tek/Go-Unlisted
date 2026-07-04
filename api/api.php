@@ -83,6 +83,10 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE employees ADD COLUMN employee_id VARCHAR(50) UNIQUE AFTER id");
     }
+    $res = $conn->query("SHOW COLUMNS FROM employees LIKE 'permissions'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE employees ADD COLUMN permissions TEXT NULL");
+    }
     
     $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'transaction_id'");
     if ($res && $res->num_rows === 0) {
@@ -190,6 +194,9 @@ function autoMigrateSchema($conn) {
         'risk_notes' => 'TEXT',
         'lock_in_months' => 'INT DEFAULT 6',
         'is_featured' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'isin' => "VARCHAR(20) DEFAULT ''",
+        'logo_url' => "VARCHAR(255) DEFAULT ''",
+        'fundamentals' => 'TEXT',
     ];
     foreach ($shareCols as $col => $def) {
         $res = $conn->query("SHOW COLUMNS FROM shares LIKE '$col'");
@@ -370,6 +377,54 @@ function requireMasterAdmin() {
         echo json_encode(["error" => "Forbidden. Master Admin privileges required."]);
         exit;
     }
+}
+
+/** Default permissions for new employees (orders pipeline only). */
+function defaultEmployeePermissions(): array {
+    return ['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund', 'users'];
+}
+
+function parseEmployeePermissions($raw): array {
+    if (is_array($raw)) {
+        return array_values(array_unique(array_filter(array_map('strval', $raw))));
+    }
+    if (is_string($raw) && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return array_values(array_unique(array_filter(array_map('strval', $decoded))));
+        }
+    }
+    return defaultEmployeePermissions();
+}
+
+function adminCan(string $permission): bool {
+    if (!empty($_SESSION['is_master'])) {
+        return true;
+    }
+    $perms = $_SESSION['admin_permissions'] ?? [];
+    if (!is_array($perms)) {
+        $perms = [];
+    }
+    return in_array($permission, $perms, true) || in_array('*', $perms, true);
+}
+
+function requirePermission(string $permission): void {
+    requireAdmin();
+    if (!adminCan($permission)) {
+        http_response_code(403);
+        sendResponse(["error" => "You do not have permission for this action"]);
+    }
+}
+
+function requireAnyPermission(array $permissions): void {
+    requireAdmin();
+    foreach ($permissions as $permission) {
+        if (adminCan((string) $permission)) {
+            return;
+        }
+    }
+    http_response_code(403);
+    sendResponse(["error" => "You do not have permission for this action"]);
 }
 
 function requireAuth() {
@@ -661,7 +716,7 @@ switch ($action) {
         $email = $data['email'] ?? '';
         $password = $data['password'] ?? '';
 
-        $stmt = $conn->prepare("SELECT id, password, is_master, name, employee_id FROM employees WHERE email = ? OR employee_id = ?");
+        $stmt = $conn->prepare("SELECT id, password, is_master, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?");
         $stmt->bind_param("ss", $email, $email);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -673,13 +728,18 @@ switch ($action) {
                 $_SESSION['admin_id'] = $row['id'];
                 $_SESSION['is_master'] = $row['is_master'];
                 $_SESSION['employee_id'] = $row['employee_id'] ?? '';
+                $perms = !empty($row['is_master'])
+                    ? ['*']
+                    : parseEmployeePermissions($row['permissions'] ?? '');
+                $_SESSION['admin_permissions'] = $perms;
                 logAudit($conn, 'Admin Login', $row['id'], []);
                 sendResponse([
                     "success" => true,
                     "id" => $row['id'],
                     "isMaster" => (bool)$row['is_master'],
                     "name" => $row['name'],
-                    "employeeId" => $row['employee_id'] ?? ''
+                    "employeeId" => $row['employee_id'] ?? '',
+                    "permissions" => $perms,
                 ]);
             }
         }
@@ -741,11 +801,17 @@ switch ($action) {
 
     case 'checkAuth':
         if (isset($_SESSION['admin_id'])) {
+            $perms = !empty($_SESSION['is_master'])
+                ? ['*']
+                : (is_array($_SESSION['admin_permissions'] ?? null)
+                    ? $_SESSION['admin_permissions']
+                    : defaultEmployeePermissions());
             sendResponse([
                 "authenticated" => true,
                 "type" => "admin",
                 "id" => $_SESSION['admin_id'],
                 "isMaster" => !empty($_SESSION['is_master']),
+                "permissions" => $perms,
                 "csrfToken" => ensureCsrfToken(),
             ]);
         } else if (isset($_SESSION['user_id'])) {
@@ -792,37 +858,56 @@ switch ($action) {
     // EMPLOYEES (Admin Only)
     // -----------------------------------------
     case 'getEmployees':
-        requireAdmin();
-        $res = $conn->query("SELECT id, employee_id, name, email, is_master, created_at FROM employees");
+        requireMasterAdmin();
+        $res = $conn->query("SELECT id, employee_id, name, email, is_master, permissions, created_at FROM employees");
         $data = [];
-        while($row = $res->fetch_assoc()) { 
-            // Never return password hashes
-            $data[] = $row; 
+        while ($row = $res->fetch_assoc()) {
+            $row['permissions'] = !empty($row['is_master'])
+                ? ['*']
+                : parseEmployeePermissions($row['permissions'] ?? '');
+            $data[] = $row;
         }
         sendResponse($data);
         break;
 
     case 'saveEmployee':
-        requireAdmin();
+        requireMasterAdmin();
         $data = getPostData();
         $id = !empty($data['id']) ? $data['id'] : 'emp-' . uniqid();
         $name = htmlspecialchars($data['name']);
         $email = htmlspecialchars($data['email']);
         $employee_id = htmlspecialchars($data['employeeId'] ?? '');
-        
-        $stmtCheck = $conn->prepare("SELECT id FROM employees WHERE id=?");
+        $permissionsJson = json_encode(parseEmployeePermissions($data['permissions'] ?? defaultEmployeePermissions()));
+
+        $stmtCheck = $conn->prepare("SELECT id, is_master FROM employees WHERE id=?");
         $stmtCheck->bind_param("s", $id);
         $stmtCheck->execute();
-        $exists = $stmtCheck->get_result()->num_rows > 0;
+        $existingEmp = $stmtCheck->get_result()->fetch_assoc();
+        $exists = (bool) $existingEmp;
+
+        // Never change master permissions via this form
+        if ($exists && !empty($existingEmp['is_master'])) {
+            $permissionsJson = null;
+        }
 
         if ($exists) {
             if (!empty($data['password'])) {
                 $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, password=? WHERE id=?");
-                $stmt->bind_param("sssss", $name, $email, $employee_id, $hashed, $id);
+                if ($permissionsJson !== null) {
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, password=?, permissions=? WHERE id=? AND is_master=0");
+                    $stmt->bind_param("ssssss", $name, $email, $employee_id, $hashed, $permissionsJson, $id);
+                } else {
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, password=? WHERE id=?");
+                    $stmt->bind_param("sssss", $name, $email, $employee_id, $hashed, $id);
+                }
             } else {
-                $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=? WHERE id=?");
-                $stmt->bind_param("ssss", $name, $email, $employee_id, $id);
+                if ($permissionsJson !== null) {
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, permissions=? WHERE id=? AND is_master=0");
+                    $stmt->bind_param("sssss", $name, $email, $employee_id, $permissionsJson, $id);
+                } else {
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=? WHERE id=?");
+                    $stmt->bind_param("ssss", $name, $email, $employee_id, $id);
+                }
             }
             if (!$stmt->execute()) {
                 http_response_code(400);
@@ -834,8 +919,8 @@ switch ($action) {
                 sendResponse(["error" => "Password must be at least 6 characters"]);
             }
             $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO employees (id, name, email, employee_id, password) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("sssss", $id, $name, $email, $employee_id, $hashed);
+            $stmt = $conn->prepare("INSERT INTO employees (id, name, email, employee_id, password, permissions, is_master) VALUES (?, ?, ?, ?, ?, ?, 0)");
+            $stmt->bind_param("ssssss", $id, $name, $email, $employee_id, $hashed, $permissionsJson);
             if (!$stmt->execute()) {
                 http_response_code(400);
                 sendResponse(["error" => "Failed to add employee. Email or Employee ID may already exist."]);
@@ -845,10 +930,10 @@ switch ($action) {
         break;
 
     case 'deleteEmployee':
-        requireAdmin();
+        requireMasterAdmin();
         $data = getPostData();
         $id = $data['id'];
-        $stmt = $conn->prepare("DELETE FROM employees WHERE id=? AND is_master=0"); // Protect master admin
+        $stmt = $conn->prepare("DELETE FROM employees WHERE id=? AND is_master=0");
         $stmt->bind_param("s", $id);
         $stmt->execute();
         sendResponse(["success" => true]);
@@ -858,7 +943,7 @@ switch ($action) {
     // USERS (Admin Only or Self)
     // -----------------------------------------
     case 'getUsers':
-        requireAdmin();
+        requirePermission('users');
         $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users");
         $data = [];
         while($row = $res->fetch_assoc()) { $data[] = $row; }
@@ -878,6 +963,9 @@ switch ($action) {
         if ($exists && !isset($_SESSION['admin_id']) && (!isset($_SESSION['user_id']) || $_SESSION['user_id'] !== $id)) {
             http_response_code(403);
             sendResponse(["error" => "Forbidden"]);
+        }
+        if ($exists && isset($_SESSION['admin_id'])) {
+            requirePermission('users');
         }
 
         // SEC 1 FIX: Force role to 'user' for non-admin callers
@@ -1018,6 +1106,7 @@ switch ($action) {
         requireAuth();
         // If user is not admin, only return their own orders
         if (isset($_SESSION['admin_id'])) {
+            requireAnyPermission(['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund']);
             $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
         } else {
             $stmt = $conn->prepare("SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC");
@@ -1047,14 +1136,13 @@ switch ($action) {
                 "total" => (float)$row['total_amount'],
                 "status" => htmlspecialchars($row['status']),
                 "method" => htmlspecialchars($row['method']),
-                "buyerPAN" => htmlspecialchars($row['transaction_id'] ?? ''),
-                "buyerDemat" => '',
-                "clientId" => '',
-                "source" => '',
                 "paymentMethod" => htmlspecialchars($row['method']),
                 "transactionId" => htmlspecialchars($row['transaction_id'] ?? ''),
+                "utr" => htmlspecialchars($row['transaction_id'] ?? ''),
                 "orderSource" => htmlspecialchars($row['order_source'] ?? 'Online'),
-                "date" => $row['created_at']
+                "opsNote" => htmlspecialchars($row['ops_note'] ?? ''),
+                "date" => $row['created_at'],
+                "userId" => htmlspecialchars($row['user_id'] ?? ''),
             ];
         }
         sendResponse($data);
@@ -1062,87 +1150,196 @@ switch ($action) {
 
     case 'saveOrder':
         $data = getPostData();
-        $order_id = $data['orderId'] ?? '';
-        
-        // A01: Validate order_id format
-        if (!preg_match('/^GU[A-Z0-9]{5,15}$/', $order_id)) {
+        $order_id = trim($data['orderId'] ?? '');
+
+        if (!preg_match('/^GU[A-Z0-9]{5,20}$/', $order_id)) {
             http_response_code(400);
             sendResponse(["error" => "Invalid Order ID format"]);
+            break;
         }
 
         $isAdmin = isset($_SESSION['admin_id']);
         $isUser = isset($_SESSION['user_id']);
-        
-        $buyer_name = htmlspecialchars($data['buyerName'] ?? '');
-        $buyer_email = htmlspecialchars($data['buyerEmail'] ?? '');
-        $buyer_phone = htmlspecialchars($data['buyerPhone'] ?? '');
-        $share_id = htmlspecialchars($data['shareId'] ?? '');
-        $share_name = htmlspecialchars($data['companyName'] ?? $data['shareName'] ?? '');
-        $share_ticker = htmlspecialchars($data['shareTicker'] ?? '');
-        $price_per_share = (float)($data['pricePerShare'] ?? 0);
-        
-        $priceStmt = $conn->prepare("SELECT base_price FROM shares WHERE share_id = ? AND is_active = 1");
-        $priceStmt->bind_param("s", $share_id);
-        $priceStmt->execute();
-        $priceResult = $priceStmt->get_result();
-        if ($priceRow = $priceResult->fetch_assoc()) {
-            $price_per_share = (float)$priceRow['base_price'];
-        } else {
-            $priceStmt = $conn->prepare("SELECT base_price FROM shares_config WHERE share_id = ?");
-            $priceStmt->bind_param("s", $share_id);
-            $priceStmt->execute();
-            $priceResult = $priceStmt->get_result();
-            if ($priceRow = $priceResult->fetch_assoc()) {
-                $price_per_share = (float)$priceRow['base_price'];
-            }
-        }
-        
-        $quantity = (int)($data['qty'] ?? 0);
-        $subtotal = $price_per_share * $quantity;
-        $platformFee = round($subtotal * 0.01);
-        $total_amount = $subtotal + $platformFee;
-        $method = htmlspecialchars($data['method'] ?? $data['paymentMethod'] ?? 'Online');
-        $status = htmlspecialchars($data['status'] ?? 'Pending Verification');
-        $transaction_id = htmlspecialchars($data['transactionId'] ?? '');
-        $order_source = htmlspecialchars($data['orderSource'] ?? $data['source'] ?? 'Online');
 
-        $stmtCheck = $conn->prepare("SELECT order_id FROM orders WHERE order_id=?");
+        $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status FROM orders WHERE order_id=?");
         $stmtCheck->bind_param("s", $order_id);
         $stmtCheck->execute();
-        
-        if ($stmtCheck->get_result()->num_rows > 0) {
-            requireAdmin();
-            if (!empty($data['_fullUpdate'])) {
-                $stmt = $conn->prepare("UPDATE orders SET buyer_name=?, buyer_phone=?, share_name=?, price_per_share=?, quantity=?, total_amount=?, method=?, status=?, transaction_id=?, order_source=? WHERE order_id=?");
-                $stmt->bind_param("sssdiidssss", $buyer_name, $buyer_phone, $share_name, $price_per_share, $quantity, $total_amount, $method, $status, $transaction_id, $order_source, $order_id);
+        $existingOrder = $stmtCheck->get_result()->fetch_assoc();
+
+        // Admin status update only — never wipe UTR
+        if ($existingOrder) {
+            requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
+            $status = trim($data['status'] ?? $existingOrder['status']);
+            $ops_note = trim($data['opsNote'] ?? $data['ops_note'] ?? '');
+            $transaction_id = trim($data['transactionId'] ?? '');
+            // Keep existing UTR unless admin explicitly sends a new one
+            if ($transaction_id === '') {
+                $transaction_id = $existingOrder['transaction_id'] ?? '';
+            }
+
+            if ($ops_note !== '') {
+                $stmt = $conn->prepare("UPDATE orders SET status=?, transaction_id=?, ops_note=? WHERE order_id=?");
+                $stmt->bind_param("ssss", $status, $transaction_id, $ops_note, $order_id);
             } else {
-                $ops_note = htmlspecialchars($data['opsNote'] ?? $data['ops_note'] ?? '');
-                if ($ops_note !== '') {
-                    $stmt = $conn->prepare("UPDATE orders SET status=?, transaction_id=?, ops_note=? WHERE order_id=?");
-                    $stmt->bind_param("ssss", $status, $transaction_id, $ops_note, $order_id);
-                } else {
-                    $stmt = $conn->prepare("UPDATE orders SET status=?, transaction_id=? WHERE order_id=?");
-                    $stmt->bind_param("sss", $status, $transaction_id, $order_id);
-                }
+                $stmt = $conn->prepare("UPDATE orders SET status=?, transaction_id=? WHERE order_id=?");
+                $stmt->bind_param("sss", $status, $transaction_id, $order_id);
             }
-            $stmt->execute();
-            logAudit($conn, 'Update Order', $_SESSION['admin_id'], ['orderId' => $order_id, 'status' => $status]);
-        } else {
-            if ($isUser) {
-                $user_id = $_SESSION['user_id'];
-            } elseif ($isAdmin) {
-                $user_id = 'admin:' . $_SESSION['admin_id'];
-            } else {
-                $user_id = 'guest';
+            if (!$stmt->execute()) {
+                http_response_code(500);
+                sendResponse(["error" => "Failed to update order"]);
+                break;
             }
-            $stmt = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssssssdidssss", $order_id, $user_id, $buyer_name, $buyer_email, $buyer_phone, $share_id, $share_name, $share_ticker, $price_per_share, $quantity, $total_amount, $method, $transaction_id, $status, $order_source);
-            $stmt->execute();
-            if ($isAdmin) {
-                logAudit($conn, 'Create Order', $_SESSION['admin_id'], ['orderId' => $order_id, 'source' => $order_source]);
-            }
+            logAudit($conn, 'Update Order', $_SESSION['admin_id'], [
+                'orderId' => $order_id,
+                'status' => $status,
+                'utr' => $transaction_id,
+            ]);
+            sendResponse([
+                "success" => true,
+                "orderId" => $order_id,
+                "transactionId" => $transaction_id,
+                "status" => $status,
+            ]);
+            break;
         }
-        sendResponse(["success" => true]);
+
+        // New order from checkout (user or guest)
+        $buyer_name = trim($data['buyerName'] ?? '');
+        $buyer_email = strtolower(trim($data['buyerEmail'] ?? ''));
+        $buyer_phone = preg_replace('/\D/', '', $data['buyerPhone'] ?? '');
+        if (strlen($buyer_phone) > 10) {
+            $buyer_phone = substr($buyer_phone, -10);
+        }
+        $share_id = trim($data['shareId'] ?? '');
+        $share_name = trim($data['companyName'] ?? $data['shareName'] ?? '');
+        $share_ticker = trim($data['shareTicker'] ?? '');
+        $price_per_share = (float) ($data['pricePerShare'] ?? 0);
+        $quantity = (int) ($data['qty'] ?? 0);
+        $method = trim($data['method'] ?? $data['paymentMethod'] ?? 'Online');
+        $status = 'Pending Verification';
+        $transaction_id = strtoupper(preg_replace('/\s+/', '', trim($data['transactionId'] ?? '')));
+        $order_source = trim($data['orderSource'] ?? $data['source'] ?? 'Online');
+
+        if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
+            $buyer_name = $buyer_email !== '' ? explode('@', $buyer_email)[0] : ($buyer_phone !== '' ? 'Buyer ' . substr($buyer_phone, -4) : 'Buyer');
+        }
+        if ($buyer_email === '' && $buyer_phone === '') {
+            http_response_code(400);
+            sendResponse(["error" => "Email or phone is required so we can contact you"]);
+            break;
+        }
+        if ($buyer_email !== '' && !isValidEmail($buyer_email)) {
+            http_response_code(400);
+            sendResponse(["error" => "Invalid email address"]);
+            break;
+        }
+        if ($share_id === '' || $share_name === '' || $quantity < 1) {
+            http_response_code(400);
+            sendResponse(["error" => "Invalid share or quantity"]);
+            break;
+        }
+        if (strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+            http_response_code(400);
+            sendResponse(["error" => "Enter a valid UTR / transaction ID (6–30 characters)"]);
+            break;
+        }
+
+        // Server-side price from catalog when available
+        $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty FROM shares WHERE share_id = ? AND is_active = 1");
+        $priceStmt->bind_param("s", $share_id);
+        $priceStmt->execute();
+        $priceRow = $priceStmt->get_result()->fetch_assoc();
+        if ($priceRow) {
+            $price_per_share = (float) $priceRow['base_price'];
+            if ($share_name === '') {
+                $share_name = $priceRow['name'];
+            }
+            if ($share_ticker === '') {
+                $share_ticker = $priceRow['ticker'];
+            }
+            $minQty = (int) ($priceRow['min_qty'] ?? 1);
+            if ($quantity < $minQty) {
+                http_response_code(400);
+                sendResponse(["error" => "Minimum quantity is $minQty shares"]);
+                break;
+            }
+        } elseif ($price_per_share <= 0) {
+            http_response_code(400);
+            sendResponse(["error" => "Share price unavailable"]);
+            break;
+        }
+
+        // Block duplicate UTR (same payment submitted twice)
+        $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
+        $dupUtr->bind_param("s", $transaction_id);
+        $dupUtr->execute();
+        if ($dupUtr->get_result()->num_rows > 0) {
+            http_response_code(409);
+            sendResponse(["error" => "This UTR is already registered. Contact support if you need help."]);
+            break;
+        }
+
+        $subtotal = $price_per_share * $quantity;
+        $platformFee = (int) round($subtotal * 0.01);
+        $total_amount = $subtotal + $platformFee;
+
+        // Online checkout requires a logged-in user (admin manual orders still allowed)
+        if ($isUser) {
+            $user_id = $_SESSION['user_id'];
+        } elseif ($isAdmin) {
+            $user_id = 'admin:' . $_SESSION['admin_id'];
+        } else {
+            http_response_code(401);
+            sendResponse(["error" => "Login or sign up is required to place an order"]);
+            break;
+        }
+
+        $buyer_name = htmlspecialchars($buyer_name);
+        $buyer_email = htmlspecialchars($buyer_email);
+        $buyer_phone = htmlspecialchars($buyer_phone);
+        $share_id = htmlspecialchars($share_id);
+        $share_name = htmlspecialchars($share_name);
+        $share_ticker = htmlspecialchars($share_ticker);
+        $method = htmlspecialchars($method);
+        $transaction_id = htmlspecialchars($transaction_id);
+        $order_source = htmlspecialchars($order_source);
+
+        $stmt = $conn->prepare(
+            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->bind_param(
+            "ssssssssdidssss",
+            $order_id,
+            $user_id,
+            $buyer_name,
+            $buyer_email,
+            $buyer_phone,
+            $share_id,
+            $share_name,
+            $share_ticker,
+            $price_per_share,
+            $quantity,
+            $total_amount,
+            $method,
+            $transaction_id,
+            $status,
+            $order_source
+        );
+        if (!$stmt->execute()) {
+            error_log('saveOrder INSERT failed: ' . $stmt->error);
+            http_response_code(500);
+            sendResponse(["error" => "Could not place order. Please try again."]);
+            break;
+        }
+
+        sendResponse([
+            "success" => true,
+            "orderId" => $order_id,
+            "transactionId" => $transaction_id,
+            "status" => $status,
+            "totalPaid" => $total_amount,
+        ]);
         break;
 
     case 'saveInitiatedCheckout':
@@ -1169,7 +1366,7 @@ switch ($action) {
         break;
 
     case 'getInitiatedCheckouts':
-        requireAdmin();
+        requirePermission('initiated');
         $res = $conn->query("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC");
         $rows = [];
         while ($row = $res->fetch_assoc()) {
@@ -1193,7 +1390,7 @@ switch ($action) {
         break;
 
     case 'deleteInitiatedCheckout':
-        requireAdmin();
+        requirePermission('initiated');
         $data = getPostData();
         $session_id = htmlspecialchars($data['sessionId'] ?? '');
         $stmt = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");
@@ -1203,7 +1400,7 @@ switch ($action) {
         break;
 
     case 'approveInitiatedCheckout':
-        requireAdmin();
+        requireAnyPermission(['initiated', 'pending', 'manual-order']);
         $data = getPostData();
         $session_id = htmlspecialchars($data['sessionId'] ?? '');
         $stmt = $conn->prepare("SELECT * FROM initiated_checkouts WHERE session_id = ?");
@@ -1242,7 +1439,7 @@ switch ($action) {
         break;
 
     case 'saveShare':
-        requireAdmin();
+        requirePermission('prices');
         $data = getPostData();
         $share_id = preg_replace('/[^a-z0-9-]/', '', strtolower($data['id'] ?? $data['shareId'] ?? ''));
         $name = trim($data['name'] ?? '');
@@ -1258,14 +1455,22 @@ switch ($action) {
         $change_positive = !empty($data['changePositive']) ? 1 : 0;
         $logo_initials = strtoupper(substr(trim($data['logoInitials'] ?? ''), 0, 3));
         $logo_gradient = trim($data['logoGradient'] ?? 'linear-gradient(135deg, #003478, #0050a8)');
+        $logo_url = trim($data['logoUrl'] ?? '');
+        if ($logo_url !== '' && !preg_match('#^uploads/shares/[a-zA-Z0-9._-]+$#', $logo_url)) {
+            $logo_url = '';
+        }
         $sector_color = trim($data['sectorColor'] ?? '#7ac142');
         $listing_type = trim($data['listingType'] ?? 'Pre-IPO');
-        $ipo_timeline = trim($data['ipoTimeline'] ?? '');
+        $ipo_timeline = '';
         $buy_price = isset($data['buyPrice']) && $data['buyPrice'] !== '' && $data['buyPrice'] !== null
             ? (float) $data['buyPrice'] : null;
         $inventory_status = trim($data['inventoryStatus'] ?? 'In Stock');
-        $risk_notes = trim($data['riskNotes'] ?? '');
-        $lock_in_months = max(0, (int) ($data['lockInMonths'] ?? 6));
+        $isin = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim($data['isin'] ?? '')));
+        if (strlen($isin) > 20) {
+            $isin = substr($isin, 0, 20);
+        }
+        $risk_notes = '';
+        $lock_in_months = 0;
         $is_featured = !empty($data['isFeatured']) ? 1 : 0;
         $highlights = $data['keyHighlights'] ?? [];
         if (is_string($highlights)) {
@@ -1273,16 +1478,48 @@ switch ($action) {
         }
         $key_highlights = json_encode(is_array($highlights) ? $highlights : []);
 
+        // Optional key-data metrics (all optional — empty = N/A on public site)
+        $fundamentals = json_encode([
+            'week52High' => trim($data['week52High'] ?? ''),
+            'week52Low' => trim($data['week52Low'] ?? ''),
+            'marketCap' => trim($data['marketCap'] ?? ''),
+            'peRatio' => trim($data['peRatio'] ?? ''),
+            'pbRatio' => trim($data['pbRatio'] ?? ''),
+            'debtEquity' => trim($data['debtEquity'] ?? ''),
+            'roe' => trim($data['roe'] ?? ''),
+            'bookValue' => trim($data['bookValue'] ?? ''),
+            'faceValue' => trim($data['faceValue'] ?? ''),
+        ]);
+
         if (!$share_id && $name) {
             $share_id = 'custom-' . preg_replace('/[^a-z0-9]+/', '-', strtolower($name)) . '-' . substr(uniqid(), -5);
         }
 
-        if (!$share_id || strlen($name) < 2 || strlen($ticker) < 2 || !$sector || $base_price <= 0 || !$logo_initials) {
+        if ($logo_initials === '' && $name !== '') {
+            $parts = preg_split('/\s+/', $name) ?: [];
+            $logo_initials = '';
+            foreach ($parts as $part) {
+                if ($part === '') {
+                    continue;
+                }
+                $logo_initials .= strtoupper(substr($part, 0, 1));
+                if (strlen($logo_initials) >= 2) {
+                    break;
+                }
+            }
+            if ($logo_initials === '') {
+                $logo_initials = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $name) ?: 'GU', 0, 2));
+            }
+        }
+
+        if (!$share_id || strlen($name) < 2 || strlen($ticker) < 2 || !$sector || $base_price <= 0) {
             sendResponse(["error" => "Missing or invalid share fields"], 400);
             break;
         }
 
-        $price_history = json_encode($data['priceHistory'] ?? defaultPriceHistory($base_price));
+        // Always rebuild indicative chart from sell price + trend + growth
+        $growthFrac = parseGrowthFraction($growth);
+        $price_history = json_encode(defaultPriceHistory($base_price, (bool) $change_positive, $growthFrac));
         $chart_labels = json_encode($data['chartLabels'] ?? defaultChartLabels());
 
         $check = $conn->prepare("SELECT share_id, is_builtin FROM shares WHERE share_id = ?");
@@ -1292,10 +1529,10 @@ switch ($action) {
 
         if ($existing) {
             $stmt = $conn->prepare(
-                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, buy_price=?, inventory_status=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_active=1 WHERE share_id=?"
+                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, logo_url=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, buy_price=?, inventory_status=?, isin=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_active=1 WHERE share_id=?"
             );
             $stmt->bind_param(
-                'sssssdisisssissssssdsssiis',
+                'ssssdisisssisssssssdssssiis',
                 $name,
                 $ticker,
                 $sector,
@@ -1310,12 +1547,14 @@ switch ($action) {
                 $change_positive,
                 $logo_initials,
                 $logo_gradient,
+                $logo_url,
                 $price_history,
                 $chart_labels,
                 $listing_type,
                 $ipo_timeline,
                 $buy_price,
                 $inventory_status,
+                $isin,
                 $key_highlights,
                 $risk_notes,
                 $lock_in_months,
@@ -1324,11 +1563,11 @@ switch ($action) {
             );
         } else {
             $stmt = $conn->prepare(
-                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, price_history, chart_labels, listing_type, ipo_timeline, buy_price, inventory_status, key_highlights, risk_notes, lock_in_months, is_featured, is_builtin, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
+                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, logo_url, price_history, chart_labels, listing_type, ipo_timeline, buy_price, inventory_status, isin, key_highlights, risk_notes, lock_in_months, is_featured, is_builtin, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
             );
             $stmt->bind_param(
-                'sssssdisisssissssssdsssii',
+                'sssssdisisssisssssssdssssii',
                 $share_id,
                 $name,
                 $ticker,
@@ -1344,12 +1583,14 @@ switch ($action) {
                 $change_positive,
                 $logo_initials,
                 $logo_gradient,
+                $logo_url,
                 $price_history,
                 $chart_labels,
                 $listing_type,
                 $ipo_timeline,
                 $buy_price,
                 $inventory_status,
+                $isin,
                 $key_highlights,
                 $risk_notes,
                 $lock_in_months,
@@ -1362,13 +1603,19 @@ switch ($action) {
             break;
         }
 
+        $fundStmt = $conn->prepare("UPDATE shares SET fundamentals=? WHERE share_id=?");
+        if ($fundStmt) {
+            $fundStmt->bind_param('ss', $fundamentals, $share_id);
+            $fundStmt->execute();
+        }
+
         syncShareConfigPrice($conn, $share_id, $base_price);
         logAudit($conn, $existing ? 'Update Share' : 'Add Share', $_SESSION['admin_id'], ['shareId' => $share_id, 'name' => $name]);
         sendResponse(["success" => true, "shareId" => $share_id]);
         break;
 
     case 'deleteShare':
-        requireAdmin();
+        requirePermission('prices');
         $data = getPostData();
         $share_id = preg_replace('/[^a-z0-9-]/', '', strtolower($data['shareId'] ?? ''));
         if (!$share_id) {
@@ -1424,7 +1671,7 @@ switch ($action) {
 
     // SEC 2 FIX: Use prepared statements instead of string interpolation
     case 'saveSettings':
-        requireAdmin();
+        requirePermission('settings');
         $data = getPostData();
         $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
         foreach ($data as $key => $val) {
@@ -1434,6 +1681,76 @@ switch ($action) {
             $stmt->execute();
         }
         sendResponse(["success" => true]);
+        break;
+
+    case 'uploadShareLogo':
+        requirePermission('prices');
+        if (!isset($_FILES['logo'])) {
+            http_response_code(400);
+            sendResponse(["error" => "No logo file received. Try again."]);
+            break;
+        }
+        $fileErr = (int) ($_FILES['logo']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($fileErr !== UPLOAD_ERR_OK) {
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE => 'File exceeds server limit',
+                UPLOAD_ERR_FORM_SIZE => 'File too large',
+                UPLOAD_ERR_PARTIAL => 'Upload incomplete — try again',
+                UPLOAD_ERR_NO_FILE => 'No file selected',
+                UPLOAD_ERR_NO_TMP_DIR => 'Server temp folder missing',
+                UPLOAD_ERR_CANT_WRITE => 'Server cannot write file',
+            ];
+            http_response_code(400);
+            sendResponse(["error" => $uploadErrors[$fileErr] ?? "Upload error code $fileErr"]);
+            break;
+        }
+        $tmpName = $_FILES['logo']['tmp_name'];
+        $fileSize = (int) $_FILES['logo']['size'];
+        if ($fileSize <= 0 || $fileSize > 2 * 1024 * 1024) {
+            http_response_code(400);
+            sendResponse(["error" => "Logo must be under 2MB"]);
+            break;
+        }
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $info = @getimagesize($tmpName);
+            $mime = is_array($info) ? ($info['mime'] ?? '') : '';
+        }
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($allowedMimes[$mime])) {
+            http_response_code(400);
+            sendResponse(["error" => "Invalid file type ($mime). Use JPG, PNG or WEBP."]);
+            break;
+        }
+        $uploadDir = __DIR__ . '/../uploads/shares/';
+        if (!is_dir($uploadDir)) {
+            if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                http_response_code(500);
+                sendResponse(["error" => "Could not create upload folder. Create public_html/uploads/shares on the server."]);
+                break;
+            }
+        }
+        if (!is_writable($uploadDir)) {
+            http_response_code(500);
+            sendResponse(["error" => "Upload folder is not writable. Set permissions on uploads/shares."]);
+            break;
+        }
+        $filename = 'share_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
+        $target = $uploadDir . $filename;
+        if (!move_uploaded_file($tmpName, $target)) {
+            http_response_code(500);
+            sendResponse(["error" => "Failed to save logo file"]);
+            break;
+        }
+        @chmod($target, 0644);
+        $url = 'uploads/shares/' . $filename;
+        logAudit($conn, 'Upload Share Logo', $_SESSION['admin_id'], ['file' => $filename]);
+        sendResponse(["success" => true, "url" => $url]);
         break;
 
     case 'uploadQr':
@@ -1500,7 +1817,7 @@ switch ($action) {
         break;
 
     case 'adminGetArticles':
-        requireMasterAdmin();
+        requirePermission('articles');
         $res = $conn->query("SELECT id, title, slug, image_url, author, status, created_at FROM articles ORDER BY created_at DESC");
         $articles = [];
         while($row = $res->fetch_assoc()) { 
@@ -1510,7 +1827,7 @@ switch ($action) {
         break;
 
     case 'adminGetArticle':
-        requireMasterAdmin();
+        requirePermission('articles');
         $id = $_GET['id'] ?? null;
         if ($id) {
             $stmt = $conn->prepare("SELECT * FROM articles WHERE id = ?");
@@ -1530,7 +1847,7 @@ switch ($action) {
         break;
 
     case 'adminSaveArticle':
-        requireMasterAdmin();
+        requirePermission('articles');
         $data = getPostData();
         $id = $data['id'] ?? null;
         $title = htmlspecialchars($data['title'] ?? '', ENT_QUOTES, 'UTF-8');
@@ -1563,7 +1880,7 @@ switch ($action) {
         break;
 
     case 'adminDeleteArticle':
-        requireMasterAdmin();
+        requirePermission('articles');
         $data = getPostData();
         $id = $data['id'] ?? null;
         if ($id) {
@@ -1579,7 +1896,7 @@ switch ($action) {
         break;
 
     case 'adminUploadImage':
-        requireMasterAdmin();
+        requirePermission('articles');
         if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
             $tmpName = $_FILES['image']['tmp_name'];
             $fileSize = $_FILES['image']['size'];

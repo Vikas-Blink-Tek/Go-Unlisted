@@ -8,8 +8,6 @@ import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, formatCurrency, generateOrderId, generateSessionId } from '../utils/format';
 import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
-import { blockEmailInput, blockTelInput } from '../utils/autofill';
-
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 
 const PAYMENT_MODES: { id: PaymentMode; label: string; desc: string; icon: string }[] = [
@@ -48,15 +46,22 @@ export default function CheckoutPage() {
   const [qty, setQty] = useState(share?.minQty || 1);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
   const [utr, setUtr] = useState('');
-  const [guestEmail, setGuestEmail] = useState('');
-  const [guestPhone, setGuestPhone] = useState('');
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState('');
+  const [submittedUtr, setSubmittedUtr] = useState('');
   const [sessionId] = useState(() => generateSessionId());
 
   useEffect(() => {
     if (share?.minQty) setQty(share.minQty);
   }, [share?.id, share?.minQty]);
+
+  const requireLoginForPayment = () => {
+    const returnTo = `/checkout/${share?.id || shareId || ''}`;
+    showToast('Login or sign up to continue payment', 'info');
+    navigate('/login', {
+      state: { from: returnTo, reason: 'payment' },
+    });
+  };
 
   if (!share) {
     return (
@@ -95,15 +100,19 @@ export default function CheckoutPage() {
     );
   }
 
-  const buyerEmail = user?.email || guestEmail.trim();
-  const buyerPhone = user?.phone || guestPhone.trim();
-  const buyerName = user?.name || 'Guest';
+  const buyerEmail = user?.email || '';
+  const buyerPhone = user?.phone || '';
+  const buyerName = user?.name || 'Buyer';
 
   const subtotal = share.price * qty;
   const total = calcOrderTotal(share.price, qty);
   const fee = total - subtotal;
 
   const selectPaymentMode = async (mode: PaymentMode) => {
+    if (!user) {
+      requireLoginForPayment();
+      return;
+    }
     setPaymentMode(mode);
     try {
       await saveInitiatedCheckout({
@@ -129,8 +138,8 @@ export default function CheckoutPage() {
       showToast(`Minimum ${share.minQty} shares required`, 'warning');
       return;
     }
-    if (!user && !guestEmail.trim() && !guestPhone.trim()) {
-      showToast('Enter email or phone to track your order', 'warning');
+    if (!user) {
+      requireLoginForPayment();
       return;
     }
     setPaymentMode(null);
@@ -138,20 +147,13 @@ export default function CheckoutPage() {
   };
 
   const handleConfirmPayment = async () => {
-    if (!user && !buyerEmail && !buyerPhone) {
-      showToast('Enter your email or phone to track this order', 'warning');
+    if (!user) {
+      requireLoginForPayment();
       return;
     }
-    if (!user && buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) {
-      showToast('Enter a valid email address', 'warning');
-      return;
-    }
-    if (!user && buyerPhone && !/^\d{10}$/.test(buyerPhone.replace(/\D/g, '').slice(-10))) {
-      showToast('Enter a valid 10-digit phone number', 'warning');
-      return;
-    }
-    if (!utr.trim() || utr.trim().length < 6) {
-      showToast('Enter your UTR / transaction reference (required for verification)', 'warning');
+    const utrClean = utr.trim().replace(/\s+/g, '').toUpperCase();
+    if (utrClean.length < 6 || utrClean.length > 30) {
+      showToast('Enter your UTR / UPI reference (6–30 characters) from your bank app', 'warning');
       return;
     }
     const id = generateOrderId();
@@ -159,7 +161,7 @@ export default function CheckoutPage() {
     setPaying(true);
     const methodLabel = PAYMENT_MODES.find((m) => m.id === paymentMode)?.label || 'Manual';
     try {
-      await saveOrder({
+      const res = await saveOrder({
         orderId: id,
         shareId: share.id,
         shareName: share.name,
@@ -171,11 +173,13 @@ export default function CheckoutPage() {
         qty,
         method: methodLabel,
         status: 'Pending Verification',
-        transactionId: utr.trim(),
+        transactionId: utrClean,
+        orderSource: 'Online',
       });
+      setSubmittedUtr(res.transactionId || utrClean);
       try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
       setStep(3);
-      showToast('Order placed! We will verify your payment shortly.', 'success');
+      showToast('Order placed! UTR sent to admin for verification.', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Order failed', 'error');
     } finally {
@@ -252,30 +256,19 @@ export default function CheckoutPage() {
         )}
 
         <div className="form-group" style={{ marginTop: '1.25rem' }}>
-          <label className="form-label">UTR / Transaction Reference *</label>
+          <label className="form-label">UTR / UPI Transaction ID *</label>
           <input
             className="form-input"
-            placeholder="12-digit UTR from your bank/UPI app"
+            placeholder="e.g. 123456789012 or UPI ref from your app"
             value={utr}
-            onChange={(e) => setUtr(e.target.value)}
+            onChange={(e) => setUtr(e.target.value.toUpperCase())}
+            autoComplete="off"
             required
           />
-          <div className="form-hint">Required to verify your payment within 24 hours</div>
-        </div>
-
-        {!user && (
-          <div className="checkout-guest-fields">
-            <p className="form-hint" style={{ marginBottom: '0.75rem' }}>Enter email or phone so we can match your order in your dashboard.</p>
-            <div className="form-group">
-              <label className="form-label">Email</label>
-              <input className="form-input" placeholder="you@example.com" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} {...blockEmailInput({ name: 'checkout-guest-email' })} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Phone</label>
-              <input className="form-input" placeholder="9876543210" maxLength={10} value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} {...blockTelInput({ name: 'checkout-guest-phone' })} />
-            </div>
+          <div className="form-hint">
+            Copy the UTR / reference number from your bank or UPI app after payment. Admin uses this to verify your transfer.
           </div>
-        )}
+        </div>
 
         {settings.disclaimer && (
           <div className="checkout-disclaimer">{settings.disclaimer}</div>
@@ -357,19 +350,16 @@ export default function CheckoutPage() {
             </div>
 
             {!user && (
-              <div className="checkout-guest-fields" style={{ marginBottom: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Email or phone (to track order) *</label>
-                  <input className="form-input" placeholder="you@example.com" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} {...blockEmailInput({ name: 'checkout-guest-email-step1' })} />
-                </div>
-                <div className="form-group">
-                  <input className="form-input" placeholder="Or phone: 9876543210" maxLength={10} value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.replace(/\D/g, '').slice(0, 10))} {...blockTelInput({ name: 'checkout-guest-phone-step1' })} />
-                </div>
+              <div className="checkout-login-required">
+                <p>Login or sign up is required to pay and track your order.</p>
+                <button type="button" className="btn btn-outline btn-full" onClick={requireLoginForPayment}>
+                  Login / Sign up to continue
+                </button>
               </div>
             )}
 
             <button type="button" className="btn btn-primary btn-full order-submit-btn" onClick={goToPayment}>
-              Continue to Payment
+              {user ? 'Continue to Payment' : 'Login & Continue to Payment'}
             </button>
             <p className="order-terms">By placing this order, you agree to our Terms &amp; Conditions</p>
           </div>
@@ -422,15 +412,14 @@ export default function CheckoutPage() {
                 <div className="confirm-row"><span className="lbl">Quantity</span><span className="val">{qty} shares</span></div>
                 <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
                 <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
+                <div className="confirm-row"><span className="lbl">UTR / Txn ID</span><span className="val" style={{ fontFamily: 'monospace', fontWeight: 700 }}>{submittedUtr || utr}</span></div>
                 <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--gold)' }}>Pending Verification</span></div>
               </div>
-              {!user && (
-                <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem' }}>
-                  <Link to="/login" state={{ from: '/dashboard' }}>Login</Link> to track your order status.
-                </p>
-              )}
+              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
+                Your UTR is now in the admin <strong>Verify Payments</strong> queue. We match it to our bank credit within 24 hours.
+              </p>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                {user && <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>}
+                <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>
                 <Link to="/shares" className="btn btn-ghost btn-full">Continue Exploring</Link>
               </div>
             </div>

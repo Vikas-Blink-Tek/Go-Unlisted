@@ -6,6 +6,7 @@ import { getSettings } from '../../api/content';
 import SiteFooter from './SiteFooter';
 import LegalModal, { type LegalModalType } from './LegalModal';
 import WhatsAppFloat from './WhatsAppFloat';
+import WelcomeAuthModal from '../auth/WelcomeAuthModal';
 import { kycBadgeClass, kycBadgeLabel, userInitials } from '../../utils/kyc';
 
 const navLinks = [
@@ -103,13 +104,18 @@ export default function MainLayout() {
           </Link>
 
           <ul className="nav-links" id="nav-links">
-            {navLinks.map((l) => (
-              <li key={l.to}>
-                <Link className={`nav-link ${isActive(l.to) ? 'active' : ''}`} to={l.to}>
-                  {l.label}
-                </Link>
-              </li>
-            ))}
+            {navLinks.map((l) => {
+              const isPortfolio = l.to === '/dashboard';
+              const to = isPortfolio && !user ? '/login' : l.to;
+              const state = isPortfolio && !user ? { from: '/dashboard', reason: 'portfolio' } : undefined;
+              return (
+                <li key={l.to}>
+                  <Link className={`nav-link ${isActive(l.to) ? 'active' : ''}`} to={to} state={state}>
+                    {l.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
           <div className="nav-actions">
@@ -174,12 +180,17 @@ export default function MainLayout() {
       </nav>
 
       <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-menu">
-        {navLinks.map((l) => (
-          <Link key={l.to} className="nav-link" to={l.to} onClick={() => setMenuOpen(false)}>
-            {mobileIcons[l.to]}
-            {l.label}
-          </Link>
-        ))}
+        {navLinks.map((l) => {
+          const isPortfolio = l.to === '/dashboard';
+          const to = isPortfolio && !user ? '/login' : l.to;
+          const state = isPortfolio && !user ? { from: '/dashboard', reason: 'portfolio' } : undefined;
+          return (
+            <Link key={l.to} className="nav-link" to={to} state={state} onClick={() => setMenuOpen(false)}>
+              {mobileIcons[l.to]}
+              {l.label}
+            </Link>
+          );
+        })}
         {!user && (
           <Link className="nav-link" to="/login" onClick={() => setMenuOpen(false)}>
             <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
@@ -197,13 +208,18 @@ export default function MainLayout() {
       <LegalModal type={legalType} settings={settingsQuery.data} onClose={() => setLegalType(null)} />
 
       <WhatsAppFloat />
+      <WelcomeAuthModal pathname={location.pathname} />
 
       <nav className="bottom-nav">
         <Link to="/" className={`bottom-nav-item${location.pathname === '/' ? ' active' : ''}`}>
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
           <span>Home</span>
         </Link>
-        <Link to="/dashboard" className={`bottom-nav-item${location.pathname.startsWith('/dashboard') ? ' active' : ''}`}>
+        <Link
+          to={user ? '/dashboard' : '/login'}
+          state={user ? undefined : { from: '/dashboard', reason: 'portfolio' }}
+          className={`bottom-nav-item${location.pathname.startsWith('/dashboard') || (!user && location.pathname === '/login') ? ' active' : ''}`}
+        >
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
           <span>Portfolio</span>
         </Link>

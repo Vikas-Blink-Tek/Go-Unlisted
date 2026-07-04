@@ -1,42 +1,53 @@
-# Production .htaccess — copy to public_html/.htaccess
+# Go-Unlisted production — Hostinger / Apache / LiteSpeed
 
-RewriteEngine On
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # API — pass through to PHP (do not send to React)
+  RewriteRule ^api/ - [L]
+
+  # React SPA — send all other routes to index.html
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.html [L]
+</IfModule>
 
 # Block sensitive files
 <FilesMatch "^(schema\.sql|db_config\.example\.php|\.env|\.installed|HOSTINGER_UPLOAD\.txt)$">
+  <IfModule mod_authz_core.c>
     Require all denied
+  </IfModule>
 </FilesMatch>
 
-# Block setup scripts from public web (use setup.php only, then delete it)
-RewriteRule ^scripts/ - [F,L]
-<Files "setup.php">
-    <IfModule mod_authz_core.c>
-        Require all granted
-    </IfModule>
-</Files>
+# Block scripts folder from web
+<IfModule mod_rewrite.c>
+  RewriteRule ^scripts/ - [F,L]
+</IfModule>
 
 # Security headers
 <IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "DENY"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    Header set Referrer-Policy "strict-origin-when-cross-origin"
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
-    SetEnvIf Request_URI "^/admin" admin_area
-    Header set X-Robots-Tag "noindex, nofollow" env=admin_area
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "DENY"
+  Header set X-XSS-Protection "1; mode=block"
+  Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  Header set Referrer-Policy "strict-origin-when-cross-origin"
+  Header set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  SetEnvIf Request_URI "^/admin" admin_area
+  Header set X-Robots-Tag "noindex, nofollow" env=admin_area
+
+  # Always fetch fresh HTML so new asset hashes load after deploy
+  <FilesMatch "^(index\.html)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires "0"
+  </FilesMatch>
 </IfModule>
 
 # Force HTTPS
-RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-
-# API passthrough
-RewriteRule ^api/ - [L]
-
-# React SPA
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule . /index.html [L]
+<IfModule mod_rewrite.c>
+  RewriteCond %{HTTPS} off
+  RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>
 
 Options -Indexes

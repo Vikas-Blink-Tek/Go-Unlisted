@@ -17,6 +17,10 @@ deploy/package/
 .DS_Store
 Thumbs.db
 
+# Uploaded logos (keep folder rules only)
+uploads/shares/*
+!uploads/shares/.htaccess
+
 # Logs
 api/php_errors.log
 *.log

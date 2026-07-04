@@ -8,14 +8,18 @@ export function useShares() {
   const sharesQuery = useQuery({
     queryKey: ['shares'],
     queryFn: getShares,
-    staleTime: 60_000,
+    // Always prefer live admin catalog (add/edit/price) over a long cache
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
     retry: 1,
   });
 
   const fallbackQuery = useQuery({
     queryKey: ['sharesConfig'],
     queryFn: getSharesConfig,
-    staleTime: 60_000,
+    staleTime: 0,
+    refetchOnMount: 'always',
     enabled: sharesQuery.isError || (sharesQuery.isSuccess && (sharesQuery.data?.length ?? 0) === 0),
   });
 
