@@ -58,6 +58,11 @@ GO-UNLISTED — HOSTINGER UPLOAD (5 steps)
 ADMIN LOGIN: https://yourdomain.com/admin/login
 Use the master admin email from schema.sql. Change the default password immediately after first login.
 
+STOCK LOGOS:
+- Keep public_html/uploads/shares/ on the server (do not delete when updating).
+- Folder permissions: uploads and uploads/shares = 755.
+- After uploading a logo in admin, click Save Listing.
+
 Optional: ensure Hostinger mail() is enabled so registration OTP emails are delivered.
 EOF
 

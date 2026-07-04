@@ -215,6 +215,24 @@ button.footer-link {
   font-size: 0.9rem;
 }
 
+.company-logo--img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hero-logo-sm.company-logo--img,
+.market-card-logo.company-logo--img,
+.detail-logo.company-logo--img,
+.price-logo.company-logo--img,
+.listing-compare-logo.company-logo--img,
+.stock-logo-preview.company-logo--img {
+  padding: 0;
+  overflow: hidden;
+  background: #fff !important;
+}
+
 .share-card-header {
   padding-right: 5.5rem;
   align-items: flex-start;
@@ -1142,5 +1160,178 @@ button.footer-link {
 @media (max-width: 768px) {
   .dashboard-orders-table { display: none; }
   .dashboard-orders-cards { display: block; }
+}
+
+/* Pre-IPO vs Listing Price comparison carousel */
+.listing-compare-section {
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 3.5rem;
+  padding-bottom: 3.5rem;
+}
+
+.listing-compare-section .section-tag {
+  color: var(--gold);
+}
+
+.listing-compare-section .section-title,
+.listing-compare-section .section-title span {
+  color: #fff;
+}
+
+.listing-compare-section .section-subtitle {
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.listing-compare-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.listing-compare-track {
+  display: flex;
+  gap: 1rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 0.35rem 0.25rem 0.75rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex: 1;
+}
+
+.listing-compare-track::-webkit-scrollbar {
+  display: none;
+}
+
+.listing-compare-card {
+  flex: 0 0 min(260px, 78vw);
+  scroll-snap-align: start;
+  background: #fff;
+  border-radius: 16px;
+  padding: 1.15rem 1.2rem;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.listing-compare-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.listing-compare-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.listing-compare-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.listing-compare-sector {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.listing-compare-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+}
+
+.listing-compare-row.invest {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.listing-compare-row.list {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.listing-compare-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.listing-compare-row.invest .listing-compare-label {
+  color: #2563eb;
+}
+
+.listing-compare-row.list .listing-compare-label {
+  color: #059669;
+}
+
+.listing-compare-value {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.listing-compare-gain {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+}
+
+.listing-compare-gain.pos {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.listing-compare-gain.neg {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+}
+
+.listing-compare-nav {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.listing-compare-nav:hover {
+  background: rgba(122, 193, 66, 0.35);
+  border-color: var(--gold);
+}
+
+@media (max-width: 640px) {
+  .listing-compare-nav {
+    display: none;
+  }
 }
 

@@ -197,6 +197,7 @@ function autoMigrateSchema($conn) {
         'isin' => "VARCHAR(20) DEFAULT ''",
         'logo_url' => "VARCHAR(255) DEFAULT ''",
         'fundamentals' => 'TEXT',
+        'listing_price' => 'DECIMAL(12,2) DEFAULT NULL',
     ];
     foreach ($shareCols as $col => $def) {
         $res = $conn->query("SHOW COLUMNS FROM shares LIKE '$col'");
@@ -546,19 +547,6 @@ switch ($action) {
             break;
         }
 
-        if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $email, 5, 15)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many OTP requests. Please try again in 15 minutes."]);
-            break;
-        }
-        if (!isLocalDev() && checkIpRateLimit($conn, 'otp_ip_attempts', 20, 60)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many requests from your network. Please try again later."]);
-            break;
-        }
-        recordAttempt($conn, 'otp_send_attempts', 'identifier', $email);
-        recordIpAttempt($conn, 'otp_ip_attempts');
-
         sendResponse(issueOtpForEmail($conn, $email));
         break;
 
@@ -587,21 +575,6 @@ switch ($action) {
         }
 
         $email = $userRow['email'];
-        $phone = $userRow['phone'] ?? '';
-
-        if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $email, 5, 15)) {
-            http_response_code(429);
-            sendResponse(['error' => 'Too many OTP requests. Please try again in 15 minutes.']);
-            break;
-        }
-        if (!isLocalDev() && checkIpRateLimit($conn, 'otp_ip_attempts', 20, 60)) {
-            http_response_code(429);
-            sendResponse(['error' => 'Too many requests from your network. Please try again later.']);
-            break;
-        }
-
-        recordAttempt($conn, 'otp_send_attempts', 'identifier', $email);
-        recordIpAttempt($conn, 'otp_ip_attempts');
 
         $response = issueOtpForEmail($conn, $email);
         $response['email'] = $email;
@@ -663,19 +636,6 @@ switch ($action) {
             break;
         }
 
-        $rateKey = $email;
-
-        if (!isLocalDev() && checkRateLimit($conn, 'otp_attempts', 'identifier', $rateKey, 10, 15)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many failed attempts. Please try again in 15 minutes."]);
-            break;
-        }
-        if (!isLocalDev() && checkIpRateLimit($conn, 'otp_ip_attempts', 30, 60)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many requests from your network. Please try again later."]);
-            break;
-        }
-
         $stmt = $conn->prepare("SELECT id, otp_code FROM otps WHERE identifier = ? AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
         $stmt->bind_param("s", $email);
         $stmt->execute();
@@ -696,8 +656,6 @@ switch ($action) {
                 break;
             }
         }
-        recordAttempt($conn, 'otp_attempts', 'identifier', $rateKey);
-        recordIpAttempt($conn, 'otp_ip_attempts');
         http_response_code(400);
         sendResponse(["success" => false, "error" => "Invalid or expired OTP"]);
         break;
@@ -706,12 +664,6 @@ switch ($action) {
     // LOGIN & LOGOUT
     // -----------------------------------------
     case 'loginAdmin':
-        if (checkRateLimit($conn, 'login_attempts', null, null, 5, 15)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many login attempts. Please try again in 15 minutes."]);
-            break;
-        }
-
         $data = getPostData();
         $email = $data['email'] ?? '';
         $password = $data['password'] ?? '';
@@ -743,19 +695,11 @@ switch ($action) {
                 ]);
             }
         }
-        recordAttempt($conn, 'login_attempts', null, null);
         http_response_code(401);
-        sleep(1); // Anti-brute-force delay
         sendResponse(["error" => "Invalid credentials"]);
         break;
 
     case 'loginUser':
-        if (!isLocalDev() && checkRateLimit($conn, 'login_attempts', null, null, 5, 15)) {
-            http_response_code(429);
-            sendResponse(["error" => "Too many login attempts. Please try again in 15 minutes."]);
-            break;
-        }
-
         $data = getPostData();
         $loginId = $data['email'] ?? $data['loginId'] ?? '';
         $password = $data['password'] ?? '';
@@ -788,9 +732,7 @@ switch ($action) {
                 ]);
             }
         }
-        recordAttempt($conn, 'login_attempts', null, null);
         http_response_code(401);
-        sleep(1); // Anti-brute-force delay
         sendResponse(["error" => "Invalid email/phone or MPIN"]);
         break;
 
@@ -1011,17 +953,11 @@ switch ($action) {
             unset($_SESSION['otp_verified'][$emailNorm]);
 
             $phoneNorm = normalizeIndianPhone($phone);
-            if ($phoneNorm !== '' && !isValidIndianMobile($phoneNorm)) {
+            if ($phoneNorm === '' || !isValidIndianMobile($phoneNorm)) {
                 http_response_code(400);
-                sendResponse(["error" => "Invalid phone number"]);
+                sendResponse(["error" => "Valid 10-digit Indian mobile number is required"]);
             }
             $phone = $phoneNorm;
-
-            if (!isLocalDev() && checkRateLimit($conn, 'otp_send_attempts', 'identifier', $emailNorm, 10, 60)) {
-                http_response_code(429);
-                sendResponse(["error" => "Too many registration attempts. Please try again later."]);
-            }
-            recordAttempt($conn, 'otp_send_attempts', 'identifier', $emailNorm);
         }
 
         if ($exists) {
@@ -1448,22 +1384,31 @@ switch ($action) {
         $base_price = (float) ($data['basePrice'] ?? $data['price'] ?? 0);
         $min_qty = max(1, (int) ($data['minQty'] ?? 1));
         $description = trim($data['description'] ?? '');
-        $founded = isset($data['founded']) && $data['founded'] !== '' ? (int) $data['founded'] : null;
+        // Use 0 instead of null — mysqli bind_param cannot bind NULL for i/d reliably
+        $founded = isset($data['founded']) && $data['founded'] !== '' && $data['founded'] !== null
+            ? (int) $data['founded'] : 0;
         $revenue = trim($data['revenue'] ?? '');
         $valuation = trim($data['valuation'] ?? '');
         $growth = trim($data['growth'] ?? '');
         $change_positive = !empty($data['changePositive']) ? 1 : 0;
-        $logo_initials = strtoupper(substr(trim($data['logoInitials'] ?? ''), 0, 3));
+        $logo_initials = substr(preg_replace('/[^A-Z0-9]/', '', strtoupper(trim($data['logoInitials'] ?? ''))) ?: '', 0, 5);
         $logo_gradient = trim($data['logoGradient'] ?? 'linear-gradient(135deg, #003478, #0050a8)');
         $logo_url = trim($data['logoUrl'] ?? '');
+        // Normalize "/uploads/shares/x.png" or "uploads/shares/x.png"
+        $logo_url = ltrim($logo_url, '/');
         if ($logo_url !== '' && !preg_match('#^uploads/shares/[a-zA-Z0-9._-]+$#', $logo_url)) {
             $logo_url = '';
         }
         $sector_color = trim($data['sectorColor'] ?? '#7ac142');
         $listing_type = trim($data['listingType'] ?? 'Pre-IPO');
         $ipo_timeline = '';
-        $buy_price = isset($data['buyPrice']) && $data['buyPrice'] !== '' && $data['buyPrice'] !== null
-            ? (float) $data['buyPrice'] : null;
+        $has_buy_price = isset($data['buyPrice']) && $data['buyPrice'] !== '' && $data['buyPrice'] !== null;
+        $buy_price = $has_buy_price ? (float) $data['buyPrice'] : 0.0;
+        $listing_price = isset($data['listingPrice']) && $data['listingPrice'] !== '' && $data['listingPrice'] !== null
+            ? (float) $data['listingPrice'] : null;
+        if ($listing_price !== null && $listing_price <= 0) {
+            $listing_price = null;
+        }
         $inventory_status = trim($data['inventoryStatus'] ?? 'In Stock');
         $isin = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim($data['isin'] ?? '')));
         if (strlen($isin) > 20) {
@@ -1495,20 +1440,17 @@ switch ($action) {
             $share_id = 'custom-' . preg_replace('/[^a-z0-9]+/', '-', strtolower($name)) . '-' . substr(uniqid(), -5);
         }
 
+        // Auto initials: "Boat" → "BO", "Tata Capital" → "TC"
         if ($logo_initials === '' && $name !== '') {
-            $parts = preg_split('/\s+/', $name) ?: [];
-            $logo_initials = '';
-            foreach ($parts as $part) {
-                if ($part === '') {
-                    continue;
-                }
-                $logo_initials .= strtoupper(substr($part, 0, 1));
-                if (strlen($logo_initials) >= 2) {
-                    break;
-                }
-            }
-            if ($logo_initials === '') {
-                $logo_initials = strtoupper(substr(preg_replace('/[^a-zA-Z0-9]/', '', $name) ?: 'GU', 0, 2));
+            $parts = preg_split('/\s+/', trim($name)) ?: [];
+            $parts = array_values(array_filter($parts, function ($p) {
+                return $p !== '';
+            }));
+            if (count($parts) >= 2) {
+                $logo_initials = strtoupper(substr($parts[0], 0, 1) . substr($parts[1], 0, 1));
+            } else {
+                $clean = preg_replace('/[^a-zA-Z0-9]/', '', $name) ?: 'GU';
+                $logo_initials = strtoupper(substr($clean, 0, 2));
             }
         }
 
@@ -1527,12 +1469,18 @@ switch ($action) {
         $check->execute();
         $existing = $check->get_result()->fetch_assoc();
 
+        // Core row without nullable decimals (buy_price / listing_price set below)
         if ($existing) {
             $stmt = $conn->prepare(
-                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, logo_url=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, buy_price=?, inventory_status=?, isin=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_active=1 WHERE share_id=?"
+                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, logo_url=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, inventory_status=?, isin=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_active=1 WHERE share_id=?"
             );
+            if (!$stmt) {
+                sendResponse(['error' => 'Failed to prepare share update'], 500);
+                break;
+            }
+            // ssss d i s i sss i sss ss ss ssss i i s  => 26 params
             $stmt->bind_param(
-                'ssssdisisssisssssssdssssiis',
+                'ssssdisisssisssssssssssiis',
                 $name,
                 $ticker,
                 $sector,
@@ -1552,7 +1500,6 @@ switch ($action) {
                 $chart_labels,
                 $listing_type,
                 $ipo_timeline,
-                $buy_price,
                 $inventory_status,
                 $isin,
                 $key_highlights,
@@ -1563,11 +1510,16 @@ switch ($action) {
             );
         } else {
             $stmt = $conn->prepare(
-                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, logo_url, price_history, chart_labels, listing_type, ipo_timeline, buy_price, inventory_status, isin, key_highlights, risk_notes, lock_in_months, is_featured, is_builtin, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
+                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, logo_url, price_history, chart_labels, listing_type, ipo_timeline, inventory_status, isin, key_highlights, risk_notes, lock_in_months, is_featured, is_builtin, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
             );
+            if (!$stmt) {
+                sendResponse(['error' => 'Failed to prepare share insert'], 500);
+                break;
+            }
+            // sssss d i s i sss i sss ss ss ssss i i  => 26 params
             $stmt->bind_param(
-                'sssssdisisssisssssssdssssii',
+                'sssssdisisssisssssssssssii',
                 $share_id,
                 $name,
                 $ticker,
@@ -1588,7 +1540,6 @@ switch ($action) {
                 $chart_labels,
                 $listing_type,
                 $ipo_timeline,
-                $buy_price,
                 $inventory_status,
                 $isin,
                 $key_highlights,
@@ -1599,19 +1550,70 @@ switch ($action) {
         }
 
         if (!$stmt->execute()) {
-            sendResponse(["error" => "Failed to save share"], 500);
+            sendResponse(['error' => 'Failed to save share: ' . $stmt->error], 500);
             break;
         }
 
-        $fundStmt = $conn->prepare("UPDATE shares SET fundamentals=? WHERE share_id=?");
+        // Force logo fields (initials / gradient / photo) — separate update so they always stick
+        $logoStmt = $conn->prepare('UPDATE shares SET logo_initials = ?, logo_gradient = ?, logo_url = ? WHERE share_id = ?');
+        if ($logoStmt) {
+            $logoStmt->bind_param('ssss', $logo_initials, $logo_gradient, $logo_url, $share_id);
+            if (!$logoStmt->execute()) {
+                sendResponse(['error' => 'Stock saved but logo failed: ' . $logoStmt->error], 500);
+                break;
+            }
+        }
+
+        // Optional columns — ignore if migration not applied yet
+        $fundStmt = $conn->prepare('UPDATE shares SET fundamentals=? WHERE share_id=?');
         if ($fundStmt) {
             $fundStmt->bind_param('ss', $fundamentals, $share_id);
             $fundStmt->execute();
         }
 
+        if ($has_buy_price) {
+            $bpStmt = $conn->prepare('UPDATE shares SET buy_price = ? WHERE share_id = ?');
+            if ($bpStmt) {
+                $bpStmt->bind_param('ds', $buy_price, $share_id);
+                $bpStmt->execute();
+            }
+        } else {
+            $bpStmt = $conn->prepare('UPDATE shares SET buy_price = NULL WHERE share_id = ?');
+            if ($bpStmt) {
+                $bpStmt->bind_param('s', $share_id);
+                $bpStmt->execute();
+            }
+        }
+
+        if ($listing_price === null) {
+            $lpStmt = $conn->prepare('UPDATE shares SET listing_price = NULL WHERE share_id = ?');
+            if ($lpStmt) {
+                $lpStmt->bind_param('s', $share_id);
+                $lpStmt->execute();
+            }
+        } else {
+            $lpStmt = $conn->prepare('UPDATE shares SET listing_price = ? WHERE share_id = ?');
+            if ($lpStmt) {
+                $lpStmt->bind_param('ds', $listing_price, $share_id);
+                $lpStmt->execute();
+            }
+        }
+
         syncShareConfigPrice($conn, $share_id, $base_price);
         logAudit($conn, $existing ? 'Update Share' : 'Add Share', $_SESSION['admin_id'], ['shareId' => $share_id, 'name' => $name]);
-        sendResponse(["success" => true, "shareId" => $share_id]);
+
+        // Return saved row so admin UI can refresh immediately
+        $saved = null;
+        $getSaved = $conn->prepare('SELECT * FROM shares WHERE share_id = ? LIMIT 1');
+        if ($getSaved) {
+            $getSaved->bind_param('s', $share_id);
+            $getSaved->execute();
+            $savedRow = $getSaved->get_result()->fetch_assoc();
+            if ($savedRow) {
+                $saved = mapShareRow($savedRow, true);
+            }
+        }
+        sendResponse(['success' => true, 'shareId' => $share_id, 'share' => $saved, 'logoInitials' => $logo_initials]);
         break;
 
     case 'deleteShare':

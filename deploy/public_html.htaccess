@@ -7,6 +7,9 @@
   # API — pass through to PHP (do not send to React)
   RewriteRule ^api/ - [L]
 
+  # Stock logos / uploads — always serve real files (never SPA index.html)
+  RewriteRule ^uploads/ - [L]
+
   # React SPA — send all other routes to index.html
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d

@@ -77,6 +77,11 @@ export default function AuthPage() {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const phone = regForm.phone.replace(/\D/g, '').slice(0, 10);
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      setError('Enter a valid 10-digit Indian mobile number');
+      return;
+    }
     if (!isValidMpin(regForm.mpin)) {
       setError('MPIN must be 4-6 digits');
       return;
@@ -223,12 +228,13 @@ export default function AuthPage() {
                   <input className="form-input" placeholder="Rahul Sharma" required value={regForm.name} onChange={(e) => setRegForm({ ...regForm, name: e.target.value })} {...blockTextInput({ name: 'register-full-name' })} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Phone Number (Optional)</label>
+                  <label className="form-label">Phone Number *</label>
                   <input
                     className="form-input"
                     placeholder="9876543210"
                     inputMode="numeric"
                     maxLength={10}
+                    required
                     value={regForm.phone}
                     onChange={(e) => setRegForm({ ...regForm, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                     {...blockTelInput({ name: 'register-phone' })}

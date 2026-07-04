@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { SECTORS } from '../data/sharesCatalog';
 import { useShares, useWatchlist } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
 
@@ -11,6 +10,13 @@ export default function SharesPage() {
   const [maxPrice, setMaxPrice] = useState(4000);
   const [watchOnly, setWatchOnly] = useState(false);
   const [watched, setWatched] = useState<string[]>(watchlist.get());
+
+  const sectorOptions = useMemo(() => {
+    const fromShares = [...new Set(shares.map((s) => s.sector).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    return ['All', ...fromShares];
+  }, [shares]);
 
   const filtered = useMemo(() => {
     return shares.filter((s) => {
@@ -51,7 +57,7 @@ export default function SharesPage() {
             <div className="filter-group">
               <span className="filter-label">Sector:</span>
               <div className="sector-filters">
-                {SECTORS.map((s) => (
+                {sectorOptions.map((s) => (
                   <button key={s} type="button" className={`filter-btn ${sector === s ? 'active' : ''}`} onClick={() => setSector(s)}>
                     {s}
                   </button>

@@ -143,6 +143,9 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'chartLabels' => $labels,
         'listingType' => $row['listing_type'] ?? 'Pre-IPO',
         'ipoTimeline' => $row['ipo_timeline'] ?? '',
+        'listingPrice' => isset($row['listing_price']) && $row['listing_price'] !== null && $row['listing_price'] !== ''
+            ? (float) $row['listing_price']
+            : null,
         'inventoryStatus' => $row['inventory_status'] ?? 'In Stock',
         'keyHighlights' => $highlights,
         'riskNotes' => $row['risk_notes'] ?? '',

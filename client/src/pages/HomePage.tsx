@@ -4,6 +4,7 @@ import { useShares } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import ReturnsCalculator from '../components/home/ReturnsCalculator';
+import ListingComparison from '../components/home/ListingComparison';
 import ShareSparkline from '../components/shares/ShareSparkline';
 import { formatCurrency } from '../utils/format';
 import type { Share } from '../types';
@@ -217,29 +218,27 @@ export default function HomePage() {
         </div>
       </section>
 
+      <ListingComparison shares={shares} />
+
       <section className="section" style={{ paddingTop: '3rem' }}>
         <div className="container">
           <div className="section-header">
-            <div className="section-tag">★ Starred Listings</div>
+            <div className="section-tag">Live Listings</div>
             <h2 className="section-title">Top Pre-IPO <span>Opportunities</span></h2>
             <p className="section-subtitle">
-              {starred.length
-                ? 'Stocks starred by our team — also shown in Market Activity.'
-                : 'Star stocks in admin to feature them here. Browse all listings below.'}
+              All active stocks from admin — starred ones also rotate in Market Activity above.
             </p>
           </div>
-          {starred.length > 0 ? (
+          {shares.length > 0 ? (
             <div className="shares-grid">
-              {starred.map((share) => (
+              {shares.map((share) => (
                 <ShareCard key={share.id} share={share} />
               ))}
             </div>
           ) : (
-            <div className="shares-grid">
-              {shares.slice(0, 4).map((share) => (
-                <ShareCard key={share.id} share={share} />
-              ))}
-            </div>
+            <p className="section-subtitle" style={{ textAlign: 'center' }}>
+              No stocks yet. Add listings in admin to show them here.
+            </p>
           )}
           <div className="text-center mt-3">
             <Link to="/shares" className="btn btn-outline" style={{ padding: '11px 28px' }}>View All Listings →</Link>

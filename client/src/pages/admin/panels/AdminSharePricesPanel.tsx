@@ -6,11 +6,10 @@ import { useToast } from '../../../context/ToastContext';
 import { formatCurrency } from '../../../utils/format';
 import type { Share } from '../../../types';
 import AdminSectionHeader from '../components/AdminSectionHeader';
-import CompanyLogo from '../../../components/shares/CompanyLogo';
+import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { STOCK_SECTORS } from '../../../data/sharesCatalog';
 import { buildPriceHistory, defaultChartLabels, trendFromGrowth } from '../../../utils/priceHistory';
 
-const SECTOR_FILTER_OPTIONS = ['All', ...STOCK_SECTORS];
 const LISTING_TYPES = ['Pre-IPO', 'Unlisted', 'Delisted', 'ESOP'];
 const INVENTORY_STATUSES = ['In Stock', 'Limited', 'On Request', 'Out of Stock'];
 
@@ -35,6 +34,7 @@ type FormState = {
   listingType: string;
   basePrice: string;
   buyPrice: string;
+  listingPrice: string;
   minQty: string;
   inventoryStatus: string;
   founded: string;
@@ -68,6 +68,7 @@ const emptyForm = (): FormState => ({
   listingType: 'Pre-IPO',
   basePrice: '',
   buyPrice: '',
+  listingPrice: '',
   minQty: '10',
   inventoryStatus: 'In Stock',
   founded: '',
@@ -116,6 +117,7 @@ function shareToForm(share: Share): FormState {
     listingType: share.listingType || 'Pre-IPO',
     basePrice: String(share.basePrice || share.price),
     buyPrice: share.buyPrice ? String(share.buyPrice) : '',
+    listingPrice: share.listingPrice ? String(share.listingPrice) : '',
     minQty: String(share.minQty),
     inventoryStatus: share.inventoryStatus || 'In Stock',
     founded: share.founded ? String(share.founded) : '',
@@ -144,6 +146,7 @@ function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boole
     sectorColor: share.sectorColor || '#7ac142',
     basePrice: share.basePrice || share.price,
     buyPrice: share.buyPrice ?? undefined,
+    listingPrice: share.listingPrice ?? undefined,
     minQty: share.minQty,
     inventoryStatus: share.inventoryStatus || 'In Stock',
     description: share.description || '',
@@ -207,6 +210,15 @@ export default function AdminSharePricesPanel() {
     }
   };
 
+  const sectorDropdownOptions = useMemo(() => {
+    const opts = [...STOCK_SECTORS];
+    // Keep current value visible when editing an older custom sector
+    if (form.sector && !opts.includes(form.sector)) {
+      opts.unshift(form.sector);
+    }
+    return opts;
+  }, [form.sector]);
+
   const sectorCounts = useMemo(() => {
     const counts: Record<string, number> = { All: shares.length };
     for (const s of shares) {
@@ -214,6 +226,11 @@ export default function AdminSharePricesPanel() {
     }
     return counts;
   }, [shares]);
+
+  const sectorFilterOptions = useMemo(
+    () => ['All', ...Object.keys(sectorCounts).filter((k) => k !== 'All').sort((a, b) => a.localeCompare(b))],
+    [sectorCounts],
+  );
 
   const filteredShares = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -263,24 +280,30 @@ export default function AdminSharePricesPanel() {
     mutationFn: () => {
       const basePrice = parseFloat(form.basePrice);
       const minQty = parseInt(form.minQty, 10);
-      if (!form.name.trim() || form.ticker.length < 2 || !form.sector || !basePrice || !minQty) {
+      if (!form.name.trim() || form.ticker.length < 2 || !form.sector.trim() || !basePrice || !minQty) {
         throw new Error('Please fill all required fields marked *');
       }
-      if (!form.description.trim() || form.description.trim().length < 40) {
-        throw new Error('Company description is required (min 40 characters) — buyers need this on the detail page');
+      if (!form.description.trim() || form.description.trim().length < 20) {
+        throw new Error('Company description is required (min 20 characters)');
       }
       const highlights = form.keyHighlights.split('\n').map((l) => l.trim()).filter(Boolean);
+      const name = form.name.trim();
+      const logoInitials = (form.logoInitials || initialsFromName(name, 'GU'))
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(0, 5)
+        .toUpperCase();
       // Chart high/low: built from sell price + Price Trend + Growth %
       const priceHistory = buildPriceHistory(basePrice, form.changePositive, form.growth);
       return saveShare({
         id: form.id || undefined,
-        name: form.name.trim(),
+        name,
         ticker: form.ticker.toUpperCase(),
-        sector: form.sector,
+        sector: form.sector.trim(),
         listingType: form.listingType,
         sectorColor: '#7ac142',
         basePrice,
         buyPrice: form.buyPrice ? parseFloat(form.buyPrice) : undefined,
+        listingPrice: form.listingPrice ? parseFloat(form.listingPrice) : undefined,
         minQty,
         inventoryStatus: form.inventoryStatus,
         description: form.description.trim(),
@@ -300,9 +323,9 @@ export default function AdminSharePricesPanel() {
         faceValue: form.faceValue.trim(),
         changePositive: form.changePositive,
         isFeatured: form.isFeatured,
-        logoInitials: form.logoInitials.toUpperCase(),
+        logoInitials,
         logoGradient: form.logoGradient,
-        logoUrl: form.logoUrl,
+        logoUrl: form.logoUrl || '',
         keyHighlights: highlights,
         priceHistory,
         chartLabels: defaultChartLabels(),
@@ -361,7 +384,7 @@ export default function AdminSharePricesPanel() {
           value={sectorFilter}
           onChange={(e) => setSectorFilter(e.target.value)}
         >
-          {SECTOR_FILTER_OPTIONS.map((sector) => (
+          {sectorFilterOptions.map((sector) => (
             <option key={sector} value={sector}>
               {sector === 'All' ? `All sectors (${sectorCounts.All || 0})` : `${sector} (${sectorCounts[sector] || 0})`}
             </option>
@@ -448,7 +471,20 @@ export default function AdminSharePricesPanel() {
             <FormSection title="Identity" hint="Company name and sector shown on cards and detail page">
               <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
                 <label className="report-filter-label">Company Name *</label>
-                <input className="report-filter-input" value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Zepto" />
+                <input
+                  className="report-filter-input"
+                  value={form.name}
+                  onChange={(e) => {
+                    const name = e.target.value;
+                    const prevAuto = initialsFromName(form.name, '');
+                    const shouldAuto = !form.logoInitials || form.logoInitials === prevAuto;
+                    set({
+                      name,
+                      ...(shouldAuto ? { logoInitials: initialsFromName(name, '') } : {}),
+                    });
+                  }}
+                  placeholder="e.g. Boat"
+                />
               </div>
               <div className="report-filter-group">
                 <label className="report-filter-label">Ticker *</label>
@@ -456,9 +492,16 @@ export default function AdminSharePricesPanel() {
               </div>
               <div className="report-filter-group">
                 <label className="report-filter-label">Sector *</label>
-                <select className="report-filter-input" value={form.sector} onChange={(e) => set({ sector: e.target.value })}>
+                <select
+                  className="report-filter-input"
+                  value={form.sector}
+                  onChange={(e) => set({ sector: e.target.value })}
+                  required
+                >
                   <option value="">Select sector...</option>
-                  {STOCK_SECTORS.map((s) => <option key={s} value={s}>{s}</option>)}
+                  {sectorDropdownOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
               <div className="report-filter-group">
@@ -511,14 +554,17 @@ export default function AdminSharePricesPanel() {
                 </div>
               </div>
               <div className="report-filter-group">
-                <label className="report-filter-label">Logo Initials (optional)</label>
+                <label className="report-filter-label">Logo Initials *</label>
                 <input
                   className="report-filter-input"
-                  maxLength={3}
+                  maxLength={5}
                   value={form.logoInitials}
-                  onChange={(e) => set({ logoInitials: e.target.value.toUpperCase() })}
-                  placeholder="Auto from name"
+                  onChange={(e) => set({ logoInitials: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5) })}
+                  placeholder="BO"
                 />
+                <p className="stock-logo-hint" style={{ marginTop: 4 }}>
+                  Shown on website when no photo. Example: Boat → BO. Click Save Listing after changing.
+                </p>
               </div>
               <div className="report-filter-group">
                 <label className="report-filter-label">Logo Color (if no photo)</label>
@@ -538,6 +584,18 @@ export default function AdminSharePricesPanel() {
               <div className="report-filter-group">
                 <label className="report-filter-label">Cost / Buy Price (₹)</label>
                 <input className="report-filter-input" type="number" min="0" value={form.buyPrice} onChange={(e) => set({ buyPrice: e.target.value })} placeholder="Internal only" />
+              </div>
+              <div className="report-filter-group">
+                <label className="report-filter-label">Listing Price (₹)</label>
+                <input
+                  className="report-filter-input"
+                  type="number"
+                  min="0"
+                  value={form.listingPrice}
+                  onChange={(e) => set({ listingPrice: e.target.value })}
+                  placeholder="IPO / listing price"
+                />
+                <p className="stock-logo-hint" style={{ marginTop: 4 }}>Optional. When set, shows on homepage as Pre-IPO vs Listing comparison.</p>
               </div>
               <div className="report-filter-group">
                 <label className="report-filter-label">Min Quantity *</label>
