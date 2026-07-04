@@ -15,7 +15,7 @@ interface Employee {
   employee_id: string;
   name: string;
   email: string;
-  is_master: number;
+  is_master: number | boolean;
   permissions?: string[];
   created_at?: string;
 }
@@ -26,8 +26,13 @@ const emptyForm = {
   email: '',
   employeeId: '',
   password: '',
+  isMaster: false,
   permissions: [...DEFAULT_EMPLOYEE_PERMISSIONS] as AdminPanelId[],
 };
+
+function isMasterEmp(emp: Employee): boolean {
+  return emp.is_master === 1 || emp.is_master === true || emp.permissions?.includes('*') === true;
+}
 
 export default function AdminEmployees() {
   const { showToast } = useToast();
@@ -44,13 +49,24 @@ export default function AdminEmployees() {
     },
   });
 
+  // Master Admin first, then other employees A–Z
+  const sortedEmployees = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const am = isMasterEmp(a) ? 0 : 1;
+      const bm = isMasterEmp(b) ? 0 : 1;
+      if (am !== bm) return am - bm;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [employees]);
+
   const saveMutation = useMutation({
     mutationFn: saveEmployee,
     onSuccess: () => {
-      showToast('Employee saved', 'success');
+      showToast(form.isMaster ? 'Master Admin updated' : 'Employee saved', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
       setShowModal(false);
       setForm(emptyForm);
+      setIsEdit(false);
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -71,6 +87,7 @@ export default function AdminEmployees() {
   };
 
   const openEdit = (emp: Employee) => {
+    const master = isMasterEmp(emp);
     const perms = (emp.permissions || DEFAULT_EMPLOYEE_PERMISSIONS).filter(
       (p): p is AdminPanelId => p !== '*' && EMPLOYEE_PERMISSION_OPTIONS.some((o) => o.id === p),
     );
@@ -80,13 +97,15 @@ export default function AdminEmployees() {
       email: emp.email,
       employeeId: emp.employee_id || '',
       password: '',
-      permissions: emp.is_master ? EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.id) : perms,
+      isMaster: master,
+      permissions: master ? EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.id) : perms,
     });
     setIsEdit(true);
     setShowModal(true);
   };
 
   const togglePermission = (id: AdminPanelId) => {
+    if (form.isMaster) return;
     setForm((f) => ({
       ...f,
       permissions: f.permissions.includes(id)
@@ -96,10 +115,12 @@ export default function AdminEmployees() {
   };
 
   const selectAll = () => {
+    if (form.isMaster) return;
     setForm((f) => ({ ...f, permissions: EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.id) }));
   };
 
   const selectDefault = () => {
+    if (form.isMaster) return;
     setForm((f) => ({ ...f, permissions: [...DEFAULT_EMPLOYEE_PERMISSIONS] }));
   };
 
@@ -113,7 +134,11 @@ export default function AdminEmployees() {
       showToast('Password must be at least 6 characters', 'error');
       return;
     }
-    if (!form.permissions.length) {
+    if (form.password && form.password.length < 6) {
+      showToast('Password must be at least 6 characters', 'error');
+      return;
+    }
+    if (!form.isMaster && !form.permissions.length) {
       showToast('Select at least one permission', 'error');
       return;
     }
@@ -122,7 +147,7 @@ export default function AdminEmployees() {
       name: form.name,
       email: form.email,
       employeeId: form.employeeId,
-      permissions: form.permissions,
+      permissions: form.isMaster ? ['*'] : form.permissions,
     };
     if (form.password) payload.password = form.password;
     saveMutation.mutate(payload);
@@ -138,9 +163,10 @@ export default function AdminEmployees() {
 
   const siteOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
-  const permissionLabels = (perms?: string[]) => {
-    if (!perms?.length) return 'Orders pipeline (default)';
-    if (perms.includes('*')) return 'Full access (Master)';
+  const permissionLabels = (emp: Employee) => {
+    if (isMasterEmp(emp)) return 'Full access — all panels';
+    const perms = emp.permissions || [];
+    if (!perms.length) return 'Orders pipeline (default)';
     return perms
       .map((p) => EMPLOYEE_PERMISSION_OPTIONS.find((o) => o.id === p)?.label || p)
       .join(', ');
@@ -151,7 +177,7 @@ export default function AdminEmployees() {
       <div className="admin-section-header">
         <div>
           <div className="admin-section-subtitle">
-            Create employees and choose what they can access in the admin panel.
+            Master Admin and employees — manage login details and employee panel access.
           </div>
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Employee</button>
@@ -163,6 +189,7 @@ export default function AdminEmployees() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Role</th>
               <th>Employee ID</th>
               <th>Email</th>
               <th>Permissions</th>
@@ -170,18 +197,28 @@ export default function AdminEmployees() {
             </tr>
           </thead>
           <tbody>
-            {employees.map((emp) => (
-              <tr key={emp.id}>
-                <td>{emp.name}{emp.is_master ? ' (Master)' : ''}</td>
-                <td>{emp.employee_id || '—'}</td>
-                <td>{emp.email}</td>
-                <td style={{ fontSize: '0.78rem', maxWidth: 280 }}>
-                  {permissionLabels(emp.permissions)}
-                </td>
-                <td>
-                  {!emp.is_master && (
-                    <>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(emp)}>Edit</button>
+            {sortedEmployees.map((emp) => {
+              const master = isMasterEmp(emp);
+              return (
+                <tr key={emp.id} className={master ? 'emp-row-master' : undefined}>
+                  <td>
+                    <strong>{emp.name}</strong>
+                  </td>
+                  <td>
+                    <span className={master ? 'admin-badge' : 'emp-badge'}>
+                      {master ? 'Master Admin' : 'Employee'}
+                    </span>
+                  </td>
+                  <td>{emp.employee_id || '—'}</td>
+                  <td>{emp.email}</td>
+                  <td style={{ fontSize: '0.78rem', maxWidth: 280 }}>
+                    {permissionLabels(emp)}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(emp)}>
+                      Edit
+                    </button>
+                    {!master && (
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -192,18 +229,17 @@ export default function AdminEmployees() {
                       >
                         Delete
                       </button>
-                    </>
-                  )}
-                  {emp.is_master && <span style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>Full access</span>}
-                </td>
-              </tr>
-            ))}
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {!employees.length && !isLoading && (
           <div className="admin-table-empty">
-            <strong>No employees yet</strong>
-            Add team members and set their permissions.
+            <strong>No accounts yet</strong>
+            Master Admin should appear here. Add team members and set their permissions.
           </div>
         )}
       </div>
@@ -211,9 +247,15 @@ export default function AdminEmployees() {
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-card emp-modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>{isEdit ? 'Edit Employee' : 'Add New Employee'}</h3>
+            <h3>
+              {isEdit
+                ? (form.isMaster ? 'Edit Master Admin' : 'Edit Employee')
+                : 'Add New Employee'}
+            </h3>
             <p className="modal-subtitle">
-              Choose what this employee can open and edit. Login: {siteOrigin}/admin/login
+              {form.isMaster
+                ? 'Update Master Admin name, email, or password. Full access cannot be reduced.'
+                : `Choose what this employee can open and edit. Login: ${siteOrigin}/admin/login`}
             </p>
             <form onSubmit={handleSave} autoComplete="off" style={{ position: 'relative' }}>
               <AutofillBlocker />
@@ -234,36 +276,45 @@ export default function AdminEmployees() {
                 <input className="form-input" minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min 6 characters" {...blockNewPasswordInput({ name: 'employee-new-password' })} />
               </div>
 
-              <div className="emp-permissions-block">
-                <div className="emp-permissions-head">
-                  <label className="form-label" style={{ margin: 0 }}>Privileges / Permissions *</label>
-                  <div className="emp-permissions-quick">
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={selectDefault}>Orders only</button>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={selectAll}>Select all</button>
-                  </div>
+              {form.isMaster ? (
+                <div className="emp-permissions-block emp-master-note">
+                  <label className="form-label" style={{ margin: 0 }}>Privileges</label>
+                  <p className="emp-permissions-hint" style={{ marginBottom: 0 }}>
+                    <strong>Master Admin</strong> always has full access to every panel (stocks, users, settings, employees, etc.). Permissions cannot be limited.
+                  </p>
                 </div>
-                <p className="emp-permissions-hint">Tick what this employee can access. Unticked areas are hidden and blocked.</p>
-                {permissionGroups.map(({ group, items }) => (
-                  <div key={group} className="emp-perm-group">
-                    <div className="emp-perm-group-label">{group}</div>
-                    <div className="emp-perm-grid">
-                      {items.map((item) => (
-                        <label key={item.id} className="emp-perm-item">
-                          <input
-                            type="checkbox"
-                            checked={form.permissions.includes(item.id)}
-                            onChange={() => togglePermission(item.id)}
-                          />
-                          <span>{item.label}</span>
-                        </label>
-                      ))}
+              ) : (
+                <div className="emp-permissions-block">
+                  <div className="emp-permissions-head">
+                    <label className="form-label" style={{ margin: 0 }}>Privileges / Permissions *</label>
+                    <div className="emp-permissions-quick">
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={selectDefault}>Orders only</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={selectAll}>Select all</button>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <p className="emp-permissions-hint">Tick what this employee can access. Unticked areas are hidden and blocked.</p>
+                  {permissionGroups.map(({ group, items }) => (
+                    <div key={group} className="emp-perm-group">
+                      <div className="emp-perm-group-label">{group}</div>
+                      <div className="emp-perm-grid">
+                        {items.map((item) => (
+                          <label key={item.id} className="emp-perm-item">
+                            <input
+                              type="checkbox"
+                              checked={form.permissions.includes(item.id)}
+                              onChange={() => togglePermission(item.id)}
+                            />
+                            <span>{item.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <button type="submit" className="btn btn-primary btn-full" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? 'Saving...' : 'Save Employee'}
+                {saveMutation.isPending ? 'Saving...' : (form.isMaster ? 'Save Master Admin' : 'Save Employee')}
               </button>
               <button type="button" className="btn btn-ghost btn-full mt-1" onClick={() => setShowModal(false)}>Cancel</button>
             </form>

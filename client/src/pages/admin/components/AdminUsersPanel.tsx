@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { saveUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { useToast } from '../../../context/ToastContext';
+import { matchesAdminSearch } from '../../../utils/adminSearch';
 import AdminSectionHeader from './AdminSectionHeader';
 
 type Props = {
@@ -42,14 +43,12 @@ export default function AdminUsersPanel({ users }: Props) {
   });
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return users.filter((u) => {
       if (kycFilter === 'review' && u.kycStatus !== 'Under Review') return false;
       if (kycFilter === 'verified' && u.kycStatus !== 'Verified') return false;
       if (kycFilter === 'rejected' && u.kycStatus !== 'Rejected') return false;
       if (kycFilter === 'not' && u.kycStatus !== 'Not Submitted') return false;
-      if (!q) return true;
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.phone.includes(q);
+      return matchesAdminSearch(search, u.name, u.email, u.phone, u.id);
     });
   }, [users, search, kycFilter]);
 
@@ -142,10 +141,12 @@ export default function AdminUsersPanel({ users }: Props) {
       <div className="stock-list-toolbar">
         <input
           type="search"
+          inputMode="search"
           className="report-filter-input stock-list-search"
-          placeholder="Search name, email, phone..."
+          placeholder="Search mobile, name, email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search users by mobile, name or email"
         />
         <select className="report-filter-input" value={kycFilter} onChange={(e) => setKycFilter(e.target.value)}>
           <option value="all">All KYC statuses</option>

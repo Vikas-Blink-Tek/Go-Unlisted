@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Order, User } from '../../../types';
 import { formatCurrency } from '../../../utils/format';
+import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { getOrderStatusLabel, getOrderStatusClass, isPendingOrder } from '../../../utils/orderStatus';
 import OrderDetailDrawer from './OrderDetailDrawer';
 
@@ -21,21 +22,22 @@ export default function AdminOrdersSection({ orders, users, showActions, onVerif
   const [selected, setSelected] = useState<Order | null>(null);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return orders.filter((o) => {
       if (statusFilter === 'pending' && !isPendingOrder(o.status)) return false;
       if (statusFilter === 'confirmed' && !o.status.toLowerCase().includes('confirm')) return false;
       if (statusFilter === 'rejected' && !/reject|cancel|refund/i.test(o.status)) return false;
       if (dateFrom && o.date && new Date(o.date) < new Date(dateFrom)) return false;
       if (dateTo && o.date && new Date(o.date) > new Date(`${dateTo}T23:59:59`)) return false;
-      if (!q) return true;
-      return (
-        o.orderId.toLowerCase().includes(q)
-        || (o.buyerName || '').toLowerCase().includes(q)
-        || (o.buyerEmail || '').toLowerCase().includes(q)
-        || (o.buyerPhone || '').includes(q)
-        || (o.transactionId || '').toLowerCase().includes(q)
-        || (o.companyName || o.shareName || '').toLowerCase().includes(q)
+      return matchesAdminSearch(
+        search,
+        o.orderId,
+        o.buyerName,
+        o.buyerEmail,
+        o.buyerPhone,
+        o.transactionId,
+        o.utr,
+        o.companyName,
+        o.shareName,
       );
     });
   }, [orders, search, statusFilter, dateFrom, dateTo]);
@@ -61,10 +63,12 @@ export default function AdminOrdersSection({ orders, users, showActions, onVerif
       <div className="stock-list-toolbar admin-orders-toolbar">
         <input
           type="search"
+          inputMode="search"
           className="report-filter-input stock-list-search"
-          placeholder="Search UTR, name, email, order ID..."
+          placeholder="Search mobile, UTR, name, email, order ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search orders by mobile, UTR, name or email"
         />
         <select className="report-filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>

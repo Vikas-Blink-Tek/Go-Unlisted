@@ -801,9 +801,11 @@ switch ($action) {
     // -----------------------------------------
     case 'getEmployees':
         requireMasterAdmin();
-        $res = $conn->query("SELECT id, employee_id, name, email, is_master, permissions, created_at FROM employees");
+        // Master Admin first, then employees by name
+        $res = $conn->query("SELECT id, employee_id, name, email, is_master, permissions, created_at FROM employees ORDER BY is_master DESC, name ASC");
         $data = [];
         while ($row = $res->fetch_assoc()) {
+            $row['is_master'] = (int) ($row['is_master'] ?? 0);
             $row['permissions'] = !empty($row['is_master'])
                 ? ['*']
                 : parseEmployeePermissions($row['permissions'] ?? '');
