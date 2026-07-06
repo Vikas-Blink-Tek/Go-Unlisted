@@ -40,9 +40,20 @@ export function adminLoginPath(panel?: string | null): string {
   return p ? `/admin/login?panel=${encodeURIComponent(p)}` : '/admin/login';
 }
 
-export function staffLoginPath(panel?: string | null): string {
+export function staffLoginPath(panel?: string | null, loginId?: string | null): string {
   const p = panel || parseAdminPanelHash();
-  return p ? `/staff/login?panel=${encodeURIComponent(p)}` : '/staff/login';
+  const base = p ? `/staff/login?panel=${encodeURIComponent(p)}` : '/staff/login';
+  if (!loginId?.trim()) return base;
+  const id = loginId.trim();
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}u=${encodeURIComponent(id)}`;
+}
+
+/** Full URL for one employee — opens staff login with email/ID pre-filled. */
+export function staffDirectLoginUrl(origin: string, emp: { email?: string; employee_id?: string }): string {
+  const loginId = emp.email || emp.employee_id || '';
+  const path = staffLoginPath(null, loginId);
+  return `${origin.replace(/\/$/, '')}${path}`;
 }
 
 export function portalLoginPath(portal: 'master' | 'staff', panel?: string | null): string {

@@ -52,6 +52,13 @@ export default function AdminLoginPage({ portal }: Props) {
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
   const returnPanel = searchParams.get('panel') as AdminPanelId | null;
+  const prefilledLogin = searchParams.get('u') || searchParams.get('email') || searchParams.get('id') || '';
+
+  useEffect(() => {
+    if (portal === 'staff' && prefilledLogin) {
+      setEmail(prefilledLogin);
+    }
+  }, [portal, prefilledLogin]);
 
   useEffect(() => {
     document.title = portal === 'master' ? 'Master Admin Login — Go-Unlisted' : 'Employee Login — Go-Unlisted';

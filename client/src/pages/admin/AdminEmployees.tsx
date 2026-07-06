@@ -8,6 +8,7 @@ import {
   type AdminPanelId,
 } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
+import { staffDirectLoginUrl } from '../../utils/adminPanelHash';
 import { blockEmailInput, blockNewPasswordInput, blockTextInput } from '../../utils/autofill';
 
 interface Employee {
@@ -63,7 +64,7 @@ export default function AdminEmployees() {
     mutationFn: saveEmployee,
     onSuccess: () => {
       if (!form.isMaster) {
-        showToast(`Employee saved — login: ${staffLoginUrl}`, 'success');
+        showToast(`Saved — direct link: ${staffDirectLoginUrl(siteOrigin, { email: form.email, employee_id: form.employeeId })}`, 'success');
       } else {
         showToast('Master Admin updated', 'success');
       }
@@ -187,8 +188,7 @@ export default function AdminEmployees() {
     }
   };
 
-  const employeeLoginDetails = (emp: Employee) =>
-    `Go-Unlisted employee login\nURL: ${staffLoginUrl}\nEmail: ${emp.email}${emp.employee_id ? `\nEmployee ID: ${emp.employee_id}` : ''}`;
+  const employeeDirectLink = (emp: Employee) => staffDirectLoginUrl(siteOrigin, emp);
 
   const permissionLabels = (emp: Employee) => {
     if (isMasterEmp(emp)) return 'Full access — all panels';
@@ -253,18 +253,28 @@ export default function AdminEmployees() {
                   </td>
                   <td>{emp.employee_id || '—'}</td>
                   <td>{emp.email}</td>
-                  <td style={{ fontSize: '0.78rem' }}>
+                  <td style={{ fontSize: '0.78rem', maxWidth: 220 }}>
                     {master ? (
-                      <a href={masterLoginUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green-light)' }}>/admin/login</a>
+                      <a href={masterLoginUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green-light)' }}>{masterLoginUrl}</a>
                     ) : (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        style={{ padding: '2px 8px' }}
-                        onClick={() => copyText(employeeLoginDetails(emp), 'Login details')}
-                      >
-                        Copy login info
-                      </button>
+                      <>
+                        <a
+                          href={employeeDirectLink(emp)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: 'var(--green-light)', wordBreak: 'break-all' }}
+                        >
+                          Direct link
+                        </a>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '2px 8px', marginLeft: 4 }}
+                          onClick={() => copyText(employeeDirectLink(emp), 'Direct login link')}
+                        >
+                          Copy
+                        </button>
+                      </>
                     )}
                   </td>
                   <td style={{ fontSize: '0.78rem', maxWidth: 280 }}>
@@ -324,25 +334,25 @@ export default function AdminEmployees() {
             </h3>
             <p className="modal-subtitle">
               {form.isMaster
-                ? `Master Admin login (auto): ${masterLoginUrl}`
-                : `Employee login link is auto-generated for all staff: ${staffLoginUrl} — share with them along with email/ID and password.`}
+                ? `Master Admin login: ${masterLoginUrl}`
+                : 'Direct login link is generated automatically after you save (email pre-filled — employee enters password only).'}
             </p>
-            {!form.isMaster && (
+            {!form.isMaster && form.email && (
               <div style={{ marginBottom: '1rem', padding: '0.65rem 0.75rem', background: 'rgba(122,193,66,0.08)', borderRadius: 8, fontSize: '0.8rem' }}>
-                <strong>Send to employee:</strong>
-                <div style={{ marginTop: 4, wordBreak: 'break-all' }}>{staffLoginUrl}</div>
-                {form.email && <div style={{ marginTop: 4 }}>Email: {form.email}</div>}
-                {form.employeeId && <div>ID: {form.employeeId}</div>}
+                <strong>Direct link (preview):</strong>
+                <div style={{ marginTop: 4, wordBreak: 'break-all' }}>
+                  {staffDirectLoginUrl(siteOrigin, { email: form.email, employee_id: form.employeeId })}
+                </div>
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
                   style={{ marginTop: 8 }}
                   onClick={() => copyText(
-                    `Login: ${staffLoginUrl}\nEmail: ${form.email || '(set email)'}\n${form.employeeId ? `Employee ID: ${form.employeeId}\n` : ''}Password: (set when you save)`,
-                    'Login details',
+                    staffDirectLoginUrl(siteOrigin, { email: form.email, employee_id: form.employeeId }),
+                    'Direct login link',
                   )}
                 >
-                  Copy details
+                  Copy direct link
                 </button>
               </div>
             )}
