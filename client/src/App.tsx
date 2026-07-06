@@ -33,6 +33,7 @@ export default function AppRouter() {
 
         <Route path="admin/login" element={<AdminLoginPage portal="master" />} />
         <Route path="staff/login" element={<AdminLoginPage portal="staff" />} />
+        <Route path="staff/:loginId" element={<AdminLoginPage portal="staff" />} />
         <Route path="admin" element={<AdminLayout />}>
           <Route index element={<AdminDashboard />} />
         </Route>

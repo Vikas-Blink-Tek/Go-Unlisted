@@ -41,19 +41,23 @@ export function adminLoginPath(panel?: string | null): string {
 }
 
 export function staffLoginPath(panel?: string | null, loginId?: string | null): string {
+  const id = loginId?.trim();
+  if (id) return `/staff/${encodeURIComponent(id)}`;
   const p = panel || parseAdminPanelHash();
-  const base = p ? `/staff/login?panel=${encodeURIComponent(p)}` : '/staff/login';
-  if (!loginId?.trim()) return base;
-  const id = loginId.trim();
-  const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}u=${encodeURIComponent(id)}`;
+  return p ? `/staff/login?panel=${encodeURIComponent(p)}` : '/staff/login';
 }
 
-/** Full URL for one employee — opens staff login with email/ID pre-filled. */
+/** Short direct link — prefers employee ID (/staff/GUE001) over long email query. */
+export function staffDirectLoginPath(emp: { email?: string; employee_id?: string }): string {
+  const empId = emp.employee_id?.trim();
+  if (empId) return `/staff/${encodeURIComponent(empId)}`;
+  const email = emp.email?.trim();
+  if (email) return `/staff/login?u=${encodeURIComponent(email)}`;
+  return '/staff/login';
+}
+
 export function staffDirectLoginUrl(origin: string, emp: { email?: string; employee_id?: string }): string {
-  const loginId = emp.email || emp.employee_id || '';
-  const path = staffLoginPath(null, loginId);
-  return `${origin.replace(/\/$/, '')}${path}`;
+  return `${origin.replace(/\/$/, '')}${staffDirectLoginPath(emp)}`;
 }
 
 export function portalLoginPath(portal: 'master' | 'staff', panel?: string | null): string {

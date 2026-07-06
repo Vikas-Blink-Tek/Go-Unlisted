@@ -152,8 +152,8 @@ export default function AdminEmployees() {
       showToast('Password must be at least 6 characters', 'error');
       return;
     }
-    if (!form.isMaster && !form.permissions.length) {
-      showToast('Select at least one permission', 'error');
+    if (!form.isMaster && !form.employeeId.trim()) {
+      showToast('Employee ID is required (short login link, e.g. GUE001)', 'error');
       return;
     }
     const payload: Record<string, unknown> = {
@@ -363,8 +363,8 @@ export default function AdminEmployees() {
                 <input className="form-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} {...blockTextInput({ name: 'employee-full-name' })} />
               </div>
               <div className="form-group">
-                <label className="form-label">Employee ID</label>
-                <input className="form-input" placeholder="e.g. GU001" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value.toUpperCase() })} {...blockTextInput({ name: 'employee-ref-id' })} />
+                <label className="form-label">Employee ID *</label>
+                <input className="form-input" required placeholder="e.g. GUE001 — used for short login link" value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value.toUpperCase() })} {...blockTextInput({ name: 'employee-ref-id' })} />
               </div>
               <div className="form-group">
                 <label className="form-label">Email *</label>

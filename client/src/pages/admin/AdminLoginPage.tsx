@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { loginAdmin, checkAuth } from '../../api/auth';
 import { setCsrfToken } from '../../api/csrf';
 import { useToast } from '../../context/ToastContext';
@@ -49,10 +49,16 @@ export default function AdminLoginPage({ portal }: Props) {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const navigate = useNavigate();
+  const { loginId: routeLoginId } = useParams();
   const [searchParams] = useSearchParams();
   const { showToast } = useToast();
   const returnPanel = searchParams.get('panel') as AdminPanelId | null;
-  const prefilledLogin = searchParams.get('u') || searchParams.get('email') || searchParams.get('id') || '';
+  const prefilledLogin =
+    (routeLoginId && routeLoginId !== 'login' ? decodeURIComponent(routeLoginId) : '')
+    || searchParams.get('u')
+    || searchParams.get('email')
+    || searchParams.get('id')
+    || '';
 
   useEffect(() => {
     if (portal === 'staff' && prefilledLogin) {
