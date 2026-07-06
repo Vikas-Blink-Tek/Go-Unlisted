@@ -56,7 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php if ($done): ?>
       <h1>Setup complete</h1>
       <div class="ok">
-        Test users removed (<?= (int)($results['users_deleted'] ?? 0) ?>).<br>
+        Test investor accounts removed (<?= (int)($results['users_deleted'] ?? 0) ?>).<br>
+        Your employees were <strong>not</strong> deleted.<br>
         Master admin ready: <strong><?= htmlspecialchars(MASTER_ADMIN_EMAIL) ?></strong>
       </div>
       <p><strong>Next steps:</strong></p>

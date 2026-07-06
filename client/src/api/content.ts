@@ -48,3 +48,14 @@ export function adminSaveArticle(article: Record<string, unknown>) {
 export function adminDeleteArticle(id: number) {
   return apiRequest<{ success: boolean }>('adminDeleteArticle', 'POST', { id });
 }
+
+export function getMailStatus() {
+  return apiRequest<{ smtp_configured: boolean; smtp_host?: string | null; mail_from: string }>(
+    'getMailStatus',
+    'GET',
+  );
+}
+
+export function testSmtp(email: string) {
+  return apiRequest<{ success: boolean; message?: string; error?: string }>('testSmtp', 'POST', { email });
+}

@@ -1,0 +1,26 @@
+
+.dev-otp-banner {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px dashed rgba(59, 130, 246, 0.45);
+  text-align: center;
+}
+
+.dev-otp-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--blue-light);
+  margin-bottom: 0.35rem;
+}
+
+.dev-otp-code {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: 0.25em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}

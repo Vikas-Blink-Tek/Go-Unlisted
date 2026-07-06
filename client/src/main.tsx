@@ -8,6 +8,7 @@ import { ToastProvider } from './context/ToastContext';
 import './styles/theme.css';
 import './styles/admin.css';
 import './styles/overrides.css';
+import './styles/otp.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {

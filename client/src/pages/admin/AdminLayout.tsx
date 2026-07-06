@@ -1,29 +1,29 @@
 import { Link, Outlet, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { checkAuth, logout } from '../../api/auth';
-import { AdminPanelProvider, panelsForRole, useAdminPanel, type AdminPanelId } from '../../context/AdminPanelContext';
+import {
+  AdminPanelProvider,
+  useAdminPanel,
+  type AdminPanelId,
+  type VerifiedAdminAuth,
+} from '../../context/AdminPanelContext';
+import { adminLoginPath, portalLoginPath, staffLoginPath } from '../../utils/adminPanelHash';
+import { clearAdminPortal, portalFromAuth, readAdminPortal, storeAdminPortal } from '../../utils/adminSession';
 import { adminNavIcon } from './adminNavIcons';
 
 function AdminShell() {
-  const { activePanel, setActivePanel, isMaster, permissions, loading } = useAdminPanel();
+  const { activePanel, setActivePanel, isMaster, allowedPanels } = useAdminPanel();
   const navigate = useNavigate();
-  const panels = panelsForRole(isMaster, permissions);
-  const current = panels.find((p) => p.id === activePanel);
-  const groups = [...new Set(panels.map((p) => p.group))];
+  const current = allowedPanels.find((p) => p.id === activePanel);
+  const groups = [...new Set(allowedPanels.map((p) => p.group))];
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  if (loading) {
-    return (
-      <div className="admin-login-screen">
-        <p style={{ color: 'var(--muted)' }}>Loading permissions...</p>
-      </div>
-    );
-  }
-
   const handleLogout = async () => {
+    const portal = readAdminPortal();
     await logout();
     sessionStorage.removeItem('gu_admin');
-    navigate('/admin/login');
+    clearAdminPortal();
+    navigate(portal === 'staff' ? staffLoginPath() : adminLoginPath());
   };
 
   const goPanel = (id: AdminPanelId) => {
@@ -50,7 +50,7 @@ function AdminShell() {
           {groups.map((group) => (
             <div key={group}>
               <div className="sidebar-group-label">{group}</div>
-              {panels.filter((p) => p.group === group).map((item) => (
+              {allowedPanels.filter((p) => p.group === group).map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -94,6 +94,7 @@ function AdminShell() {
 
 export default function AdminLayout() {
   const [authState, setAuthState] = useState<'loading' | 'ok' | 'denied'>('loading');
+  const [verifiedAuth, setVerifiedAuth] = useState<VerifiedAdminAuth | null>(null);
 
   useEffect(() => {
     document.title = 'Admin Panel — Go-Unlisted';
@@ -111,24 +112,64 @@ export default function AdminLayout() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     checkAuth()
       .then((res) => {
-        if (res.authenticated && res.type === 'admin') {
-          sessionStorage.setItem('gu_admin', JSON.stringify({ id: res.id, isMaster: res.isMaster }));
+        if (cancelled) return;
+        if (res.authenticated && res.type === 'admin' && res.id) {
+          const auth: VerifiedAdminAuth = {
+            id: res.id,
+            isMaster: !!res.isMaster,
+            permissions: res.permissions || [],
+          };
+          sessionStorage.setItem('gu_admin', JSON.stringify({ id: auth.id, isMaster: auth.isMaster }));
+          storeAdminPortal(portalFromAuth(auth.isMaster, res.portal));
+          setVerifiedAuth(auth);
           setAuthState('ok');
         } else {
           sessionStorage.removeItem('gu_admin');
           setAuthState('denied');
         }
       })
-      .catch(() => { sessionStorage.removeItem('gu_admin'); setAuthState('denied'); });
+      .catch(() => {
+        if (!cancelled) {
+          sessionStorage.removeItem('gu_admin');
+          setAuthState('denied');
+        }
+      });
+    return () => { cancelled = true; };
   }, []);
 
-  if (authState === 'loading') return <div className="admin-login-screen"><p style={{ color: 'var(--muted)' }}>Verifying session...</p></div>;
-  if (authState === 'denied') return <Navigate to="/admin/login" replace />;
+  // Re-verify session when tab regains focus (blocks stale UI after logout elsewhere)
+  useEffect(() => {
+    if (authState !== 'ok') return;
+    const recheck = () => {
+      checkAuth().then((res) => {
+        if (!res.authenticated || res.type !== 'admin') {
+          sessionStorage.removeItem('gu_admin');
+          setVerifiedAuth(null);
+          setAuthState('denied');
+        }
+      }).catch(() => {
+        sessionStorage.removeItem('gu_admin');
+        setVerifiedAuth(null);
+        setAuthState('denied');
+      });
+    };
+    window.addEventListener('focus', recheck);
+    return () => window.removeEventListener('focus', recheck);
+  }, [authState]);
+
+  if (authState === 'loading') {
+    return <div className="admin-login-screen"><p style={{ color: 'var(--muted)' }}>Verifying session...</p></div>;
+  }
+  if (authState === 'denied' || !verifiedAuth) {
+    const portal = readAdminPortal() ?? 'master';
+    return <Navigate to={portalLoginPath(portal)} replace />;
+  }
 
   return (
-    <AdminPanelProvider>
+    <AdminPanelProvider verifiedAuth={verifiedAuth}>
       <AdminShell />
     </AdminPanelProvider>
   );

@@ -1,5 +1,18 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { checkAuth } from '../api/auth';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  isPanelAllowed,
+  normalizeAdminPermissions,
+  parseAdminPanelHash,
+  resolveAdminPanel,
+} from '../utils/adminPanelHash';
 
 export type AdminPanelId =
   | 'dashboard'
@@ -10,6 +23,8 @@ export type AdminPanelId =
   | 'users'
   | 'cancel-refund'
   | 'employees'
+  | 'inventory'
+  | 'invoices'
   | 'prices'
   | 'articles'
   | 'reports'
@@ -20,15 +35,19 @@ export interface AdminPanelDef {
   label: string;
   group: string;
   hint?: string;
-  /** Only master admin can manage employees */
   masterOnly?: boolean;
 }
 
-/** Permissions master can assign to employees (maps to sidebar panels). */
+export interface VerifiedAdminAuth {
+  id: string;
+  isMaster: boolean;
+  permissions: string[];
+}
+
 export const EMPLOYEE_PERMISSION_OPTIONS: { id: AdminPanelId; label: string; group: string }[] = [
   { id: 'dashboard', label: 'Dashboard', group: 'Overview' },
   { id: 'pending', label: 'Verify Payments', group: 'Orders' },
-  { id: 'initiated', label: 'Abandoned Checkouts', group: 'Orders' },
+  { id: 'initiated', label: 'Initiate', group: 'Orders' },
   { id: 'orders', label: 'All Orders', group: 'Orders' },
   { id: 'manual-order', label: 'Manual Order', group: 'Orders' },
   { id: 'cancel-refund', label: 'Cancel / Refund', group: 'Orders' },
@@ -52,12 +71,14 @@ export const DEFAULT_EMPLOYEE_PERMISSIONS: AdminPanelId[] = [
 export const ADMIN_PANELS: AdminPanelDef[] = [
   { id: 'dashboard', label: 'Dashboard', group: 'Overview', hint: 'Orders, signups & revenue' },
   { id: 'pending', label: 'Verify Payments', group: 'Order Pipeline', hint: 'Confirm NEFT / IMPS / UPI transfers' },
-  { id: 'initiated', label: 'Abandoned Checkouts', group: 'Order Pipeline', hint: 'Buyers who started but did not pay' },
+  { id: 'initiated', label: 'Initiate', group: 'Order Pipeline', hint: 'Buyers who started checkout but did not pay' },
   { id: 'orders', label: 'All Orders', group: 'Order Pipeline', hint: 'Full order history' },
   { id: 'manual-order', label: 'Manual Order', group: 'Order Pipeline', hint: 'Enter offline / phone orders' },
   { id: 'cancel-refund', label: 'Cancel / Refund', group: 'Order Pipeline', hint: 'Update order status' },
   { id: 'users', label: 'Users & KYC', group: 'Clients', hint: 'Registered investors' },
   { id: 'employees', label: 'Employees', group: 'Team', masterOnly: true },
+  { id: 'inventory', label: 'Inventory', group: 'Back Office', masterOnly: true, hint: 'Qty on hand, cost & margins' },
+  { id: 'invoices', label: 'Invoices', group: 'Back Office', masterOnly: true, hint: 'Tax invoices for confirmed orders' },
   { id: 'prices', label: 'Stocks & Listings', group: 'Catalog', hint: 'Description, pricing, inventory' },
   { id: 'articles', label: 'Articles / Blog', group: 'Content' },
   { id: 'reports', label: 'Reports & Export', group: 'Analytics' },
@@ -71,60 +92,61 @@ export function panelsForRole(isMaster: boolean, permissions: string[] = []) {
   return ADMIN_PANELS.filter((p) => !p.masterOnly && permissions.includes(p.id));
 }
 
-interface AdminAuthValue {
+interface AdminPanelContextValue {
   isMaster: boolean;
   adminId: string;
   permissions: string[];
-  loading: boolean;
-  can: (permission: string) => boolean;
-}
-
-interface AdminPanelContextValue extends AdminAuthValue {
+  allowedPanels: AdminPanelDef[];
   activePanel: AdminPanelId;
   setActivePanel: (id: AdminPanelId) => void;
+  can: (permission: string) => boolean;
+  canAccessPanel: (panelId: AdminPanelId) => boolean;
 }
 
 const AdminPanelContext = createContext<AdminPanelContextValue | null>(null);
 
-export function AdminPanelProvider({ children }: { children: ReactNode }) {
-  const [activePanel, setActivePanelState] = useState<AdminPanelId>('dashboard');
-  const [isMaster, setIsMaster] = useState(false);
-  const [adminId, setAdminId] = useState('');
-  const [permissions, setPermissions] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
+export function AdminPanelProvider({
+  children,
+  verifiedAuth,
+}: {
+  children: ReactNode;
+  verifiedAuth: VerifiedAdminAuth;
+}) {
+  const isMaster = !!verifiedAuth.isMaster;
+  const permissions = useMemo(
+    () => normalizeAdminPermissions(isMaster, verifiedAuth.permissions),
+    [isMaster, verifiedAuth.permissions],
+  );
+  const allowedPanels = useMemo(() => panelsForRole(isMaster, permissions), [isMaster, permissions]);
+
+  const [activePanel, setActivePanelState] = useState<AdminPanelId>(() =>
+    resolveAdminPanel(parseAdminPanelHash(), isMaster, permissions),
+  );
+
+  const applyPanel = (requested: AdminPanelId | null) => {
+    const resolved = resolveAdminPanel(requested, isMaster, permissions);
+    setActivePanelState(resolved);
+    const hash = parseAdminPanelHash();
+    if (hash !== resolved) {
+      window.history.replaceState(null, '', `${window.location.pathname}#${resolved}`);
+    }
+  };
+
+  // Block forbidden hash before first paint (URL manipulation)
+  useLayoutEffect(() => {
+    applyPanel(parseAdminPanelHash());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMaster, permissions]);
 
   useEffect(() => {
-    checkAuth()
-      .then((res) => {
-        if (res.authenticated && res.type === 'admin') {
-          setIsMaster(!!res.isMaster);
-          setAdminId(res.id || '');
-          setPermissions(
-            res.isMaster || (res.permissions || []).includes('*')
-              ? ['*']
-              : (res.permissions as string[]) || DEFAULT_EMPLOYEE_PERMISSIONS,
-          );
-        }
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const allowedPanels = panelsForRole(isMaster, permissions);
-
-  useEffect(() => {
-    const syncFromHash = () => {
-      const hash = window.location.hash.replace('#', '') as AdminPanelId;
-      const allowed = allowedPanels.some((p) => p.id === hash);
-      if (allowed) setActivePanelState(hash);
-      else if (allowedPanels.length) setActivePanelState(allowedPanels[0].id);
-    };
-    if (!loading) syncFromHash();
-    window.addEventListener('hashchange', syncFromHash);
-    return () => window.removeEventListener('hashchange', syncFromHash);
-  }, [isMaster, permissions, loading, allowedPanels]);
+    const onHashChange = () => applyPanel(parseAdminPanelHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMaster, permissions]);
 
   const setActivePanel = (id: AdminPanelId) => {
-    if (!allowedPanels.some((p) => p.id === id)) return;
+    if (!isPanelAllowed(id, isMaster, permissions)) return;
     setActivePanelState(id);
     window.location.hash = id;
   };
@@ -132,9 +154,21 @@ export function AdminPanelProvider({ children }: { children: ReactNode }) {
   const can = (permission: string) =>
     isMaster || permissions.includes('*') || permissions.includes(permission);
 
+  const canAccessPanel = (panelId: AdminPanelId) =>
+    isPanelAllowed(panelId, isMaster, permissions);
+
   return (
     <AdminPanelContext.Provider
-      value={{ activePanel, setActivePanel, isMaster, adminId, permissions, loading, can }}
+      value={{
+        isMaster,
+        adminId: verifiedAuth.id,
+        permissions,
+        allowedPanels,
+        activePanel,
+        setActivePanel,
+        can,
+        canAccessPanel,
+      }}
     >
       {children}
     </AdminPanelContext.Provider>

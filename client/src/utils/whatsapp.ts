@@ -9,7 +9,7 @@ export function whatsappUrl(number: string, message?: string): string {
   return message ? `${base}?text=${encodeURIComponent(message)}` : base;
 }
 
-export function abandonedCheckoutMessage(name: string, shareName: string, qty: number, amount: string): string {
+export function initiateCheckoutMessage(name: string, shareName: string, qty: number, amount: string): string {
   const who = name && name !== 'Guest' ? name : 'there';
   return `Hi ${who}, you started checkout for ${shareName} (${qty} shares, ${amount}) on Go-Unlisted. Need help completing payment? Reply here and we'll assist.`;
 }

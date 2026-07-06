@@ -24,8 +24,8 @@ $results = runProductionReset($conn);
 file_put_contents(__DIR__ . '/../api/.installed', date('c'));
 
 echo "Production reset complete.\n";
-echo "Test users removed: {$results['users_deleted']}\n";
-echo "Extra employees removed: {$results['employees_deleted']}\n";
+echo "Demo users removed: {$results['users_deleted']}\n";
+echo "Employees kept (not deleted).\n";
 echo "Master admin ({$results['admin']}): " . MASTER_ADMIN_EMAIL . "\n";
 echo "Admin panel: /admin/login\n";
 

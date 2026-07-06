@@ -64,8 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 
+require_once __DIR__ . '/load_env.php';
 require_once __DIR__ . '/db_config.php';
 require_once __DIR__ . '/share_helpers.php';
+require_once __DIR__ . '/mail_helpers.php';
+require_once __DIR__ . '/invoice_helpers.php';
 
 $conn = new mysqli($host, $db_user, $db_pass, $db_name);
 
@@ -198,6 +201,7 @@ function autoMigrateSchema($conn) {
         'logo_url' => "VARCHAR(255) DEFAULT ''",
         'fundamentals' => 'TEXT',
         'listing_price' => 'DECIMAL(12,2) DEFAULT NULL',
+        'qty_on_hand' => 'INT NOT NULL DEFAULT 0',
     ];
     foreach ($shareCols as $col => $def) {
         $res = $conn->query("SHOW COLUMNS FROM shares LIKE '$col'");
@@ -205,6 +209,32 @@ function autoMigrateSchema($conn) {
             $conn->query("ALTER TABLE shares ADD COLUMN $col $def");
         }
     }
+
+    $conn->query("CREATE TABLE IF NOT EXISTS invoices (
+        invoice_id VARCHAR(50) PRIMARY KEY,
+        order_id VARCHAR(50) NOT NULL,
+        buyer_name VARCHAR(100) NOT NULL,
+        buyer_email VARCHAR(100) NOT NULL,
+        buyer_phone VARCHAR(20) DEFAULT NULL,
+        share_id VARCHAR(50) NOT NULL,
+        share_name VARCHAR(100) NOT NULL,
+        share_ticker VARCHAR(50) NOT NULL,
+        quantity INT NOT NULL,
+        price_per_share DECIMAL(12,2) NOT NULL,
+        subtotal DECIMAL(15,2) NOT NULL,
+        platform_fee DECIMAL(15,2) NOT NULL DEFAULT 0,
+        stamp_duty DECIMAL(15,2) NOT NULL DEFAULT 0,
+        total_amount DECIMAL(15,2) NOT NULL,
+        payment_method VARCHAR(50) DEFAULT NULL,
+        transaction_id VARCHAR(100) DEFAULT NULL,
+        status VARCHAR(50) NOT NULL,
+        invoice_date DATE NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_order_invoice (order_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    // Ensure Yamini (or any duplicate master) is demoted — only master-admin stays master
+    $conn->query("UPDATE employees SET is_master = 0 WHERE is_master = 1 AND id != 'master-admin'");
 
     $cfgRes = $conn->query("SELECT share_id, base_price FROM shares_config");
     if ($cfgRes) {
@@ -269,22 +299,42 @@ function issueOtpForEmail($conn, $email) {
     $stmt->bind_param('ss', $email, $otpHash);
     $stmt->execute();
 
-    $subject = 'Your Go-Unlisted Verification Code';
-    $message = "Welcome to Go-Unlisted!\n\nYour OTP code is: $otp\n\nThis code will expire in 10 minutes. Do not share this code with anyone.";
-    $headers = 'From: noreply@gounlisted.com';
-    @mail($email, $subject, $message, $headers);
-
     $localDev = getenv('GU_DEV_MODE') === '1' || isLocalDev();
+    $sent = guSendOtpEmail($email, $otp);
+
     if ($localDev) {
         error_log("DEV OTP for {$email}: {$otp}");
+    } elseif (!$sent) {
+        error_log("OTP email failed for {$email} — configure GU_SMTP_* or Hostinger mail()");
+    }
+
+    if ($localDev) {
+        return [
+            'success' => true,
+            'dev_mode' => true,
+            'email_sent' => $sent,
+            'dev_otp' => $otp,
+            'message' => $sent
+                ? "OTP sent to {$email} (dev mode: code also shown below)"
+                : 'Email not delivered locally — use the OTP code shown below',
+        ];
+    }
+
+    if (!$sent) {
+        error_log("OTP email failed for {$email} — set GU_SMTP_* in .env.local or api/mail_config.php");
+        return [
+            'success' => false,
+            'dev_mode' => false,
+            'email_sent' => false,
+            'error' => 'Could not send verification email. Ask admin to configure SMTP (info@go-unlisted.com), then try again.',
+        ];
     }
 
     return [
         'success' => true,
-        'message' => $localDev
-            ? 'OTP generated (local dev — check api/php_errors.log if email did not arrive)'
-            : 'OTP sent to your email',
-        'dev_mode' => $localDev,
+        'dev_mode' => false,
+        'email_sent' => true,
+        'message' => 'OTP sent to your email',
     ];
 }
 
@@ -303,7 +353,7 @@ function seedDemoUserIfEmpty(mysqli $conn): void {
     $stmt = $conn->prepare(
         'INSERT INTO users (id, name, phone, email, password, role, referral_code, kyc_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE name=VALUES(name), phone=VALUES(phone), password=VALUES(password), kyc_status=VALUES(kyc_status)'
+         ON DUPLICATE KEY UPDATE name=VALUES(name), phone=VALUES(phone), kyc_status=VALUES(kyc_status)'
     );
     $stmt->bind_param('ssssssss', $id, $name, $phone, $email, $hash, $role, $referral, $kyc);
     $stmt->execute();
@@ -363,20 +413,51 @@ function recordAttempt($conn, $table, $identifierColumn, $identifierValue) {
     $stmt->execute();
 }
 
-function requireAdmin() {
-    if (!isset($_SESSION['admin_id'])) {
+function refreshAdminSession(mysqli $conn): bool {
+    if (empty($_SESSION['admin_id'])) {
+        return false;
+    }
+    $adminId = (string) $_SESSION['admin_id'];
+    $stmt = $conn->prepare('SELECT is_master, permissions FROM employees WHERE id = ? LIMIT 1');
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('s', $adminId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    if (!$row) {
+        unset($_SESSION['admin_id'], $_SESSION['is_master'], $_SESSION['admin_permissions'], $_SESSION['employee_id'], $_SESSION['admin_portal']);
+        return false;
+    }
+    $isMaster = (int) ($row['is_master'] ?? 0) === 1;
+    // Only master-admin may hold master flag (blocks DB tampering + stale sessions)
+    if ($isMaster && $adminId !== 'master-admin') {
+        $fix = $conn->prepare("UPDATE employees SET is_master = 0 WHERE id = ? AND id != 'master-admin'");
+        $fix->bind_param('s', $adminId);
+        $fix->execute();
+        $isMaster = false;
+    }
+    $_SESSION['is_master'] = $isMaster ? 1 : 0;
+    $_SESSION['admin_permissions'] = $isMaster
+        ? ['*']
+        : parseEmployeePermissions($row['permissions'] ?? '');
+    $_SESSION['admin_portal'] = $isMaster ? 'master' : 'staff';
+    return true;
+}
+
+function requireAdmin(): void {
+    global $conn;
+    if (!refreshAdminSession($conn)) {
         http_response_code(401);
-        echo json_encode(["error" => "Unauthorized access. Admin privileges required."]);
-        exit;
+        sendResponse(['error' => 'Unauthorized access. Admin privileges required.']);
     }
 }
 
-function requireMasterAdmin() {
+function requireMasterAdmin(): void {
     requireAdmin();
     if (empty($_SESSION['is_master'])) {
         http_response_code(403);
-        echo json_encode(["error" => "Forbidden. Master Admin privileges required."]);
-        exit;
+        sendResponse(['error' => 'Forbidden. Master Admin privileges required.']);
     }
 }
 
@@ -413,7 +494,7 @@ function requirePermission(string $permission): void {
     requireAdmin();
     if (!adminCan($permission)) {
         http_response_code(403);
-        sendResponse(["error" => "You do not have permission for this action"]);
+        sendResponse(['error' => 'You do not have permission for this action']);
     }
 }
 
@@ -425,7 +506,35 @@ function requireAnyPermission(array $permissions): void {
         }
     }
     http_response_code(403);
-    sendResponse(["error" => "You do not have permission for this action"]);
+    sendResponse(['error' => 'You do not have permission for this action']);
+}
+
+/** Block privilege escalation via manipulated order status (Burp Suite). */
+function requireOrderStatusChange(string $newStatus): void {
+    requireAdmin();
+    $s = strtolower(trim($newStatus));
+    if ($s === '') {
+        requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
+        return;
+    }
+    if (strpos($s, 'confirm') !== false || strpos($s, 'complete') !== false || strpos($s, 'transfer') !== false) {
+        requirePermission('pending');
+        return;
+    }
+    if (strpos($s, 'reject') !== false || strpos($s, 'cancel') !== false || strpos($s, 'refund') !== false) {
+        requirePermission('cancel-refund');
+        return;
+    }
+    requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
+}
+
+function rejectPrivilegedEmployeeFields(array $data): void {
+    foreach (['isMaster', 'is_master'] as $key) {
+        if (array_key_exists($key, $data)) {
+            http_response_code(403);
+            sendResponse(['error' => 'Master privileges cannot be granted via API']);
+        }
+    }
 }
 
 function requireAuth() {
@@ -518,7 +627,7 @@ switch ($action) {
         $to = 'infogounlisted@gmail.com';
         $subject = "Go-Unlisted Contact: $name";
         $body = "Name: $name\nEmail: $email\nIP: $ip\n\nMessage:\n$message";
-        $headers = "From: noreply@gounlisted.com\r\nReply-To: $email";
+        $headers = "From: Go-Unlisted <info@go-unlisted.com>\r\nReply-To: $email";
         @mail($to, $subject, $body, $headers);
 
         logAudit($conn, 'Contact Form', $email, ['name' => $name]);
@@ -547,7 +656,11 @@ switch ($action) {
             break;
         }
 
-        sendResponse(issueOtpForEmail($conn, $email));
+        $otpResult = issueOtpForEmail($conn, $email);
+        if (($otpResult['success'] ?? true) === false) {
+            http_response_code(503);
+        }
+        sendResponse($otpResult);
         break;
 
     case 'sendResetOtp':
@@ -566,6 +679,17 @@ switch ($action) {
         $userRow = $stmt->get_result()->fetch_assoc();
 
         if (!$userRow) {
+            $empStmt = $conn->prepare('SELECT email FROM employees WHERE email = ? OR employee_id = ? LIMIT 1');
+            $empStmt->bind_param('ss', $loginId, $loginId);
+            $empStmt->execute();
+            if ($empStmt->get_result()->num_rows > 0) {
+                http_response_code(400);
+                sendResponse([
+                    'success' => false,
+                    'error' => 'This email is for team login (/staff/login), not investor MPIN. Use your investor email or sign in as staff.',
+                ]);
+                break;
+            }
             sleep(1);
             sendResponse([
                 'success' => true,
@@ -578,6 +702,9 @@ switch ($action) {
 
         $response = issueOtpForEmail($conn, $email);
         $response['email'] = $email;
+        if (($response['success'] ?? true) === false) {
+            http_response_code(503);
+        }
         sendResponse($response);
         break;
 
@@ -667,6 +794,10 @@ switch ($action) {
         $data = getPostData();
         $email = $data['email'] ?? '';
         $password = $data['password'] ?? '';
+        $portal = strtolower(trim((string) ($data['portal'] ?? 'master')));
+        if (!in_array($portal, ['master', 'staff'], true)) {
+            $portal = 'master';
+        }
 
         $stmt = $conn->prepare("SELECT id, password, is_master, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?");
         $stmt->bind_param("ss", $email, $email);
@@ -674,21 +805,34 @@ switch ($action) {
         $result = $stmt->get_result();
 
         if ($row = $result->fetch_assoc()) {
+            $isMasterRow = (int) ($row['is_master'] ?? 0) === 1 && $row['id'] === 'master-admin';
+            if ($portal === 'master' && !$isMasterRow) {
+                http_response_code(401);
+                sendResponse(['error' => 'Employee accounts must sign in at /staff/login']);
+                break;
+            }
+            if ($portal === 'staff' && $isMasterRow) {
+                http_response_code(401);
+                sendResponse(['error' => 'Master Admin must sign in at /admin/login']);
+                break;
+            }
             if (password_verify($password, $row['password'])) {
                 session_regenerate_id(true);
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $_SESSION['admin_id'] = $row['id'];
-                $_SESSION['is_master'] = $row['is_master'];
+                $_SESSION['is_master'] = $isMasterRow ? 1 : 0;
+                $_SESSION['admin_portal'] = $portal;
                 $_SESSION['employee_id'] = $row['employee_id'] ?? '';
-                $perms = !empty($row['is_master'])
+                $perms = $isMasterRow
                     ? ['*']
                     : parseEmployeePermissions($row['permissions'] ?? '');
                 $_SESSION['admin_permissions'] = $perms;
-                logAudit($conn, 'Admin Login', $row['id'], []);
+                logAudit($conn, 'Admin Login', $row['id'], ['portal' => $portal]);
                 sendResponse([
                     "success" => true,
                     "id" => $row['id'],
-                    "isMaster" => (bool)$row['is_master'],
+                    "isMaster" => $isMasterRow,
+                    "portal" => $portal,
                     "name" => $row['name'],
                     "employeeId" => $row['employee_id'] ?? '',
                     "permissions" => $perms,
@@ -743,16 +887,22 @@ switch ($action) {
 
     case 'checkAuth':
         if (isset($_SESSION['admin_id'])) {
+            if (!refreshAdminSession($conn)) {
+                sendResponse(['authenticated' => false]);
+                break;
+            }
             $perms = !empty($_SESSION['is_master'])
                 ? ['*']
                 : (is_array($_SESSION['admin_permissions'] ?? null)
                     ? $_SESSION['admin_permissions']
                     : defaultEmployeePermissions());
+            $portal = $_SESSION['admin_portal'] ?? (!empty($_SESSION['is_master']) ? 'master' : 'staff');
             sendResponse([
                 "authenticated" => true,
                 "type" => "admin",
                 "id" => $_SESSION['admin_id'],
                 "isMaster" => !empty($_SESSION['is_master']),
+                "portal" => $portal,
                 "permissions" => $perms,
                 "csrfToken" => ensureCsrfToken(),
             ]);
@@ -817,6 +967,7 @@ switch ($action) {
     case 'saveEmployee':
         requireMasterAdmin();
         $data = getPostData();
+        rejectPrivilegedEmployeeFields($data);
         $id = !empty($data['id']) ? $data['id'] : 'emp-' . uniqid();
         $name = htmlspecialchars($data['name']);
         $email = htmlspecialchars($data['email']);
@@ -883,6 +1034,135 @@ switch ($action) {
         sendResponse(["success" => true]);
         break;
 
+    case 'demoteEmployee':
+        requireMasterAdmin();
+        $data = getPostData();
+        $id = $data['id'] ?? '';
+        if ($id === '' || $id === 'master-admin') {
+            http_response_code(400);
+            sendResponse(['error' => 'Cannot demote the primary master admin account']);
+            break;
+        }
+        $perms = json_encode(defaultEmployeePermissions());
+        $stmt = $conn->prepare("UPDATE employees SET is_master = 0, permissions = ? WHERE id = ? AND is_master = 1");
+        $stmt->bind_param('ss', $perms, $id);
+        $stmt->execute();
+        if ($stmt->affected_rows === 0) {
+            http_response_code(404);
+            sendResponse(['error' => 'Employee not found or is not a master admin']);
+            break;
+        }
+        logAudit($conn, 'Demote Master Admin', $_SESSION['admin_id'], ['employeeId' => $id]);
+        sendResponse(['success' => true, 'message' => 'Master access removed. Employee now has default permissions.']);
+        break;
+
+    case 'getInventory':
+        requireMasterAdmin();
+        $res = $conn->query("SELECT * FROM shares WHERE is_active = 1 ORDER BY name ASC");
+        $items = [];
+        while ($row = $res->fetch_assoc()) {
+            $mapped = mapShareRow($row, true);
+            $sell = (float) $mapped['price'];
+            $buy = isset($mapped['buyPrice']) ? (float) $mapped['buyPrice'] : 0;
+            $qty = (int) ($mapped['qtyOnHand'] ?? 0);
+            $mapped['marginPerShare'] = $buy > 0 ? round($sell - $buy, 2) : null;
+            $mapped['marginPct'] = $buy > 0 ? round((($sell - $buy) / $buy) * 100, 1) : null;
+            $mapped['inventoryValue'] = $buy > 0 ? round($qty * $buy, 2) : null;
+            $items[] = $mapped;
+        }
+        sendResponse($items);
+        break;
+
+    case 'updateInventory':
+        requireMasterAdmin();
+        $data = getPostData();
+        $share_id = preg_replace('/[^a-z0-9-]/', '', strtolower($data['shareId'] ?? ''));
+        if (!$share_id) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid share']);
+            break;
+        }
+        $qty = max(0, (int) ($data['qtyOnHand'] ?? 0));
+        $inventory_status = trim($data['inventoryStatus'] ?? 'In Stock');
+        $has_buy = array_key_exists('buyPrice', $data);
+        $buy_price = null;
+        if ($has_buy && $data['buyPrice'] !== '' && $data['buyPrice'] !== null) {
+            $buy_price = (float) $data['buyPrice'];
+            if ($buy_price <= 0) {
+                $buy_price = null;
+            }
+        }
+        $stmt = $conn->prepare('UPDATE shares SET qty_on_hand = ?, inventory_status = ? WHERE share_id = ? AND is_active = 1');
+        $stmt->bind_param('iss', $qty, $inventory_status, $share_id);
+        $stmt->execute();
+        if ($stmt->affected_rows === 0) {
+            http_response_code(404);
+            sendResponse(['error' => 'Share not found']);
+            break;
+        }
+        if ($has_buy) {
+            if ($buy_price === null) {
+                $bp = $conn->prepare('UPDATE shares SET buy_price = NULL WHERE share_id = ?');
+                $bp->bind_param('s', $share_id);
+                $bp->execute();
+            } else {
+                $bp = $conn->prepare('UPDATE shares SET buy_price = ? WHERE share_id = ?');
+                $bp->bind_param('ds', $buy_price, $share_id);
+                $bp->execute();
+            }
+        }
+        logAudit($conn, 'Update Inventory', $_SESSION['admin_id'], ['shareId' => $share_id, 'qty' => $qty]);
+        sendResponse(['success' => true]);
+        break;
+
+    case 'getInvoices':
+        requireMasterAdmin();
+        $res = $conn->query('SELECT * FROM invoices ORDER BY created_at DESC');
+        $data = [];
+        while ($row = $res->fetch_assoc()) {
+            $data[] = mapInvoiceRow($row);
+        }
+        sendResponse($data);
+        break;
+
+    case 'getInvoice':
+        requireMasterAdmin();
+        $invoiceId = $_GET['invoiceId'] ?? '';
+        if (!$invoiceId) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invoice ID required']);
+            break;
+        }
+        $stmt = $conn->prepare('SELECT * FROM invoices WHERE invoice_id = ? LIMIT 1');
+        $stmt->bind_param('s', $invoiceId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) {
+            http_response_code(404);
+            sendResponse(['error' => 'Invoice not found']);
+            break;
+        }
+        sendResponse(mapInvoiceRow($row));
+        break;
+
+    case 'generateInvoice':
+        requireMasterAdmin();
+        $data = getPostData();
+        $orderId = trim($data['orderId'] ?? '');
+        if (!$orderId) {
+            http_response_code(400);
+            sendResponse(['error' => 'Order ID required']);
+            break;
+        }
+        $invoice = createInvoiceFromOrder($conn, $orderId);
+        if (!$invoice) {
+            http_response_code(404);
+            sendResponse(['error' => 'Could not generate invoice for this order']);
+            break;
+        }
+        sendResponse(['success' => true, 'invoice' => $invoice]);
+        break;
+
     // -----------------------------------------
     // USERS (Admin Only or Self)
     // -----------------------------------------
@@ -912,11 +1192,8 @@ switch ($action) {
             requirePermission('users');
         }
 
-        // SEC 1 FIX: Force role to 'user' for non-admin callers
+        // SEC: Role is never escalated via API — investors are always role=user
         $role = 'user';
-        if (isset($_SESSION['admin_id'])) {
-            $role = $data['role'] ?? 'user';
-        }
 
         $name = htmlspecialchars($data['name']);
         $phone = htmlspecialchars($data['phone']);
@@ -1003,7 +1280,7 @@ switch ($action) {
     // BUG 5 FIX: Delete User (Admin Only)
     // -----------------------------------------
     case 'deleteUser':
-        requireAdmin();
+        requirePermission('users');
         $data = getPostData();
         $email = $data['email'] ?? '';
         $stmt = $conn->prepare("DELETE FROM users WHERE email=?");
@@ -1106,8 +1383,8 @@ switch ($action) {
 
         // Admin status update only — never wipe UTR
         if ($existingOrder) {
-            requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
             $status = trim($data['status'] ?? $existingOrder['status']);
+            requireOrderStatusChange($status);
             $ops_note = trim($data['opsNote'] ?? $data['ops_note'] ?? '');
             $transaction_id = trim($data['transactionId'] ?? '');
             // Keep existing UTR unless admin explicitly sends a new one
@@ -1132,6 +1409,19 @@ switch ($action) {
                 'status' => $status,
                 'utr' => $transaction_id,
             ]);
+            $statusLower = strtolower($status);
+            if (strpos($statusLower, 'confirm') !== false || strpos($statusLower, 'complete') !== false) {
+                createInvoiceFromOrder($conn, $order_id);
+                // Decrement inventory when order confirmed
+                $ord = $conn->prepare('SELECT share_id, quantity FROM orders WHERE order_id = ? LIMIT 1');
+                $ord->bind_param('s', $order_id);
+                $ord->execute();
+                if ($ordRow = $ord->get_result()->fetch_assoc()) {
+                    $dec = $conn->prepare('UPDATE shares SET qty_on_hand = GREATEST(0, qty_on_hand - ?) WHERE share_id = ?');
+                    $dec->bind_param('is', $ordRow['quantity'], $ordRow['share_id']);
+                    $dec->execute();
+                }
+            }
             sendResponse([
                 "success" => true,
                 "orderId" => $order_id,
@@ -1225,6 +1515,7 @@ switch ($action) {
         if ($isUser) {
             $user_id = $_SESSION['user_id'];
         } elseif ($isAdmin) {
+            requirePermission('manual-order');
             $user_id = 'admin:' . $_SESSION['admin_id'];
         } else {
             http_response_code(401);
@@ -1367,11 +1658,14 @@ switch ($action) {
     // SHARES CATALOG
     // -----------------------------------------
     case 'getShares':
-        $isAdmin = isset($_SESSION['admin_id']);
+        $includeInternal = false;
+        if (isset($_SESSION['admin_id']) && refreshAdminSession($conn)) {
+            $includeInternal = adminCan('prices') || adminCan('inventory');
+        }
         $res = $conn->query("SELECT * FROM shares WHERE is_active = 1 ORDER BY is_featured DESC, is_builtin DESC, name ASC");
         $shares = [];
         while ($row = $res->fetch_assoc()) {
-            $shares[] = mapShareRow($row, $isAdmin);
+            $shares[] = mapShareRow($row, $includeInternal);
         }
         sendResponse($shares);
         break;
@@ -1404,12 +1698,16 @@ switch ($action) {
         $sector_color = trim($data['sectorColor'] ?? '#7ac142');
         $listing_type = trim($data['listingType'] ?? 'Pre-IPO');
         $ipo_timeline = '';
-        $has_buy_price = isset($data['buyPrice']) && $data['buyPrice'] !== '' && $data['buyPrice'] !== null;
-        $buy_price = $has_buy_price ? (float) $data['buyPrice'] : 0.0;
-        $listing_price = isset($data['listingPrice']) && $data['listingPrice'] !== '' && $data['listingPrice'] !== null
-            ? (float) $data['listingPrice'] : null;
-        if ($listing_price !== null && $listing_price <= 0) {
-            $listing_price = null;
+        $has_buy_price = array_key_exists('buyPrice', $data);
+        $buy_price = $has_buy_price && $data['buyPrice'] !== '' && $data['buyPrice'] !== null
+            ? (float) $data['buyPrice'] : 0.0;
+        $has_listing_price = array_key_exists('listingPrice', $data);
+        $listing_price = null;
+        if ($has_listing_price && $data['listingPrice'] !== '' && $data['listingPrice'] !== null) {
+            $listing_price = (float) $data['listingPrice'];
+            if ($listing_price <= 0) {
+                $listing_price = null;
+            }
         }
         $inventory_status = trim($data['inventoryStatus'] ?? 'In Stock');
         $isin = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim($data['isin'] ?? '')));
@@ -1574,30 +1872,34 @@ switch ($action) {
         }
 
         if ($has_buy_price) {
-            $bpStmt = $conn->prepare('UPDATE shares SET buy_price = ? WHERE share_id = ?');
-            if ($bpStmt) {
-                $bpStmt->bind_param('ds', $buy_price, $share_id);
-                $bpStmt->execute();
-            }
-        } else {
-            $bpStmt = $conn->prepare('UPDATE shares SET buy_price = NULL WHERE share_id = ?');
-            if ($bpStmt) {
-                $bpStmt->bind_param('s', $share_id);
-                $bpStmt->execute();
+            if ($data['buyPrice'] === '' || $data['buyPrice'] === null) {
+                $bpStmt = $conn->prepare('UPDATE shares SET buy_price = NULL WHERE share_id = ?');
+                if ($bpStmt) {
+                    $bpStmt->bind_param('s', $share_id);
+                    $bpStmt->execute();
+                }
+            } else {
+                $bpStmt = $conn->prepare('UPDATE shares SET buy_price = ? WHERE share_id = ?');
+                if ($bpStmt) {
+                    $bpStmt->bind_param('ds', $buy_price, $share_id);
+                    $bpStmt->execute();
+                }
             }
         }
 
-        if ($listing_price === null) {
-            $lpStmt = $conn->prepare('UPDATE shares SET listing_price = NULL WHERE share_id = ?');
-            if ($lpStmt) {
-                $lpStmt->bind_param('s', $share_id);
-                $lpStmt->execute();
-            }
-        } else {
-            $lpStmt = $conn->prepare('UPDATE shares SET listing_price = ? WHERE share_id = ?');
-            if ($lpStmt) {
-                $lpStmt->bind_param('ds', $listing_price, $share_id);
-                $lpStmt->execute();
+        if ($has_listing_price) {
+            if ($listing_price === null) {
+                $lpStmt = $conn->prepare('UPDATE shares SET listing_price = NULL WHERE share_id = ?');
+                if ($lpStmt) {
+                    $lpStmt->bind_param('s', $share_id);
+                    $lpStmt->execute();
+                }
+            } else {
+                $lpStmt = $conn->prepare('UPDATE shares SET listing_price = ? WHERE share_id = ?');
+                if ($lpStmt) {
+                    $lpStmt->bind_param('ds', $listing_price, $share_id);
+                    $lpStmt->execute();
+                }
             }
         }
 
@@ -1646,9 +1948,14 @@ switch ($action) {
         break;
 
     case 'saveShareConfig':
-        requireAdmin();
+        requirePermission('prices');
         $data = getPostData();
-        $share_id = htmlspecialchars($data['shareId']);
+        $share_id = preg_replace('/[^a-z0-9-]/', '', strtolower($data['shareId'] ?? ''));
+        if (!$share_id) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid share ID']);
+            break;
+        }
         $base_price = (float) $data['basePrice'];
 
         $stmt = $conn->prepare("UPDATE shares SET base_price = ? WHERE share_id = ?");
@@ -1656,21 +1963,81 @@ switch ($action) {
         $stmt->execute();
 
         syncShareConfigPrice($conn, $share_id, $base_price);
+
+        if (array_key_exists('listingPrice', $data)) {
+            $listing_price = null;
+            if ($data['listingPrice'] !== '' && $data['listingPrice'] !== null) {
+                $listing_price = (float) $data['listingPrice'];
+                if ($listing_price <= 0) {
+                    $listing_price = null;
+                }
+            }
+            if ($listing_price === null) {
+                $lpStmt = $conn->prepare('UPDATE shares SET listing_price = NULL WHERE share_id = ?');
+                if ($lpStmt) {
+                    $lpStmt->bind_param('s', $share_id);
+                    $lpStmt->execute();
+                }
+            } else {
+                $lpStmt = $conn->prepare('UPDATE shares SET listing_price = ? WHERE share_id = ?');
+                if ($lpStmt) {
+                    $lpStmt->bind_param('ds', $listing_price, $share_id);
+                    $lpStmt->execute();
+                }
+            }
+        }
+
         sendResponse(["success" => true]);
         break;
 
     case 'getSettings':
-        $isAdmin = isset($_SESSION['admin_id']);
+        $canAllSettings = isset($_SESSION['admin_id']) && refreshAdminSession($conn) && adminCan('settings');
         $stmt = $conn->prepare("SELECT setting_key, setting_value FROM settings");
         $stmt->execute();
         $res = $stmt->get_result();
         $settings = [];
         while ($row = $res->fetch_assoc()) {
-            if ($isAdmin || in_array($row['setting_key'], PUBLIC_SETTINGS_KEYS, true)) {
+            if ($canAllSettings || in_array($row['setting_key'], PUBLIC_SETTINGS_KEYS, true)) {
                 $settings[$row['setting_key']] = $row['setting_value'];
             }
         }
         sendResponse($settings);
+        break;
+
+    case 'getMailStatus':
+        requireMasterAdmin();
+        sendResponse(guMailStatus());
+        break;
+
+    case 'testSmtp':
+        requireMasterAdmin();
+        validateCsrfToken();
+        $data = getPostData();
+        $to = strtolower(trim($data['email'] ?? ''));
+        if ($to === '' || !isValidEmail($to)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Valid test email address is required']);
+            break;
+        }
+        if (!guSmtpConfigured()) {
+            http_response_code(503);
+            sendResponse([
+                'success' => false,
+                'error' => 'SMTP is not configured. Set GU_SMTP_* in .env.local or copy api/mail_config.example.php to api/mail_config.php on the server.',
+            ]);
+            break;
+        }
+        $ok = guSendEmail(
+            $to,
+            'Go-Unlisted SMTP test',
+            "This is a test email from Go-Unlisted.\n\nIf you received this, OTP emails will work for registration and MPIN reset.\n\n— Go-Unlisted"
+        );
+        if (!$ok) {
+            http_response_code(503);
+            sendResponse(['success' => false, 'error' => 'SMTP test failed. Check api/php_errors.log on the server.']);
+            break;
+        }
+        sendResponse(['success' => true, 'message' => "Test email sent to {$to}"]);
         break;
 
     // SEC 2 FIX: Use prepared statements instead of string interpolation
@@ -1758,7 +2125,7 @@ switch ($action) {
         break;
 
     case 'uploadQr':
-        requireAdmin();
+        requirePermission('settings');
         if (isset($_FILES['qr_image']) && $_FILES['qr_image']['error'] === UPLOAD_ERR_OK) {
             $tmpName = $_FILES['qr_image']['tmp_name'];
             $fileSize = $_FILES['qr_image']['size'];

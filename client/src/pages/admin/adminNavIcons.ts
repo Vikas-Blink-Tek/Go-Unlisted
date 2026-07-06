@@ -9,6 +9,8 @@ const ICONS: Record<AdminPanelId, string> = {
   'cancel-refund': '↺',
   users: '◉',
   employees: '⊞',
+  inventory: '▦',
+  invoices: '▧',
   prices: '◈',
   articles: '¶',
   reports: '▤',

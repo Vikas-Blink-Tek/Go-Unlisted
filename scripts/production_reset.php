@@ -1,6 +1,7 @@
 <?php
 /**
- * Production reset — single master admin, no test users.
+ * Production reset — ensure master admin, remove demo investor accounts.
+ * Does NOT delete employees the client added in admin.
  * Used by security_setup.php (CLI) and setup.php (browser).
  */
 
@@ -17,8 +18,8 @@ function runProductionReset(mysqli $conn): array
     $conn->query('DELETE FROM users');
     $results['users_deleted'] = $conn->affected_rows;
 
-    $conn->query('DELETE FROM employees WHERE is_master = 0');
-    $results['employees_deleted'] = $conn->affected_rows;
+    // Do NOT delete client-created employees — only ensure master admin exists.
+    $results['employees_deleted'] = 0;
 
     $hash = MASTER_ADMIN_PASSWORD_HASH;
     $email = MASTER_ADMIN_EMAIL;

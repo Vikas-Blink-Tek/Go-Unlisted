@@ -4,7 +4,7 @@ import { approveInitiatedCheckout, deleteInitiatedCheckout, getInitiatedCheckout
 import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { formatCurrency } from '../../../utils/format';
-import { abandonedCheckoutMessage, whatsappUrl } from '../../../utils/whatsapp';
+import { initiateCheckoutMessage, whatsappUrl } from '../../../utils/whatsapp';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
 export default function AdminInitiatedPanel() {
@@ -52,9 +52,9 @@ export default function AdminInitiatedPanel() {
     <div>
       <AdminSectionHeader
         compact
-        title="Abandoned Checkouts"
-        subtitle="Follow up via WhatsApp to recover sales from buyers who didn't complete payment."
-        badge={`${filtered.length}${search.trim() ? ` / ${rows.length}` : ''} abandoned`}
+        title="Initiate"
+        subtitle="Follow up via WhatsApp with buyers who started checkout but did not complete payment."
+        badge={`${filtered.length}${search.trim() ? ` / ${rows.length}` : ''} initiate`}
       />
 
       <div className="stock-list-toolbar">
@@ -65,7 +65,7 @@ export default function AdminInitiatedPanel() {
           placeholder="Search mobile, name, email, share..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search abandoned checkouts by mobile, name or email"
+          aria-label="Search initiate checkouts by mobile, name or email"
         />
         {search.trim() && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>
@@ -77,7 +77,7 @@ export default function AdminInitiatedPanel() {
       {isLoading && <p style={{ color: 'var(--muted)' }}>Loading...</p>}
 
       {!isLoading && !rows.length && (
-        <div className="empty-admin"><p>No abandoned checkouts — great!</p></div>
+        <div className="empty-admin"><p>No initiate checkouts yet</p></div>
       )}
 
       {!isLoading && !!rows.length && !filtered.length && (
@@ -103,7 +103,7 @@ export default function AdminInitiatedPanel() {
             </thead>
             <tbody>
               {filtered.map((o) => {
-                const msg = abandonedCheckoutMessage(
+                const msg = initiateCheckoutMessage(
                   o.buyerName || 'Guest',
                   o.shareName,
                   o.qty,
@@ -148,7 +148,7 @@ export default function AdminInitiatedPanel() {
                         type="button"
                         className="btn btn-ghost btn-sm"
                         onClick={() => {
-                          if (confirm('Dismiss this abandoned checkout?')) {
+                          if (confirm('Dismiss this initiate checkout?')) {
                             deleteMut.mutate(o.sessionId);
                           }
                         }}

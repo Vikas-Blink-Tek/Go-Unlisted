@@ -39,8 +39,15 @@ export function getSharesConfig() {
   return apiRequest<Record<string, number>>('getSharesConfig', 'GET');
 }
 
-export function saveShareConfig(shareId: string, basePrice: number) {
-  return apiRequest<{ success: boolean }>('saveShareConfig', 'POST', { shareId, basePrice });
+export function saveShareConfig(shareId: string, basePrice: number, listingPrice?: number | null) {
+  const payload: { shareId: string; basePrice: number; listingPrice?: number | null } = {
+    shareId,
+    basePrice,
+  };
+  if (listingPrice !== undefined) {
+    payload.listingPrice = listingPrice;
+  }
+  return apiRequest<{ success: boolean }>('saveShareConfig', 'POST', payload);
 }
 
 export type ShareInput = Omit<Share, 'price' | 'lastUpdated' | 'id'> & { id?: string };

@@ -4,6 +4,7 @@ Allow: /
 Disallow: /admin
 Disallow: /admin/
 Disallow: /admin/login
+Disallow: /staff/login
 Disallow: /api/
 Disallow: /schema.sql
 Disallow: /uploads/

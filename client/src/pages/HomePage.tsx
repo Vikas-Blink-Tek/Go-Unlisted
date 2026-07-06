@@ -5,41 +5,49 @@ import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import ReturnsCalculator from '../components/home/ReturnsCalculator';
 import ListingComparison from '../components/home/ListingComparison';
-import ShareSparkline from '../components/shares/ShareSparkline';
 import { formatCurrency } from '../utils/format';
 import type { Share } from '../types';
 
 function MarketActivityCard({ share }: { share: Share }) {
-  const history = share.priceHistory?.['3M']?.length
-    ? share.priceHistory['3M']
-    : [share.price * 0.92, share.price * 0.95, share.price * 0.97, share.price * 0.99, share.price];
+  const listingPrice =
+    share.listingPrice != null && share.listingPrice > 0 ? share.listingPrice : null;
+  const hasComparison = listingPrice != null;
+  const gainPct = hasComparison ? ((listingPrice - share.price) / share.price) * 100 : null;
 
-  // Same layout/size as the original static hero cards — used inside the rotator
   return (
-    <Link to={`/shares/${share.id}`} className="hero-card market-scroll-card">
+    <Link to={`/shares/${share.id}`} className="hero-card market-scroll-card market-compare-card">
       <div className="hero-card-top">
         <div className="hero-card-company">
           <CompanyLogo share={share} className="hero-logo-sm" />
-          <div>
+          <div className="hero-card-company-text">
             <div className="hero-company-name">{share.name}</div>
             <div className="hero-sector">{share.sector} · {share.listingType || 'Pre-IPO'}</div>
           </div>
         </div>
-        <div className="hero-price-badge">{formatCurrency(share.price)}</div>
       </div>
-      <div className="hero-chart-wrap">
-        <ShareSparkline data={history} positive={share.changePositive !== false} height={56} />
-      </div>
-      <div className="hero-card-bottom">
-        <div className="hero-card-meta">
-          Min {share.minQty} shares · {formatCurrency(share.price * share.minQty)}
+
+      <div className="market-compare-prices">
+        <div className="market-compare-price-box pre">
+          <span className="market-compare-label">Pre-IPO</span>
+          <span className="market-compare-value">{formatCurrency(share.price)}</span>
         </div>
-        {share.growth ? (
-          <div className={`hero-change ${share.changePositive === false ? 'neg' : 'pos'}`}>
-            {share.changePositive === false ? '▼' : '▲'} {share.growth}
-          </div>
-        ) : null}
+        <div className="market-compare-arrow" aria-hidden="true">→</div>
+        <div className="market-compare-price-box list">
+          <span className="market-compare-label">Listing</span>
+          <span className={`market-compare-value${listingPrice == null ? ' market-compare-value--empty' : ''}`}>
+            {listingPrice != null ? formatCurrency(listingPrice) : '—'}
+          </span>
+        </div>
       </div>
+
+      {hasComparison && gainPct != null ? (
+        <div className={`market-compare-gain ${gainPct >= 0 ? 'pos' : 'neg'}`}>
+          {gainPct >= 0 ? '+' : ''}
+          {gainPct.toFixed(0)}% · {(listingPrice / share.price).toFixed(1)}x
+        </div>
+      ) : (
+        <div className="market-compare-hint">Set listing price in admin to show IPO comparison</div>
+      )}
     </Link>
   );
 }
@@ -110,9 +118,14 @@ function MarketActivityScroller({ items }: { items: Share[] }) {
 
 export default function HomePage() {
   const { shares } = useShares();
-  /** Only starred stocks — never fall back to unstarred listings */
+  /** Starred stocks — homepage Market Activity only */
   const starred = useMemo(
     () => shares.filter((s) => !!s.isFeatured),
+    [shares],
+  );
+  /** Browseable listings — exclude starred (they stay on homepage hero only) */
+  const catalogShares = useMemo(
+    () => shares.filter((s) => !s.isFeatured),
     [shares],
   );
 
@@ -210,7 +223,7 @@ export default function HomePage() {
               <div style={{ flex: 1, background: 'rgba(122,193,66,0.08)', border: '1px solid rgba(122,193,66,0.2)', borderRadius: 12, padding: '10px 14px', textAlign: 'center' }}>
                 <div style={{ fontSize: '0.68rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 3 }}>Sectors</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--gold)' }}>
-                  {new Set(shares.map((s) => s.sector)).size}+
+                  {new Set(catalogShares.map((s) => s.sector)).size}+
                 </div>
               </div>
             </div>
@@ -226,12 +239,12 @@ export default function HomePage() {
             <div className="section-tag">Live Listings</div>
             <h2 className="section-title">Top Pre-IPO <span>Opportunities</span></h2>
             <p className="section-subtitle">
-              All active stocks from admin — starred ones also rotate in Market Activity above.
+              Browse all listings — starred picks appear only in Market Activity above, not here.
             </p>
           </div>
-          {shares.length > 0 ? (
+          {catalogShares.length > 0 ? (
             <div className="shares-grid">
-              {shares.map((share) => (
+              {catalogShares.map((share) => (
                 <ShareCard key={share.id} share={share} />
               ))}
             </div>

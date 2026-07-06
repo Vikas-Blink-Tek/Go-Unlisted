@@ -20,6 +20,7 @@ export default function SharesPage() {
 
   const filtered = useMemo(() => {
     return shares.filter((s) => {
+      if (s.isFeatured) return false;
       if (sector !== 'All' && s.sector !== sector) return false;
       if (s.price > maxPrice) return false;
       if (watchOnly && !watched.includes(s.id)) return false;

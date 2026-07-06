@@ -4,6 +4,7 @@ import { resetMpin, sendResetOtp, verifyOtp } from '../../api/auth';
 import { isValidMpin } from '../../utils/mpin';
 import AutofillBlocker from '../forms/AutofillBlocker';
 import { blockNewPasswordInput, blockTextInput } from '../../utils/autofill';
+import { useToast } from '../../context/ToastContext';
 
 type Props = {
   onClose: () => void;
@@ -13,6 +14,7 @@ type Props = {
 type Step = 'identify' | 'otp' | 'mpin';
 
 export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
+  const { showToast } = useToast();
   const [step, setStep] = useState<Step>('identify');
   const [loginId, setLoginId] = useState('');
   const [email, setEmail] = useState('');
@@ -20,6 +22,7 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
 
   const sendOtp = async () => {
     if (!loginId.trim()) {
@@ -32,6 +35,16 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
       const res = await sendResetOtp(loginId.trim());
       if (!res.success) throw new Error(res.error || 'Failed to send OTP');
       if (res.email) setEmail(res.email);
+      setDevOtp(res.dev_otp || null);
+      if (res.dev_otp) {
+        showToast('Local dev: OTP shown on screen below', 'info');
+      } else if (res.email_sent) {
+        showToast(`OTP sent to ${res.email}. Check spam/promotions if not in inbox.`, 'success');
+      } else if (res.email) {
+        showToast(`OTP generated for ${res.email}. Check your inbox or try Resend.`, 'info');
+      } else {
+        showToast('If this account exists, OTP was sent to the registered email.', 'info');
+      }
       setStep('otp');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send OTP');
@@ -75,12 +88,16 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
     return (
       <OtpModal
         email={email}
+        devOtp={devOtp}
         title="Reset MPIN"
-        subtitle="Enter the OTP sent to your registered email"
+        subtitle={email ? `Enter the 6-digit OTP sent to ${email}` : 'Enter the OTP sent to your registered email'}
         onClose={onClose}
         onVerify={handleOtpVerified}
         onResend={async () => {
-          await sendResetOtp(loginId.trim());
+          const res = await sendResetOtp(loginId.trim());
+          if (!res.success) throw new Error(res.error || 'Failed to resend OTP');
+          if (res.dev_otp) setDevOtp(res.dev_otp);
+          return res.dev_otp;
         }}
       />
     );
@@ -92,7 +109,7 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
         <h3 className="modal-title">Forgot MPIN?</h3>
         <p className="modal-subtitle">
           {step === 'identify'
-            ? 'Enter your registered email or phone. We will send an OTP to reset your MPIN.'
+            ? 'Enter your registered email or phone. OTP is always sent to your registered email (not SMS).'
             : 'Create a new 4-6 digit MPIN for your account.'}
         </p>
 

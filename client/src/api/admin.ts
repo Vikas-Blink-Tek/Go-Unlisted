@@ -25,6 +25,10 @@ export function deleteEmployee(id: string) {
   return apiRequest<{ success: boolean }>('deleteEmployee', 'POST', { id });
 }
 
+export function demoteEmployee(id: string) {
+  return apiRequest<{ success: boolean; message?: string }>('demoteEmployee', 'POST', { id });
+}
+
 export function mapApiUser(u: Record<string, unknown>): User {
   return {
     id: String(u.id),

@@ -674,21 +674,112 @@
     }
 
     .price-row--stock {
-      grid-template-columns: 40px auto minmax(140px, 1fr) auto auto minmax(200px, auto);
+      grid-template-columns: minmax(200px, 1fr) minmax(280px, auto) auto;
+      gap: 1.25rem;
       align-items: center;
+    }
+
+    .price-row-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .price-row-pricing {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding: 0.65rem 0.85rem;
+      background: rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      min-width: 260px;
+    }
+
+    .price-row-pricing-display {
+      display: flex;
+      gap: 1.25rem;
+      align-items: flex-end;
+    }
+
+    .admin-app .price-row-pricing .price-current {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+      min-width: 4.5rem;
+      font-size: inherit;
+      font-weight: inherit;
+      color: inherit;
+      text-align: left;
+    }
+
+    .admin-app .price-current-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .admin-app .price-current-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--gold);
+      line-height: 1.2;
+    }
+
+    .price-row-pricing-edit {
+      display: flex;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+
+    .price-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      flex: 1;
+      min-width: 100px;
+    }
+
+    .price-field-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .price-row--needs-listing {
+      border-left: 3px solid #f59e0b;
+    }
+
+    .price-field--listing .price-field-label {
+      color: #f59e0b;
+    }
+
+    .admin-app .price-row-pricing .price-input {
+      width: 100%;
+      min-width: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .price-row--stock {
+        grid-template-columns: 1fr;
+        gap: 0.85rem;
+      }
+      .price-row-pricing {
+        min-width: 0;
+      }
+      .price-row-actions {
+        justify-content: flex-start;
+      }
     }
 
     @media (max-width: 900px) {
       .price-row--stock {
-        grid-template-columns: auto 1fr;
-      }
-      .price-current,
-      .price-input {
-        grid-column: 2;
-      }
-      .price-row-actions {
-        grid-column: 1 / -1;
-        justify-content: flex-start;
+        grid-template-columns: 1fr;
       }
     }
 
@@ -716,8 +807,8 @@
     }
     @media (max-width: 600px) {
       .stock-form-grid { grid-template-columns: 1fr; }
-      .price-row--stock { grid-template-columns: auto 1fr; }
-      .price-row-actions { grid-column: 1 / -1; }
+      .price-row-pricing-edit { flex-direction: column; }
+      .price-row-actions { flex-wrap: wrap; }
     }
     .stock-color-picker {
       display: grid;
@@ -1494,5 +1585,599 @@
 
       .admin-section-header-actions {
         justify-content: flex-start;
+      }
+    }
+
+    /* ── Inventory & Invoices (master admin) ───────────── */
+    .inv-panel .inv-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .inv-toolbar {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      align-items: center;
+    }
+
+    .inv-search {
+      flex: 1;
+      min-width: 200px;
+      max-width: 420px;
+    }
+
+    .inv-stock-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .inv-ticker {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.03em;
+    }
+
+    .inv-inline-input,
+    .inv-inline-select {
+      width: 100%;
+      max-width: 110px;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border, rgba(255,255,255,0.12));
+      background: var(--surface, rgba(0,0,0,0.2));
+      color: inherit;
+      font-size: 0.85rem;
+      font-family: var(--font);
+    }
+
+    .inv-margin-pos { color: #7ac142; font-weight: 600; }
+    .inv-margin-neg { color: #ef4444; font-weight: 600; }
+    .inv-margin-pos small, .inv-margin-neg small { font-weight: 500; opacity: 0.85; }
+
+    .inv-row-low td { background: rgba(245, 158, 11, 0.06); }
+
+    .inv-order-code {
+      font-size: 0.75rem;
+      background: rgba(255,255,255,0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .invoice-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 9999;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+      overflow-y: auto;
+    }
+
+    .invoice-modal {
+      background: #fff;
+      color: #1a1a2e;
+      border-radius: 12px;
+      max-width: 720px;
+      width: 100%;
+      padding: 1.5rem;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+    }
+
+    .invoice-modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      justify-content: flex-end;
+    }
+
+    .invoice-doc-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1.5rem;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 1rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .invoice-logo { height: 40px; margin-bottom: 0.5rem; }
+    .invoice-company { font-weight: 800; font-size: 1.1rem; margin: 0; color: #003478; }
+    .invoice-tagline { font-size: 0.8rem; color: #6b7280; margin: 0.15rem 0 0; }
+
+    .invoice-doc-meta { text-align: right; }
+    .invoice-doc-meta h1 { margin: 0 0 0.35rem; font-size: 1.35rem; color: #111; }
+    .invoice-doc-meta p { margin: 0.15rem 0; font-size: 0.85rem; color: #374151; }
+
+    .invoice-parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .invoice-parties h3 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #9ca3af;
+      margin: 0 0 0.5rem;
+    }
+
+    .invoice-parties p { margin: 0.2rem 0; font-size: 0.9rem; }
+
+    .invoice-lines {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .invoice-lines th,
+    .invoice-lines td {
+      border: 1px solid #e5e7eb;
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+    }
+
+    .invoice-lines th { background: #f9fafb; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+    .invoice-lines td:last-child,
+    .invoice-lines th:last-child { text-align: right; }
+
+    .invoice-totals {
+      margin-left: auto;
+      max-width: 280px;
+      border-top: 2px solid #e5e7eb;
+      padding-top: 0.5rem;
+    }
+
+    .invoice-totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.35rem 0;
+      font-size: 0.9rem;
+    }
+
+    .invoice-totals-grand {
+      font-weight: 800;
+      font-size: 1.05rem;
+      border-top: 1px solid #e5e7eb;
+      margin-top: 0.35rem;
+      padding-top: 0.5rem;
+      color: #003478;
+    }
+
+    .invoice-footer {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #d1d5db;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .invoice-footer p { margin: 0.25rem 0; }
+
+    @media print {
+      body * { visibility: hidden; }
+      #invoice-print-area, #invoice-print-area * { visibility: visible; }
+      #invoice-print-area {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 0;
+      }
+      .no-print { display: none !important; }
+      .invoice-modal-overlay { background: none; padding: 0; position: static; }
+      .invoice-modal { box-shadow: none; border-radius: 0; max-width: none; }
+    }
+
+    .admin-access-denied {
+      text-align: center;
+      padding: 3rem 1.5rem;
+      max-width: 420px;
+      margin: 2rem auto;
+      background: rgba(239, 68, 68, 0.06);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      border-radius: 12px;
+    }
+
+    .admin-access-denied-icon {
+      font-size: 2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .admin-access-denied h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.15rem;
+    }
+
+    .admin-access-denied p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 0 0 1.25rem;
+    }
+
+    /* ── Stock listing modal v2 ───────────────────────── */
+    .slm-overlay {
+      padding: 0.75rem;
+      align-items: center;
+    }
+
+    .stock-modal-v2 {
+      background: var(--navy-mid, #0f1a2e);
+      border: 1px solid var(--border-soft);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 560px;
+      max-height: min(92vh, 720px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+    }
+
+    .slm-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1.1rem 1.25rem;
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(0, 0, 0, 0.2);
+      flex-shrink: 0;
+    }
+
+    .slm-header-main {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      min-width: 0;
+    }
+
+    .slm-header-text h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--white);
+    }
+
+    .slm-header-text p {
+      margin: 0.2rem 0 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 340px;
+    }
+
+    .slm-close {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-soft);
+      color: var(--muted);
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .slm-close:hover {
+      color: var(--white);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .slm-tabs {
+      display: flex;
+      gap: 0.35rem;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border-soft);
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+
+    .slm-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.85rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+      white-space: nowrap;
+      position: relative;
+    }
+
+    .slm-tab.active {
+      background: rgba(122, 193, 66, 0.15);
+      border-color: rgba(122, 193, 66, 0.35);
+      color: var(--gold);
+    }
+
+    .slm-tab-icon {
+      font-size: 0.85rem;
+      opacity: 0.85;
+    }
+
+    .slm-tab-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #f59e0b;
+      margin-left: 2px;
+    }
+
+    .slm-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 1.25rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .slm-preview {
+      background: linear-gradient(135deg, rgba(0, 52, 120, 0.35), rgba(122, 193, 66, 0.08));
+      border: 1px solid rgba(122, 193, 66, 0.25);
+      border-radius: 12px;
+      padding: 0.85rem 1rem;
+    }
+
+    .slm-preview-label {
+      font-size: 0.62rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .slm-preview-row {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .slm-preview-box {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+      padding: 0.5rem 0.65rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .slm-preview-box span {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .slm-preview-box strong {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--gold);
+    }
+
+    .slm-preview-box.list.empty strong {
+      color: var(--muted);
+    }
+
+    .slm-preview-arrow {
+      color: var(--muted);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .slm-preview-gain {
+      margin-top: 0.5rem;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .slm-preview-gain.pos { color: #7ac142; }
+    .slm-preview-gain.neg { color: #ef4444; }
+
+    .slm-preview-note {
+      margin: 0.5rem 0 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .slm-card {
+      background: rgba(0, 0, 0, 0.15);
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+
+    .slm-card--highlight {
+      border-color: rgba(245, 158, 11, 0.35);
+      background: rgba(245, 158, 11, 0.06);
+    }
+
+    .slm-card-title {
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gold);
+      margin-bottom: 0.75rem;
+    }
+
+    .slm-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+
+    .slm-grid--dense {
+      gap: 0.65rem;
+    }
+
+    .slm-price-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.85rem;
+    }
+
+    .slm-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+    }
+
+    .slm-field--full {
+      grid-column: 1 / -1;
+    }
+
+    .slm-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--white);
+    }
+
+    .slm-req {
+      color: #f59e0b;
+      margin-left: 2px;
+    }
+
+    .slm-input {
+      width: 100%;
+      background: var(--navy, #0a1220);
+      border: 1.5px solid var(--border-soft);
+      border-radius: 8px;
+      padding: 0.55rem 0.7rem;
+      font-size: 0.88rem;
+      color: var(--white);
+      font-family: var(--font);
+    }
+
+    .slm-input:focus {
+      outline: none;
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(122, 193, 66, 0.12);
+    }
+
+    .slm-input--lg {
+      font-size: 1rem;
+      font-weight: 700;
+      padding: 0.65rem 0.75rem;
+    }
+
+    .slm-input--accent {
+      border-color: rgba(245, 158, 11, 0.45);
+    }
+
+    .slm-textarea {
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .slm-hint {
+      margin: 0;
+      font-size: 0.7rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .slm-hint--block {
+      margin-bottom: 0.75rem;
+    }
+
+    .slm-toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.85rem 1rem;
+      background: rgba(122, 193, 66, 0.08);
+      border: 1px solid rgba(122, 193, 66, 0.2);
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .slm-toggle-row strong {
+      display: block;
+      font-size: 0.88rem;
+      color: var(--white);
+    }
+
+    .slm-toggle-row span {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .slm-toggle {
+      width: 44px;
+      height: 24px;
+      accent-color: var(--gold);
+      cursor: pointer;
+    }
+
+    .slm-logo-block {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .slm-logo-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .slm-footer {
+      flex-shrink: 0;
+      padding: 0.85rem 1.25rem 1.1rem;
+      border-top: 1px solid var(--border-soft);
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    .slm-error {
+      margin: 0 0 0.65rem;
+      text-align: left;
+    }
+
+    .slm-footer-actions {
+      display: flex;
+      gap: 0.65rem;
+      justify-content: flex-end;
+    }
+
+    .slm-save-btn {
+      min-width: 140px;
+    }
+
+    @media (max-width: 520px) {
+      .slm-price-grid,
+      .slm-grid {
+        grid-template-columns: 1fr;
+      }
+      .slm-header-text p {
+        max-width: 200px;
       }
     }

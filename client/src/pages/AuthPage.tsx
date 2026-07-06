@@ -27,6 +27,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [showForgotMpin, setShowForgotMpin] = useState(false);
+  const [regDevOtp, setRegDevOtp] = useState<string | null>(null);
 
   // Always start with empty fields — never show browser-saved emails
   useEffect(() => {
@@ -94,11 +95,14 @@ export default function AuthPage() {
     try {
       const otpRes = await sendOtp(regForm.email);
       if (!otpRes.success) throw new Error(otpRes.error || 'Failed to send OTP');
+      setRegDevOtp(otpRes.dev_otp || null);
       setShowOtp(true);
-      if (otpRes.dev_mode) {
-        showToast('Dev mode: OTP is in api/php_errors.log on the server', 'info');
-      } else {
+      if (otpRes.dev_otp) {
+        showToast('Local dev: OTP shown on screen below', 'info');
+      } else if (otpRes.email_sent) {
         showToast(`OTP sent to ${regForm.email}`, 'success');
+      } else {
+        showToast(`OTP generated for ${regForm.email}. Check inbox or use Resend.`, 'info');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
@@ -294,6 +298,7 @@ export default function AuthPage() {
       {showOtp && (
         <OtpModal
           email={regForm.email}
+          devOtp={regDevOtp}
           title="Verify Your Email"
           subtitle={`Enter the 6-digit code sent to ${regForm.email}`}
           onClose={() => setShowOtp(false)}
@@ -301,7 +306,9 @@ export default function AuthPage() {
           onResend={async () => {
             const res = await sendOtp(regForm.email);
             if (!res.success) throw new Error(res.error || 'Failed to resend');
-            showToast(`OTP resent to ${regForm.email}`, 'info');
+            if (res.dev_otp) setRegDevOtp(res.dev_otp);
+            showToast(res.dev_otp ? 'New OTP shown below' : `OTP resent to ${regForm.email}`, 'info');
+            return res.dev_otp;
           }}
         />
       )}

@@ -8,14 +8,15 @@ export function loginUser(email: string, password: string) {
   });
 }
 
-export function loginAdmin(email: string, password: string) {
+export function loginAdmin(email: string, password: string, portal: 'master' | 'staff' = 'master') {
   return apiRequest<{
     success: boolean;
     id?: string;
     isMaster?: boolean;
+    portal?: 'master' | 'staff';
     permissions?: string[];
     error?: string;
-  }>('loginAdmin', 'POST', { email, password });
+  }>('loginAdmin', 'POST', { email, password, portal });
 }
 
 export function logout() {
@@ -28,6 +29,7 @@ export function checkAuth() {
     type?: 'admin' | 'user';
     id?: string;
     isMaster?: boolean;
+    portal?: 'master' | 'staff';
     permissions?: string[];
     user?: User;
     csrfToken?: string;
@@ -39,6 +41,8 @@ export function sendOtp(email: string) {
     success: boolean;
     message?: string;
     dev_mode?: boolean;
+    dev_otp?: string;
+    email_sent?: boolean;
     error?: string;
   }>('sendOtp', 'POST', { email });
 }
@@ -55,7 +59,15 @@ export function saveUser(user: Record<string, unknown>) {
 }
 
 export function sendResetOtp(loginId: string) {
-  return apiRequest<{ success: boolean; email?: string; message?: string; error?: string }>(
+  return apiRequest<{
+    success: boolean;
+    email?: string;
+    message?: string;
+    dev_mode?: boolean;
+    dev_otp?: string;
+    email_sent?: boolean;
+    error?: string;
+  }>(
     'sendResetOtp',
     'POST',
     { loginId },

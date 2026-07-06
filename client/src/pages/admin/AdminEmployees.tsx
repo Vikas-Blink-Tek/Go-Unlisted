@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { deleteEmployee, getEmployees, saveEmployee } from '../../api/admin';
+import { deleteEmployee, demoteEmployee, getEmployees, saveEmployee } from '../../api/admin';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
 import {
   DEFAULT_EMPLOYEE_PERMISSIONS,
@@ -62,7 +62,11 @@ export default function AdminEmployees() {
   const saveMutation = useMutation({
     mutationFn: saveEmployee,
     onSuccess: () => {
-      showToast(form.isMaster ? 'Master Admin updated' : 'Employee saved', 'success');
+      if (!form.isMaster) {
+        showToast(`Employee saved — login: ${staffLoginUrl}`, 'success');
+      } else {
+        showToast('Master Admin updated', 'success');
+      }
       queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
       setShowModal(false);
       setForm(emptyForm);
@@ -75,6 +79,15 @@ export default function AdminEmployees() {
     mutationFn: deleteEmployee,
     onSuccess: () => {
       showToast('Employee deleted', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const demoteMutation = useMutation({
+    mutationFn: demoteEmployee,
+    onSuccess: (res) => {
+      showToast(res.message || 'Master access removed', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-employees'] });
     },
     onError: (e: Error) => showToast(e.message, 'error'),
@@ -162,6 +175,20 @@ export default function AdminEmployees() {
   }, []);
 
   const siteOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const staffLoginUrl = `${siteOrigin}/staff/login`;
+  const masterLoginUrl = `${siteOrigin}/admin/login`;
+
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`${label} copied`, 'success');
+    } catch {
+      showToast('Could not copy — select and copy manually', 'error');
+    }
+  };
+
+  const employeeLoginDetails = (emp: Employee) =>
+    `Go-Unlisted employee login\nURL: ${staffLoginUrl}\nEmail: ${emp.email}${emp.employee_id ? `\nEmployee ID: ${emp.employee_id}` : ''}`;
 
   const permissionLabels = (emp: Employee) => {
     if (isMasterEmp(emp)) return 'Full access — all panels';
@@ -179,6 +206,20 @@ export default function AdminEmployees() {
           <div className="admin-section-subtitle">
             Master Admin and employees — manage login details and employee panel access.
           </div>
+          <div className="emp-login-urls" style={{ marginTop: '0.65rem', fontSize: '0.82rem', color: 'var(--muted)' }}>
+            <span>
+              <strong style={{ color: 'var(--text)' }}>Employee login (auto):</strong>{' '}
+              <a href={staffLoginUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green-light)' }}>{staffLoginUrl}</a>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginLeft: 6, padding: '2px 8px' }} onClick={() => copyText(staffLoginUrl, 'Employee login link')}>
+                Copy
+              </button>
+            </span>
+            <span style={{ margin: '0 0.5rem' }}>·</span>
+            <span>
+              <strong style={{ color: 'var(--text)' }}>Master login:</strong>{' '}
+              <a href={masterLoginUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green-light)' }}>{masterLoginUrl}</a>
+            </span>
+          </div>
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Employee</button>
       </div>
@@ -192,6 +233,7 @@ export default function AdminEmployees() {
               <th>Role</th>
               <th>Employee ID</th>
               <th>Email</th>
+              <th>Login</th>
               <th>Permissions</th>
               <th>Actions</th>
             </tr>
@@ -211,6 +253,20 @@ export default function AdminEmployees() {
                   </td>
                   <td>{emp.employee_id || '—'}</td>
                   <td>{emp.email}</td>
+                  <td style={{ fontSize: '0.78rem' }}>
+                    {master ? (
+                      <a href={masterLoginUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--green-light)' }}>/admin/login</a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ padding: '2px 8px' }}
+                        onClick={() => copyText(employeeLoginDetails(emp), 'Login details')}
+                      >
+                        Copy login info
+                      </button>
+                    )}
+                  </td>
                   <td style={{ fontSize: '0.78rem', maxWidth: 280 }}>
                     {permissionLabels(emp)}
                   </td>
@@ -218,6 +274,20 @@ export default function AdminEmployees() {
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => openEdit(emp)}>
                       Edit
                     </button>
+                    {master && emp.id !== 'master-admin' && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#f59e0b' }}
+                        onClick={() => {
+                          if (confirm(`Remove Master Admin access from ${emp.name}? They will become a regular employee.`)) {
+                            demoteMutation.mutate(emp.id);
+                          }
+                        }}
+                      >
+                        Demote
+                      </button>
+                    )}
                     {!master && (
                       <button
                         type="button"
@@ -254,9 +324,28 @@ export default function AdminEmployees() {
             </h3>
             <p className="modal-subtitle">
               {form.isMaster
-                ? 'Update Master Admin name, email, or password. Full access cannot be reduced.'
-                : `Choose what this employee can open and edit. Login: ${siteOrigin}/admin/login`}
+                ? `Master Admin login (auto): ${masterLoginUrl}`
+                : `Employee login link is auto-generated for all staff: ${staffLoginUrl} — share with them along with email/ID and password.`}
             </p>
+            {!form.isMaster && (
+              <div style={{ marginBottom: '1rem', padding: '0.65rem 0.75rem', background: 'rgba(122,193,66,0.08)', borderRadius: 8, fontSize: '0.8rem' }}>
+                <strong>Send to employee:</strong>
+                <div style={{ marginTop: 4, wordBreak: 'break-all' }}>{staffLoginUrl}</div>
+                {form.email && <div style={{ marginTop: 4 }}>Email: {form.email}</div>}
+                {form.employeeId && <div>ID: {form.employeeId}</div>}
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ marginTop: 8 }}
+                  onClick={() => copyText(
+                    `Login: ${staffLoginUrl}\nEmail: ${form.email || '(set email)'}\n${form.employeeId ? `Employee ID: ${form.employeeId}\n` : ''}Password: (set when you save)`,
+                    'Login details',
+                  )}
+                >
+                  Copy details
+                </button>
+              </div>
+            )}
             <form onSubmit={handleSave} autoComplete="off" style={{ position: 'relative' }}>
               <AutofillBlocker />
               <div className="form-group">

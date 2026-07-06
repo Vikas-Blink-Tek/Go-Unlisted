@@ -22,7 +22,7 @@ export default function WelcomeAuthModal({ pathname }: Props) {
       setOpen(false);
       return;
     }
-    if (pathname.startsWith('/login') || pathname.startsWith('/admin') || pathname.startsWith('/checkout')) {
+    if (pathname.startsWith('/login') || pathname.startsWith('/admin') || pathname.startsWith('/staff') || pathname.startsWith('/checkout')) {
       setOpen(false);
       return;
     }

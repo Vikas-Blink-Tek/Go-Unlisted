@@ -1,17 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { deleteShare, saveShare, saveShareConfig, uploadShareLogo } from '../../../api/shares';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
 import { formatCurrency } from '../../../utils/format';
 import type { Share } from '../../../types';
 import AdminSectionHeader from '../components/AdminSectionHeader';
+import StockListingModal from '../components/StockListingModal';
 import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { STOCK_SECTORS } from '../../../data/sharesCatalog';
-import { buildPriceHistory, defaultChartLabels, trendFromGrowth } from '../../../utils/priceHistory';
-
-const LISTING_TYPES = ['Pre-IPO', 'Unlisted', 'Delisted', 'ESOP'];
-const INVENTORY_STATUSES = ['In Stock', 'Limited', 'On Request', 'Out of Stock'];
+import { buildPriceHistory, defaultChartLabels } from '../../../utils/priceHistory';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #003478, #0050a8)',
@@ -167,23 +165,12 @@ function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boole
   };
 }
 
-function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div className="stock-form-section">
-      <div className="stock-form-section-head">
-        <div className="stock-form-section-title">{title}</div>
-        {hint && <div className="stock-form-section-hint">{hint}</div>}
-      </div>
-      <div className="stock-form-grid">{children}</div>
-    </div>
-  );
-}
-
 export default function AdminSharePricesPanel() {
   const { shares, refetch } = useShares();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [priceEdits, setPriceEdits] = useState<Record<string, string>>({});
+  const [listingEdits, setListingEdits] = useState<Record<string, string>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Share | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -191,7 +178,6 @@ export default function AdminSharePricesPanel() {
   const [sectorFilter, setSectorFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
-  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const handleLogoUpload = async (file: File | undefined) => {
     if (!file) return;
@@ -265,14 +251,48 @@ export default function AdminSharePricesPanel() {
     await refetch();
   };
 
-  const savePrice = async (shareId: string) => {
-    const price = parseFloat(priceEdits[shareId]);
-    if (!price || price <= 0) {
-      showToast('Enter a valid price', 'warning');
+  const savePrice = async (share: Share) => {
+    const shareId = share.id;
+    const priceRaw = priceEdits[shareId];
+    const listingRaw = listingEdits[shareId];
+    const hasPriceEdit = priceRaw != null && priceRaw !== '';
+    const listingTouched = Object.prototype.hasOwnProperty.call(listingEdits, shareId);
+
+    if (!hasPriceEdit && !listingTouched) {
+      showToast('Enter a sell price and/or listing price to update', 'warning');
       return;
     }
-    await saveShareConfig(shareId, price);
-    showToast('Price updated', 'success');
+
+    const price = hasPriceEdit ? parseFloat(priceRaw) : share.price;
+    if (!price || price <= 0) {
+      showToast('Enter a valid sell price', 'warning');
+      return;
+    }
+
+    let listingPrice: number | null | undefined = undefined;
+    if (listingTouched) {
+      const parsed = parseFloat(listingRaw);
+      listingPrice = listingRaw.trim() === '' || !parsed || parsed <= 0 ? null : parsed;
+    }
+
+    await saveShareConfig(shareId, price, listingPrice);
+    const listingMsg =
+      listingTouched && listingPrice != null
+        ? ` — Listing ₹${listingPrice.toLocaleString('en-IN')} (homepage comparison on)`
+        : listingTouched && listingPrice === null
+          ? ' — Listing cleared'
+          : '';
+    showToast(`Prices updated${listingMsg}`, 'success');
+    setPriceEdits((prev) => {
+      const next = { ...prev };
+      delete next[shareId];
+      return next;
+    });
+    setListingEdits((prev) => {
+      const next = { ...prev };
+      delete next[shareId];
+      return next;
+    });
     invalidate();
   };
 
@@ -303,7 +323,7 @@ export default function AdminSharePricesPanel() {
         sectorColor: '#7ac142',
         basePrice,
         buyPrice: form.buyPrice ? parseFloat(form.buyPrice) : undefined,
-        listingPrice: form.listingPrice ? parseFloat(form.listingPrice) : undefined,
+        listingPrice: form.listingPrice ? parseFloat(form.listingPrice) : null,
         minQty,
         inventoryStatus: form.inventoryStatus,
         description: form.description.trim(),
@@ -353,7 +373,7 @@ export default function AdminSharePricesPanel() {
   const starMutation = useMutation({
     mutationFn: (share: Share) => saveShare(shareToSavePayload(share, { isFeatured: !share.isFeatured })),
     onSuccess: (_data, share) => {
-      showToast(share.isFeatured ? 'Removed from homepage' : 'Starred — shows in Market Activity', 'success');
+      showToast(share.isFeatured ? 'Removed from homepage' : 'Starred — homepage Market Activity only', 'success');
       invalidate();
     },
     onError: (e: Error) => showToast(e.message, 'error'),
@@ -366,7 +386,7 @@ export default function AdminSharePricesPanel() {
       <AdminSectionHeader
         compact
         title="Stocks & Listings"
-        subtitle="Star a stock to show it in homepage Market Activity. ISIN and other fields are optional."
+        subtitle="Star a stock for Market Activity. Set Listing Price (₹) for Pre-IPO vs listing comparison on homepage."
         badge={`${shares.length} active`}
         action={<button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Stock</button>}
       />
@@ -402,8 +422,8 @@ export default function AdminSharePricesPanel() {
       </div>
 
       <div className="admin-workflow-hint">
-        <strong>Owner tip:</strong> Click the ★ star on a listing to show it in homepage Market Activity cards.
-        Description is required; ISIN and other metrics are optional. Cost price is internal only.
+        <strong>Pre-IPO vs Listing:</strong> Homepage comparison tabhi dikhega jab <strong>Listing ₹</strong> set ho.
+        Abhi sab stocks par listing empty hai — neeche <strong>Listing ₹</strong> bharo aur <strong>Update prices</strong> dabao.
       </div>
 
       <div className="price-table-wrap">
@@ -424,37 +444,75 @@ export default function AdminSharePricesPanel() {
           </div>
         ) : (
           filteredShares.map((s) => (
-          <div key={s.id} className="price-row price-row--stock">
-            <button
-              type="button"
-              className={`stock-star-btn${s.isFeatured ? ' stock-star-btn--on' : ''}`}
-              title={s.isFeatured ? 'Remove from homepage Market Activity' : 'Star — show on homepage Market Activity'}
-              disabled={starMutation.isPending}
-              onClick={() => starMutation.mutate(s)}
-              aria-label={s.isFeatured ? 'Unstar stock' : 'Star stock for homepage'}
-            >
-              {s.isFeatured ? '★' : '☆'}
-            </button>
-            <CompanyLogo share={s} className="price-logo" />
-            <button type="button" className="price-row-info price-row-info--clickable" onClick={() => openEdit(s)}>
-              <div className="price-company-name">
-                {s.name}
-                {s.isFeatured && <span className="stock-type-badge stock-type-badge--custom">★ HOMEPAGE</span>}
-                <span className={`stock-type-badge ${s.isBuiltin === false ? 'stock-type-badge--custom' : 'stock-type-badge--base'}`}>
-                  {s.listingType || (s.isBuiltin === false ? 'CUSTOM' : 'BASE')}
-                </span>
+          <div key={s.id} className={`price-row price-row--stock${s.isFeatured && !s.listingPrice ? ' price-row--needs-listing' : ''}`}>
+            <div className="price-row-main">
+              <button
+                type="button"
+                className={`stock-star-btn${s.isFeatured ? ' stock-star-btn--on' : ''}`}
+                title={s.isFeatured ? 'Remove from homepage Market Activity' : 'Star — homepage only (hidden from /shares list)'}
+                disabled={starMutation.isPending}
+                onClick={() => starMutation.mutate(s)}
+                aria-label={s.isFeatured ? 'Unstar stock' : 'Star stock for homepage'}
+              >
+                {s.isFeatured ? '★' : '☆'}
+              </button>
+              <CompanyLogo share={s} className="price-logo" />
+              <button type="button" className="price-row-info price-row-info--clickable" onClick={() => openEdit(s)}>
+                <div className="price-company-name">
+                  {s.name}
+                  {s.isFeatured && <span className="stock-type-badge stock-type-badge--custom">★ HOMEPAGE</span>}
+                  <span className={`stock-type-badge ${s.isBuiltin === false ? 'stock-type-badge--custom' : 'stock-type-badge--base'}`}>
+                    {s.listingType || (s.isBuiltin === false ? 'CUSTOM' : 'BASE')}
+                  </span>
+                </div>
+                <div className="price-company-sector">
+                  {s.ticker} · {s.sector} · Min {s.minQty} · {s.inventoryStatus || 'In Stock'}
+                  {s.buyPrice ? ` · Margin ${formatCurrency(s.price - s.buyPrice)}/sh` : ''}
+                </div>
+                {!s.description && <div className="stock-missing-hint">⚠ No description — click to edit</div>}
+              </button>
+            </div>
+
+            <div className="price-row-pricing">
+              <div className="price-row-pricing-display">
+                <div className="price-current">
+                  <div className="price-current-label">Pre-IPO</div>
+                  <div className="price-current-value">{formatCurrency(s.price)}</div>
+                </div>
+                <div className="price-current price-current--listing">
+                  <div className="price-current-label">Listing</div>
+                  <div className="price-current-value">{s.listingPrice ? formatCurrency(s.listingPrice) : '—'}</div>
+                </div>
               </div>
-              <div className="price-company-sector">
-                {s.ticker} · {s.sector} · Min {s.minQty} · {s.inventoryStatus || 'In Stock'}
-                {s.buyPrice ? ` · Margin ${formatCurrency(s.price - s.buyPrice)}/sh` : ''}
+              <div className="price-row-pricing-edit">
+                <label className="price-field">
+                  <span className="price-field-label">Sell ₹</span>
+                  <input
+                    className="price-input"
+                    type="number"
+                    placeholder={String(s.price)}
+                    title="Pre-IPO / sell price"
+                    value={priceEdits[s.id] || ''}
+                    onChange={(e) => setPriceEdits({ ...priceEdits, [s.id]: e.target.value })}
+                  />
+                </label>
+                <label className="price-field price-field--listing">
+                  <span className="price-field-label">Listing ₹ *</span>
+                  <input
+                    className="price-input price-input--listing"
+                    type="number"
+                    placeholder="e.g. 4800"
+                    title="IPO / listing price — required for homepage Pre-IPO vs Listing comparison"
+                    value={listingEdits[s.id] ?? ''}
+                    onChange={(e) => setListingEdits({ ...listingEdits, [s.id]: e.target.value })}
+                  />
+                </label>
               </div>
-              {!s.description && <div className="stock-missing-hint">⚠ No description — click to edit</div>}
-            </button>
-            <div className="price-current">{formatCurrency(s.price)}</div>
-            <input className="price-input" type="number" placeholder="New price" value={priceEdits[s.id] || ''} onChange={(e) => setPriceEdits({ ...priceEdits, [s.id]: e.target.value })} />
+            </div>
+
             <div className="price-row-actions">
               <button type="button" className="btn btn-primary btn-sm stock-edit-btn" onClick={() => openEdit(s)}>✎ Edit</button>
-              <button type="button" className="btn-update-price" onClick={() => savePrice(s.id)}>Update price</button>
+              <button type="button" className="btn-update-price" onClick={() => savePrice(s)}>Update prices</button>
               <button type="button" className="btn btn-sm stock-delete-btn" onClick={() => setDeleteTarget(s)}>Delete</button>
             </div>
           </div>
@@ -463,264 +521,19 @@ export default function AdminSharePricesPanel() {
       </div>
 
       {modalOpen && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModalOpen(false)}>
-          <div className="modal-card stock-modal-card" onClick={(e) => e.stopPropagation()}>
-            <h3>{form.id ? 'Edit Listing' : 'Add New Stock'}</h3>
-            <p className="modal-subtitle">All fields below appear on the public share detail page (except cost price).</p>
-
-            <FormSection title="Identity" hint="Company name and sector shown on cards and detail page">
-              <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="report-filter-label">Company Name *</label>
-                <input
-                  className="report-filter-input"
-                  value={form.name}
-                  onChange={(e) => {
-                    const name = e.target.value;
-                    const prevAuto = initialsFromName(form.name, '');
-                    const shouldAuto = !form.logoInitials || form.logoInitials === prevAuto;
-                    set({
-                      name,
-                      ...(shouldAuto ? { logoInitials: initialsFromName(name, '') } : {}),
-                    });
-                  }}
-                  placeholder="e.g. Boat"
-                />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Ticker *</label>
-                <input className="report-filter-input" value={form.ticker} onChange={(e) => set({ ticker: e.target.value.toUpperCase() })} placeholder="ZEPTO" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Sector *</label>
-                <select
-                  className="report-filter-input"
-                  value={form.sector}
-                  onChange={(e) => set({ sector: e.target.value })}
-                  required
-                >
-                  <option value="">Select sector...</option>
-                  {sectorDropdownOptions.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Listing Type</label>
-                <select className="report-filter-input" value={form.listingType} onChange={(e) => set({ listingType: e.target.value })}>
-                  {LISTING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="report-filter-label">Company Logo (optional)</label>
-                <div className="stock-logo-upload">
-                  <CompanyLogo
-                    share={{
-                      name: form.name || 'Stock',
-                      logoInitials: form.logoInitials,
-                      logoGradient: form.logoGradient,
-                      logoUrl: form.logoUrl,
-                    }}
-                    className="stock-logo-preview"
-                    size={56}
-                  />
-                  <div className="stock-logo-upload-actions">
-                    <input
-                      ref={logoInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-                      className="stock-logo-file-input"
-                      disabled={logoUploading}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        void handleLogoUpload(file);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      disabled={logoUploading}
-                      onClick={() => logoInputRef.current?.click()}
-                    >
-                      {logoUploading ? 'Uploading…' : form.logoUrl ? 'Change photo' : 'Upload photo'}
-                    </button>
-                    {form.logoUrl && (
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ logoUrl: '' })}>
-                        Remove photo
-                      </button>
-                    )}
-                    <p className="stock-logo-hint">JPG, PNG or WEBP · max 2MB. Upload, then click Save Listing.</p>
-                  </div>
-                </div>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Logo Initials *</label>
-                <input
-                  className="report-filter-input"
-                  maxLength={5}
-                  value={form.logoInitials}
-                  onChange={(e) => set({ logoInitials: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 5) })}
-                  placeholder="BO"
-                />
-                <p className="stock-logo-hint" style={{ marginTop: 4 }}>
-                  Shown on website when no photo. Example: Boat → BO. Click Save Listing after changing.
-                </p>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Logo Color (if no photo)</label>
-                <div className="stock-color-picker">
-                  {GRADIENTS.map((g) => (
-                    <button key={g} type="button" className={`stock-color-option${form.logoGradient === g ? ' selected' : ''}`} style={{ background: g }} onClick={() => set({ logoGradient: g })} />
-                  ))}
-                </div>
-              </div>
-            </FormSection>
-
-            <FormSection title="Pricing & Inventory" hint="Sell price is public. Cost price is for your margin tracking only.">
-              <div className="report-filter-group">
-                <label className="report-filter-label">Sell Price (₹) *</label>
-                <input className="report-filter-input" type="number" min="1" value={form.basePrice} onChange={(e) => set({ basePrice: e.target.value })} />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Cost / Buy Price (₹)</label>
-                <input className="report-filter-input" type="number" min="0" value={form.buyPrice} onChange={(e) => set({ buyPrice: e.target.value })} placeholder="Internal only" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Listing Price (₹)</label>
-                <input
-                  className="report-filter-input"
-                  type="number"
-                  min="0"
-                  value={form.listingPrice}
-                  onChange={(e) => set({ listingPrice: e.target.value })}
-                  placeholder="IPO / listing price"
-                />
-                <p className="stock-logo-hint" style={{ marginTop: 4 }}>Optional. When set, shows on homepage as Pre-IPO vs Listing comparison.</p>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Min Quantity *</label>
-                <input className="report-filter-input" type="number" min="1" value={form.minQty} onChange={(e) => set({ minQty: e.target.value })} />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Availability</label>
-                <select className="report-filter-input" value={form.inventoryStatus} onChange={(e) => set({ inventoryStatus: e.target.value })}>
-                  {INVENTORY_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Chart trend (high / low) *</label>
-                <select
-                  className="report-filter-input"
-                  value={form.changePositive ? 'up' : 'down'}
-                  onChange={(e) => set({ changePositive: e.target.value === 'up' })}
-                >
-                  <option value="up">▲ Rising (green chart — price moved up to sell price)</option>
-                  <option value="down">▼ Falling (red chart — price moved down to sell price)</option>
-                </select>
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">★ Homepage (star)</label>
-                <select className="report-filter-input" value={form.isFeatured ? 'yes' : 'no'} onChange={(e) => set({ isFeatured: e.target.value === 'yes' })}>
-                  <option value="no">No</option>
-                  <option value="yes">Yes — show in Market Activity</option>
-                </select>
-              </div>
-            </FormSection>
-
-            <FormSection title="Company Profile" hint="All fields optional except description — fill only what you have">
-              <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="report-filter-label">Company Description *</label>
-                <textarea className="report-filter-input" rows={5} value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder="What does the company do? Why is it attractive pre-IPO? Mention business model, market position, and growth drivers..." />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Founded Year (optional)</label>
-                <input className="report-filter-input" type="number" value={form.founded} onChange={(e) => set({ founded: e.target.value })} />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Annual Revenue (optional)</label>
-                <input className="report-filter-input" value={form.revenue} onChange={(e) => set({ revenue: e.target.value })} placeholder="₹5,000 Cr" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Valuation (optional)</label>
-                <input className="report-filter-input" value={form.valuation} onChange={(e) => set({ valuation: e.target.value })} placeholder="₹50,000 Cr" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Growth (YoY) — sets chart slope</label>
-                <input
-                  className="report-filter-input"
-                  value={form.growth}
-                  onChange={(e) => {
-                    const growth = e.target.value;
-                    const inferred = trendFromGrowth(growth);
-                    set({
-                      growth,
-                      ...(inferred === null ? {} : { changePositive: inferred }),
-                    });
-                  }}
-                  placeholder="+45% or -12%"
-                />
-              </div>
-              <p className="stock-logo-hint" style={{ gridColumn: '1 / -1', marginTop: '-0.5rem' }}>
-                Chart is auto-built: sell price is the <strong>latest</strong> point.
-                Rising + growth (e.g. +45%) = line goes up (green). Falling / negative growth = line goes down (red).
-              </p>
-              <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="report-filter-label">Key Highlights (one per line, optional)</label>
-                <textarea className="report-filter-input" rows={4} value={form.keyHighlights} onChange={(e) => set({ keyHighlights: e.target.value })} placeholder={'Market leader in quick commerce\nBacked by top-tier investors\nPath to profitability in FY26'} />
-              </div>
-            </FormSection>
-
-            <FormSection title="Key Data (all optional)" hint="Leave blank if not available — public site shows N/A">
-              <div className="report-filter-group">
-                <label className="report-filter-label">52-wk high</label>
-                <input className="report-filter-input" value={form.week52High} onChange={(e) => set({ week52High: e.target.value })} placeholder="₹8.25" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">52-wk low</label>
-                <input className="report-filter-input" value={form.week52Low} onChange={(e) => set({ week52Low: e.target.value })} placeholder="₹2.75" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Market cap</label>
-                <input className="report-filter-input" value={form.marketCap} onChange={(e) => set({ marketCap: e.target.value })} placeholder="₹6,545 Cr" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">P/E ratio</label>
-                <input className="report-filter-input" value={form.peRatio} onChange={(e) => set({ peRatio: e.target.value })} placeholder="N/A if unknown" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">P/B ratio</label>
-                <input className="report-filter-input" value={form.pbRatio} onChange={(e) => set({ pbRatio: e.target.value })} placeholder="4.8" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Debt / Equity</label>
-                <input className="report-filter-input" value={form.debtEquity} onChange={(e) => set({ debtEquity: e.target.value })} placeholder="0" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">ROE</label>
-                <input className="report-filter-input" value={form.roe} onChange={(e) => set({ roe: e.target.value })} placeholder="-1.89%" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Book value</label>
-                <input className="report-filter-input" value={form.bookValue} onChange={(e) => set({ bookValue: e.target.value })} placeholder="₹1.24" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">Face value</label>
-                <input className="report-filter-input" value={form.faceValue} onChange={(e) => set({ faceValue: e.target.value })} placeholder="₹1" />
-              </div>
-              <div className="report-filter-group">
-                <label className="report-filter-label">ISIN</label>
-                <input className="report-filter-input" value={form.isin} onChange={(e) => set({ isin: e.target.value.toUpperCase() })} placeholder="INE312K01010" maxLength={20} />
-              </div>
-            </FormSection>
-
-            {formError && <p className="stock-form-error">{formError}</p>}
-            <button type="button" className="btn btn-primary btn-full" disabled={saveMutation.isPending} onClick={() => { setFormError(''); saveMutation.mutate(); }}>
-              {form.id ? 'Save Listing' : 'Add Stock'}
-            </button>
-            <button type="button" className="btn btn-ghost btn-full mt-1" onClick={() => setModalOpen(false)}>Cancel</button>
-          </div>
-        </div>
+        <StockListingModal
+          form={form}
+          set={set}
+          formError={formError}
+          isPending={saveMutation.isPending}
+          logoUploading={logoUploading}
+          sectorOptions={sectorDropdownOptions}
+          onClose={() => setModalOpen(false)}
+          onSave={() => { setFormError(''); saveMutation.mutate(); }}
+          onLogoUpload={handleLogoUpload}
+        />
       )}
+
 
       {deleteTarget && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setDeleteTarget(null)}>

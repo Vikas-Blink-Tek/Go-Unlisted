@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface OtpModalProps {
@@ -6,16 +6,22 @@ interface OtpModalProps {
   phone?: string;
   title?: string;
   subtitle?: string;
+  devOtp?: string | null;
   onClose: () => void;
   onVerify: (otp: string) => Promise<void>;
-  onResend: () => Promise<void>;
+  onResend: () => Promise<string | void>;
 }
 
-export default function OtpModal({ email, phone, title = 'Verify OTP', subtitle, onClose, onVerify, onResend }: OtpModalProps) {
+export default function OtpModal({ email, phone, title = 'Verify OTP', subtitle, devOtp, onClose, onVerify, onResend }: OtpModalProps) {
   const [digits, setDigits] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [shownDevOtp, setShownDevOtp] = useState(devOtp || '');
+
+  useEffect(() => {
+    if (devOtp) setShownDevOtp(devOtp);
+  }, [devOtp]);
 
   const handleChange = (idx: number, val: string) => {
     if (!/^\d?$/.test(val)) return;
@@ -59,7 +65,10 @@ export default function OtpModal({ email, phone, title = 'Verify OTP', subtitle,
   const handleResend = async () => {
     setResending(true);
     try {
-      await onResend();
+      const nextDevOtp = await onResend();
+      if (typeof nextDevOtp === 'string' && nextDevOtp) {
+        setShownDevOtp(nextDevOtp);
+      }
       setDigits(['', '', '', '', '', '']);
       setError('');
     } finally {
@@ -106,6 +115,13 @@ export default function OtpModal({ email, phone, title = 'Verify OTP', subtitle,
             </p>
           </div>
 
+          {shownDevOtp ? (
+            <div className="dev-otp-banner" role="status">
+              <div className="dev-otp-label">Dev OTP (local testing)</div>
+              <div className="dev-otp-code">{shownDevOtp}</div>
+            </div>
+          ) : null}
+
           <div className="otp-inputs">
             {digits.map((d, i) => (
               <motion.input
@@ -132,6 +148,10 @@ export default function OtpModal({ email, phone, title = 'Verify OTP', subtitle,
               {error}
             </motion.div>
           )}
+
+          <div className="otp-hint" style={{ marginBottom: '0.75rem' }}>
+            OTP is valid for <strong>10 minutes</strong>. Check spam/promotions if email is delayed.
+          </div>
 
           <div className="otp-hint">
             Didn&apos;t receive?{' '}

@@ -2,11 +2,14 @@
 # Manual feature verification for GO UNLISTED
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/_load_env.sh"
 API="http://127.0.0.1:8080/api/api.php"
-PROXY="http://127.0.0.1:5173/api/api.php"
+VITE_HOST="${GU_VITE_HOST:-localhost}"
+PROXY="http://$VITE_HOST:5173/api/api.php"
 for p in 5173 5174 5175; do
-  if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$p/" 2>/dev/null | grep -q 200; then
-    PROXY="http://127.0.0.1:$p/api/api.php"
+  if curl -s -o /dev/null -w "%{http_code}" "http://$VITE_HOST:$p/" 2>/dev/null | grep -q 200; then
+    PROXY="http://$VITE_HOST:$p/api/api.php"
     VITE_PORT="$p"
     break
   fi
@@ -51,12 +54,12 @@ echo ""
 
 # --- Server health ---
 echo "[1] Server health"
-if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8080/" | grep -q 200; then
-  ok "PHP server on :8080"
+if curl -s -o /dev/null -w "%{http_code}" "$API?action=getCsrfToken" | grep -q 200; then
+  ok "PHP API on :8080"
 else
-  bad "PHP server on :8080 not responding"
+  bad "PHP API on :8080 not responding"
 fi
-VITE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${VITE_PORT:-5173}/" 2>/dev/null || echo "000")
+VITE_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://${VITE_HOST:-localhost}:${VITE_PORT:-5173}/" 2>/dev/null || echo "000")
 if [[ "$VITE_CODE" == "200" ]]; then
   ok "Vite dev server on :${VITE_PORT:-5173}"
 else
@@ -224,7 +227,7 @@ echo ""
 # --- Frontend routes (HTML) ---
 echo "[8] Frontend routes (Vite)"
 for route in "/" "/shares" "/shares/zepto" "/checkout/zepto" "/admin/login" "/admin"; do
-  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${VITE_PORT:-5173}$route" 2>/dev/null || echo "000")
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://${VITE_HOST:-localhost}:${VITE_PORT:-5173}$route" 2>/dev/null || echo "000")
   [[ "$CODE" == "200" ]] && ok "GET $route" || bad "GET $route (HTTP $CODE)"
 done
 echo ""

@@ -163,10 +163,14 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'isFeatured' => ((int) ($row['is_featured'] ?? 0)) === 1,
         'isBuiltin' => (bool) $row['is_builtin'],
         'lastUpdated' => $row['updated_at'] ?? null,
+        'qtyOnHand' => isset($row['qty_on_hand']) ? (int) $row['qty_on_hand'] : 0,
     ];
 
     if ($includeInternal && isset($row['buy_price']) && $row['buy_price'] !== null) {
         $mapped['buyPrice'] = (float) $row['buy_price'];
+    }
+    if ($includeInternal) {
+        $mapped['qtyOnHand'] = isset($row['qty_on_hand']) ? (int) $row['qty_on_hand'] : 0;
     }
 
     return $mapped;

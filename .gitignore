@@ -6,6 +6,8 @@ client/dist/
 # Environment & secrets
 api/db_config.php
 api/db_config.local.php
+api/mail_config.php
+api/deploy.config.php
 .env
 .env.*
 
@@ -21,9 +23,10 @@ Thumbs.db
 uploads/shares/*
 !uploads/shares/.htaccess
 
-# Logs
+# Logs & temp
 api/php_errors.log
 *.log
+/tmp/gu_*.txt
 
 # IDE
 .vscode/
