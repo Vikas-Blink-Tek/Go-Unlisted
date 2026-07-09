@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getOrders, updateOrderStatus } from '../../../api/orders';
 import { useToast } from '../../../context/ToastContext';
-import { formatCurrency } from '../../../utils/format';
+import { formatCurrency, formatDateTime } from '../../../utils/format';
+import { displayUserCode } from '../../../utils/userCode';
+import { getOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
 export default function AdminCancelRefundPanel() {
@@ -36,16 +38,25 @@ export default function AdminCancelRefundPanel() {
       <AdminSectionHeader
         compact
         title="Settlement & Refunds"
-        subtitle="Start transfer → mark completed. Cancel or refund if a deal falls through."
+        subtitle="Mark complete after share transfer. Cancel or refund if a deal falls through."
       />
       <div className="price-table-wrap">
         <table className="data-table">
           <thead>
-            <tr><th>Order ID</th><th>Buyer</th><th>Share</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+            <tr>
+              <th>Order ID</th>
+              <th>Date / Time</th>
+              <th>User Code</th>
+              <th>Buyer</th>
+              <th>Share</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
             {!settlement.length && (
-              <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)' }}>No orders awaiting settlement</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)' }}>No orders awaiting settlement</td></tr>
             )}
             {settlement.map((o) => {
               const s = o.status.toLowerCase();
@@ -54,30 +65,19 @@ export default function AdminCancelRefundPanel() {
               return (
                 <tr key={o.orderId}>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
+                  <td style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', color: 'var(--text-dim)' }}>{formatDateTime(o.date)}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 600 }}>{displayUserCode(o.employeeCode)}</td>
                   <td>
                     <div>{o.buyerName}</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{o.buyerPhone || o.buyerEmail}</div>
                   </td>
                   <td>{o.companyName || o.shareName}</td>
                   <td>{formatCurrency(o.totalPaid || 0)}</td>
-                  <td><span className="status-badge status-pending">{o.status}</span></td>
+                  <td><span className={`status-badge ${getOrderStatusClass(o.status)}`}>{getOrderStatusLabel(o.status)}</span></td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    {isConfirmed && (
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        onClick={() => {
-                          if (confirm('Mark transfer initiated? Shares will move to buyer demat.')) {
-                            mutate.mutate({ id: o.orderId, status: 'Transfer Initiated' });
-                          }
-                        }}
-                      >
-                        Start Transfer
-                      </button>
-                    )}
-                    {isTransferring && (
+                    {(isConfirmed || isTransferring) && (
                       <button type="button" className="btn btn-primary btn-sm" onClick={() => markCompleted(o.orderId)}>
-                        Transfer Completed
+                        Complete
                       </button>
                     )}
                     <button

@@ -87,6 +87,7 @@ export interface Order {
   utr?: string;
   opsNote?: string;
   orderSource?: string;
+  employeeCode?: string;
   date?: string;
 }
 

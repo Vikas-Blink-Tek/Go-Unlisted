@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { approveInitiatedCheckout, deleteInitiatedCheckout, getInitiatedCheckouts } from '../../../api/initiated';
 import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
-import { formatCurrency } from '../../../utils/format';
+import { formatCurrency, formatDateTime } from '../../../utils/format';
 import { initiateCheckoutMessage, whatsappUrl } from '../../../utils/whatsapp';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
@@ -120,7 +120,7 @@ export default function AdminInitiatedPanel() {
                     <td>{o.qty}</td>
                     <td>{formatCurrency(o.totalAmount)}</td>
                     <td>{o.paymentMode || '—'}</td>
-                    <td style={{ fontSize: '0.78rem' }}>{new Date(o.initiatedAt).toLocaleString()}</td>
+                    <td style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{formatDateTime(o.initiatedAt, true)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       {o.buyerPhone && (
                         <a

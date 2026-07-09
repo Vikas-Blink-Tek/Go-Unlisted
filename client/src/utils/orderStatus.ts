@@ -2,7 +2,7 @@ export function getOrderStatusLabel(status: string): string {
   const s = status.toLowerCase();
   if (s.includes('pending') || s === 'initiated') return 'Payment under review';
   if (s.includes('transfer initiated')) return 'Shares transferring to your demat';
-  if (s.includes('complete')) return 'Shares credited';
+  if (s.includes('complete')) return 'Complete — shares transferred';
   if (s.includes('confirm')) return 'Payment verified — transfer starting';
   if (s.includes('reject')) return "Payment not matched — we'll contact you";
   if (s.includes('cancel')) return 'Order cancelled';
@@ -23,4 +23,11 @@ export const PENDING_ORDER_STATUSES = ['pending verification', 'pending', 'initi
 export function isPendingOrder(status: string): boolean {
   const s = status.toLowerCase();
   return PENDING_ORDER_STATUSES.some((p) => s.includes(p));
+}
+
+export function canMarkOrderComplete(status: string): boolean {
+  const s = status.toLowerCase();
+  if (s.includes('complete')) return false;
+  if (/cancel|reject|refund|pending|initiated/.test(s)) return false;
+  return s.includes('confirm') || s.includes('transfer');
 }

@@ -50,7 +50,7 @@ export function adminDeleteArticle(id: number) {
 }
 
 export function getMailStatus() {
-  return apiRequest<{ smtp_configured: boolean; smtp_host?: string | null; mail_from: string }>(
+  return apiRequest<{ smtp_configured: boolean; smtp_host?: string | null; mail_from: string; config_file?: boolean }>(
     'getMailStatus',
     'GET',
   );

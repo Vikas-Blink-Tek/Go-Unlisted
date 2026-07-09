@@ -1,6 +1,7 @@
 import type { Order, User } from '../../../types';
-import { formatCurrency, formatDate } from '../../../utils/format';
-import { getOrderStatusLabel, getOrderStatusClass, isPendingOrder } from '../../../utils/orderStatus';
+import { formatCurrency, formatDate, formatDateTime } from '../../../utils/format';
+import { displayUserCode } from '../../../utils/userCode';
+import { getOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
 
 type Props = {
   order: Order | null;
@@ -8,9 +9,10 @@ type Props = {
   onClose: () => void;
   onVerify?: (orderId: string) => void;
   onReject?: (orderId: string) => void;
+  onComplete?: (orderId: string) => void;
 };
 
-export default function OrderDetailDrawer({ order, users, onClose, onVerify, onReject }: Props) {
+export default function OrderDetailDrawer({ order, users, onClose, onVerify, onReject, onComplete }: Props) {
   if (!order) return null;
 
   const buyer = users.find(
@@ -49,6 +51,15 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
           </section>
 
           <section className="admin-drawer-section">
+            <h4>Order info</h4>
+            <div className="admin-drawer-grid">
+              <div><span>Date / Time</span><strong>{order.date ? formatDateTime(order.date) : '—'}</strong></div>
+              <div><span>User code</span><strong style={{ fontFamily: 'monospace' }}>{displayUserCode(order.employeeCode)}</strong></div>
+              <div><span>Source</span><strong>{order.orderSource || 'Online'}</strong></div>
+            </div>
+          </section>
+
+          <section className="admin-drawer-section">
             <h4>Payment</h4>
             <div className="admin-drawer-grid">
               <div><span>Amount</span><strong>{formatCurrency(order.totalPaid || order.total || 0)}</strong></div>
@@ -70,14 +81,19 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
           </section>
         </div>
 
-        {(onVerify || onReject) && isPendingOrder(order.status) && (
+        {(onVerify || onReject || onComplete) && (isPendingOrder(order.status) || canMarkOrderComplete(order.status)) && (
           <div className="admin-drawer-footer">
-            {onVerify && (
+            {onVerify && isPendingOrder(order.status) && (
               <button type="button" className="btn btn-primary btn-full" onClick={() => onVerify(order.orderId)}>
                 Verify payment
               </button>
             )}
-            {onReject && (
+            {onComplete && canMarkOrderComplete(order.status) && (
+              <button type="button" className="btn btn-primary btn-full" onClick={() => onComplete(order.orderId)}>
+                Mark complete (share transferred)
+              </button>
+            )}
+            {onReject && isPendingOrder(order.status) && (
               <button type="button" className="btn btn-ghost btn-full" style={{ color: '#ef4444' }} onClick={() => onReject(order.orderId)}>
                 Reject payment
               </button>

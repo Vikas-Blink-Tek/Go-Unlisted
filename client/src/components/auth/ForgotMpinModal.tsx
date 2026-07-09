@@ -34,16 +34,18 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
     try {
       const res = await sendResetOtp(loginId.trim());
       if (!res.success) throw new Error(res.error || 'Failed to send OTP');
-      if (res.email) setEmail(res.email);
+      if (!res.email) {
+        throw new Error(res.error || 'No account found with this email or phone.');
+      }
+      if (res.email_sent === false && !res.dev_otp) {
+        throw new Error(res.error || 'Could not deliver OTP email. Please try again in a minute or contact support.');
+      }
+      setEmail(res.email);
       setDevOtp(res.dev_otp || null);
       if (res.dev_otp) {
         showToast('Local dev: OTP shown on screen below', 'info');
-      } else if (res.email_sent) {
-        showToast(`OTP sent to ${res.email}. Check spam/promotions if not in inbox.`, 'success');
-      } else if (res.email) {
-        showToast(`OTP generated for ${res.email}. Check your inbox or try Resend.`, 'info');
       } else {
-        showToast('If this account exists, OTP was sent to the registered email.', 'info');
+        showToast(`OTP sent to ${res.email}. Check inbox and spam/promotions folder.`, 'success');
       }
       setStep('otp');
     } catch (err) {
@@ -96,6 +98,9 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
         onResend={async () => {
           const res = await sendResetOtp(loginId.trim());
           if (!res.success) throw new Error(res.error || 'Failed to resend OTP');
+          if (res.email_sent === false && !res.dev_otp) {
+            throw new Error(res.error || 'Could not deliver OTP email. Try again shortly.');
+          }
           if (res.dev_otp) setDevOtp(res.dev_otp);
           return res.dev_otp;
         }}

@@ -60,6 +60,13 @@ export function staffDirectLoginUrl(origin: string, emp: { email?: string; emplo
   return `${origin.replace(/\/$/, '')}${staffDirectLoginPath(emp)}`;
 }
 
+/** Investor signup link — ties user to this employee's code for orders/initiate. */
+export function staffSignupReferralUrl(origin: string, employeeId: string): string {
+  const id = employeeId.trim();
+  if (!id) return `${origin.replace(/\/$/, '')}/login`;
+  return `${origin.replace(/\/$/, '')}/login?ref=${encodeURIComponent(id)}`;
+}
+
 export function portalLoginPath(portal: 'master' | 'staff', panel?: string | null): string {
   return portal === 'staff' ? staffLoginPath(panel) : adminLoginPath(panel);
 }

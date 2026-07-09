@@ -1358,12 +1358,8 @@ button.footer-link {
   scroll-behavior: smooth;
   padding: 0.35rem 0.25rem 0.75rem;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  scrollbar-width: auto;
   flex: 1;
-}
-
-.listing-compare-track::-webkit-scrollbar {
-  display: none;
 }
 
 .listing-compare-card {

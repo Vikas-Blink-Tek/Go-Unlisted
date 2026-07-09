@@ -89,3 +89,38 @@ export function updateKyc(pan: string, demat: string, bankAccount?: string, ifsc
     ifsc,
   });
 }
+
+export interface AccountContacts {
+  support: { phone: string; email: string; whatsapp: string };
+  relationManager?: { name: string; email: string; phone: string; employeeId: string } | null;
+  referralCode?: string;
+}
+
+export function getAccountContacts() {
+  return apiRequest<{ success: boolean } & AccountContacts>('getAccountContacts', 'GET');
+}
+
+export function deleteMyAccount(confirm = 'delete') {
+  return apiRequest<{ success: boolean; message?: string; error?: string }>('deleteMyAccount', 'POST', {
+    confirm,
+  });
+}
+
+export function sendStaffResetOtp(loginId: string) {
+  return apiRequest<{
+    success: boolean;
+    email?: string;
+    message?: string;
+    dev_mode?: boolean;
+    dev_otp?: string;
+    email_sent?: boolean;
+    error?: string;
+  }>('sendStaffResetOtp', 'POST', { loginId });
+}
+
+export function resetStaffPassword(email: string, password: string) {
+  return apiRequest<{ success: boolean; message?: string; error?: string }>('resetStaffPassword', 'POST', {
+    email,
+    password,
+  });
+}

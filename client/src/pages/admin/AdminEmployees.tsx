@@ -8,7 +8,7 @@ import {
   type AdminPanelId,
 } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
-import { staffDirectLoginUrl } from '../../utils/adminPanelHash';
+import { staffDirectLoginUrl, staffSignupReferralUrl } from '../../utils/adminPanelHash';
 import { blockEmailInput, blockNewPasswordInput, blockTextInput } from '../../utils/autofill';
 
 interface Employee {
@@ -16,6 +16,7 @@ interface Employee {
   employee_id: string;
   name: string;
   email: string;
+  phone?: string;
   is_master: number | boolean;
   permissions?: string[];
   created_at?: string;
@@ -25,6 +26,7 @@ const emptyForm = {
   id: '',
   name: '',
   email: '',
+  phone: '',
   employeeId: '',
   password: '',
   isMaster: false,
@@ -109,6 +111,7 @@ export default function AdminEmployees() {
       id: emp.id,
       name: emp.name,
       email: emp.email,
+      phone: emp.phone || '',
       employeeId: emp.employee_id || '',
       password: '',
       isMaster: master,
@@ -160,6 +163,7 @@ export default function AdminEmployees() {
       id: form.id,
       name: form.name,
       email: form.email,
+      phone: form.phone,
       employeeId: form.employeeId,
       permissions: form.isMaster ? ['*'] : form.permissions,
     };
@@ -189,6 +193,7 @@ export default function AdminEmployees() {
   };
 
   const employeeDirectLink = (emp: Employee) => staffDirectLoginUrl(siteOrigin, emp);
+  const employeeSignupLink = (emp: Employee) => staffSignupReferralUrl(siteOrigin, emp.employee_id || '');
 
   const permissionLabels = (emp: Employee) => {
     if (isMasterEmp(emp)) return 'Full access — all panels';
@@ -232,8 +237,10 @@ export default function AdminEmployees() {
               <th>Name</th>
               <th>Role</th>
               <th>Employee ID</th>
+              <th>RM Phone</th>
               <th>Email</th>
               <th>Login</th>
+              <th>Signup link</th>
               <th>Permissions</th>
               <th>Actions</th>
             </tr>
@@ -252,6 +259,7 @@ export default function AdminEmployees() {
                     </span>
                   </td>
                   <td>{emp.employee_id || '—'}</td>
+                  <td>{emp.phone || '—'}</td>
                   <td>{emp.email}</td>
                   <td style={{ fontSize: '0.78rem', maxWidth: 220 }}>
                     {master ? (
@@ -270,10 +278,29 @@ export default function AdminEmployees() {
                           type="button"
                           className="btn btn-ghost btn-sm"
                           style={{ padding: '2px 8px', marginLeft: 4 }}
-                          onClick={() => copyText(employeeDirectLink(emp), 'Direct login link')}
+                          onClick={() => copyText(employeeDirectLink(emp), 'Login link')}
                         >
                           Copy
                         </button>
+                      </>
+                    )}
+                  </td>
+                  <td style={{ fontSize: '0.78rem', maxWidth: 200 }}>
+                    {master ? (
+                      '—'
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '2px 8px' }}
+                          onClick={() => copyText(employeeSignupLink(emp), 'Signup link')}
+                        >
+                          Copy signup
+                        </button>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--muted)', marginTop: 4 }}>
+                          Code: <strong>{emp.employee_id}</strong>
+                        </div>
                       </>
                     )}
                   </td>
@@ -335,7 +362,7 @@ export default function AdminEmployees() {
             <p className="modal-subtitle">
               {form.isMaster
                 ? `Master Admin login: ${masterLoginUrl}`
-                : 'Direct login link is generated automatically after you save (email pre-filled — employee enters password only).'}
+                : 'Employee ID = their code (GUE001). Users sign up with ?ref=GUE001 — then only that employee sees those signups, orders & initiate.'}
             </p>
             {!form.isMaster && form.email && (
               <div style={{ marginBottom: '1rem', padding: '0.65rem 0.75rem', background: 'rgba(122,193,66,0.08)', borderRadius: 8, fontSize: '0.8rem' }}>
@@ -370,6 +397,12 @@ export default function AdminEmployees() {
                 <label className="form-label">Email *</label>
                 <input className="form-input" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} {...blockEmailInput({ name: 'employee-work-email' })} />
               </div>
+              {!form.isMaster && (
+                <div className="form-group">
+                  <label className="form-label">RM Phone (shown to users with this referral code)</label>
+                  <input className="form-input" placeholder="10-digit mobile e.g. 8655701571" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} {...blockTextInput({ name: 'employee-rm-phone' })} />
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">{isEdit ? 'Password (leave blank to keep)' : 'Password *'}</label>
                 <input className="form-input" minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Min 6 characters" {...blockNewPasswordInput({ name: 'employee-new-password' })} />

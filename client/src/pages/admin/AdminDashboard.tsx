@@ -14,6 +14,7 @@ import AdminEmployees from './AdminEmployees';
 import AdminAccessDenied from './components/AdminAccessDenied';
 import AdminSectionHeader from './components/AdminSectionHeader';
 import AdminOrdersSection from './components/AdminOrdersSection';
+import AdminVerifyPaymentsPanel from './panels/AdminVerifyPaymentsPanel';
 import AdminUsersPanel from './components/AdminUsersPanel';
 import AdminInitiatedPanel from './panels/AdminInitiatedPanel';
 import AdminManualOrderPanel from './panels/AdminManualOrderPanel';
@@ -86,8 +87,7 @@ export default function AdminDashboard() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
-  const verify = (id: string) => statusMutation.mutate({ orderId: id, status: 'Confirmed' });
-  const reject = (id: string) => statusMutation.mutate({ orderId: id, status: 'Rejected' });
+  const complete = (id: string) => statusMutation.mutate({ orderId: id, status: 'Completed' });
 
   const saveSiteSettings = async () => {
     try {
@@ -110,6 +110,7 @@ export default function AdminDashboard() {
   if (activePanel === 'initiated') return <AdminInitiatedPanel />;
   if (activePanel === 'manual-order') return <AdminManualOrderPanel />;
   if (activePanel === 'cancel-refund') return <AdminCancelRefundPanel />;
+  if (activePanel === 'pending') return <AdminVerifyPaymentsPanel />;
   if (activePanel === 'articles') return <AdminArticlesPanel />;
   if (activePanel === 'reports') return <AdminReportsPanel />;
   if (activePanel === 'prices') return <AdminSharePricesPanel />;
@@ -195,17 +196,14 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {activePanel === 'pending' && (
-        <>
-          <AdminSectionHeader compact title="Verify Payments" subtitle="Search UTR from bank SMS, open row, confirm payment and KYC" badge={`${pendingOrders.length} pending`} />
-          <AdminOrdersSection orders={pendingOrders} users={users} showActions onVerify={verify} onReject={reject} />
-        </>
-      )}
-
       {activePanel === 'orders' && (
         <>
           <AdminSectionHeader compact title="All Orders" subtitle="Full order history with search and filters" badge={`${orders.length} total`} />
-          <AdminOrdersSection orders={orders} users={users} />
+          <AdminOrdersSection
+            orders={orders}
+            users={users}
+            onComplete={can('pending') ? complete : undefined}
+          />
         </>
       )}
 
@@ -253,9 +251,10 @@ export default function AdminDashboard() {
               <p style={{ fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
                 Status:{' '}
                 <strong style={{ color: mailStatusQuery.data?.smtp_configured ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)' }}>
-                  {mailStatusQuery.data?.smtp_configured ? 'SMTP configured' : 'SMTP not configured — OTP emails will fail'}
+                  {mailStatusQuery.data?.smtp_configured ? 'SMTP configured' : 'SMTP not configured — Forgot MPIN / Register OTP will fail'}
                 </strong>
                 {mailStatusQuery.data?.mail_from ? ` · From: ${mailStatusQuery.data.mail_from}` : ''}
+                {mailStatusQuery.data?.config_file === false ? ' · mail_config.php missing on server' : ''}
               </p>
               <div className="report-filter-grid" style={{ alignItems: 'end' }}>
                 <div className="report-filter-group" style={{ gridColumn: 'span 2' }}>

@@ -6,6 +6,7 @@ import ShareDetailPage from './pages/ShareDetailPage';
 import AuthPage from './pages/AuthPage';
 import CheckoutPage from './pages/CheckoutPage';
 import DashboardPage from './pages/DashboardPage';
+import AccountManagerPage from './pages/AccountManagerPage';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import ArticlesPage from './pages/ArticlesPage';
@@ -24,6 +25,7 @@ export default function AppRouter() {
           <Route path="shares/:shareId" element={<ShareDetailPage />} />
           <Route path="checkout/:shareId" element={<CheckoutPage />} />
           <Route path="dashboard" element={<DashboardPage />} />
+          <Route path="dashboard/support" element={<AccountManagerPage />} />
           <Route path="login" element={<AuthPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="contact" element={<ContactPage />} />

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import StaffForgotPasswordModal from '../../components/auth/StaffForgotPasswordModal';
 import { loginAdmin, checkAuth } from '../../api/auth';
 import { setCsrfToken } from '../../api/csrf';
 import { useToast } from '../../context/ToastContext';
@@ -48,6 +49,7 @@ export default function AdminLoginPage({ portal }: Props) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const navigate = useNavigate();
   const { loginId: routeLoginId } = useParams();
   const [searchParams] = useSearchParams();
@@ -157,6 +159,16 @@ export default function AdminLoginPage({ portal }: Props) {
           <button type="submit" className="btn btn-primary btn-full btn-lg" disabled={loading}>
             {loading ? 'Authenticating...' : 'Sign In →'}
           </button>
+          {portal === 'staff' && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-full"
+              style={{ marginTop: '0.75rem' }}
+              onClick={() => setShowForgotPassword(true)}
+            >
+              Forgot password? Reset via email OTP
+            </button>
+          )}
         </form>
         <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
           {copy.otherLabel}?{' '}
@@ -169,6 +181,9 @@ export default function AdminLoginPage({ portal }: Props) {
           </Link>
         </p>
       </div>
+      {showForgotPassword && (
+        <StaffForgotPasswordModal onClose={() => setShowForgotPassword(false)} />
+      )}
     </div>
   );
 }

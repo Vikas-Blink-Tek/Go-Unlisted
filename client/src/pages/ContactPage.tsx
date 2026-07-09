@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { submitContact } from '../api/contact';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
+import { useAuth } from '../context/AuthContext';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { useToast } from '../context/ToastContext';
 import { blockAutofillOnFocus, blockEmailInput, blockTextInput } from '../utils/autofill';
@@ -8,13 +10,14 @@ import { whatsappUrl } from '../utils/whatsapp';
 
 export default function ContactPage() {
   const { showToast } = useToast();
+  const { user } = useAuth();
   const { settings } = useSiteSettings();
   const [form, setForm] = useState({ name: '', email: '', message: '' });
   const [sending, setSending] = useState(false);
 
   const email = settings.email || 'infogounlisted@gmail.com';
-  const phone = settings.mobile || '+91 816 944 9826';
-  const whatsapp = settings.whatsapp || settings.mobile || '918169449826';
+  const phone = settings.mobile || '+91 98208 97828';
+  const whatsapp = settings.whatsapp || settings.mobile || '919820897828';
   const address = settings.address || 'Charkop, Kandivali West, Mumbai – 400067';
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -61,6 +64,20 @@ export default function ContactPage() {
             <div className="contact-item-label">Address</div>
             <div className="contact-item-value">{address}</div>
           </div>
+
+          {user && (
+            <div className="contact-item contact-logged-in">
+              <div className="contact-item-label">Account support</div>
+              <div className="contact-item-value" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Link to="/dashboard/support" style={{ color: 'var(--gold)', fontWeight: 600, textDecoration: 'none' }}>
+                  Connect Account Manager
+                </Link>
+                <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                  Your referral RM number and support line · delete account
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         <form className="contact-form" onSubmit={handleSubmit} autoComplete="off" style={{ position: 'relative' }}>

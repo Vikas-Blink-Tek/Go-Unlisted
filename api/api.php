@@ -78,8 +78,11 @@ if ($conn->connect_error) {
     exit;
 }
 
+date_default_timezone_set('Asia/Kolkata');
+$conn->query("SET time_zone = '+05:30'");
+
 // -----------------------------------------
-// AUTO-MIGRATE SCHEMA
+// AUTO-MIGRATE SCHEMA (structure only — never UPDATE/DELETE existing rows)
 // -----------------------------------------
 function autoMigrateSchema($conn) {
     $res = $conn->query("SHOW COLUMNS FROM employees LIKE 'employee_id'");
@@ -89,6 +92,10 @@ function autoMigrateSchema($conn) {
     $res = $conn->query("SHOW COLUMNS FROM employees LIKE 'permissions'");
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE employees ADD COLUMN permissions TEXT NULL");
+    }
+    $res = $conn->query("SHOW COLUMNS FROM employees LIKE 'phone'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE employees ADD COLUMN phone VARCHAR(20) DEFAULT NULL AFTER email");
     }
     
     $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'transaction_id'");
@@ -163,6 +170,16 @@ function autoMigrateSchema($conn) {
         $conn->query("ALTER TABLE orders ADD COLUMN order_source VARCHAR(30) DEFAULT 'Online' AFTER status");
     }
 
+    $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'employee_code'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE orders ADD COLUMN employee_code VARCHAR(50) DEFAULT NULL AFTER order_source");
+    }
+
+    $res = $conn->query("SHOW COLUMNS FROM initiated_checkouts LIKE 'employee_code'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE initiated_checkouts ADD COLUMN employee_code VARCHAR(50) DEFAULT NULL AFTER status");
+    }
+
     $conn->query("CREATE TABLE IF NOT EXISTS shares (
         share_id VARCHAR(50) PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
@@ -233,17 +250,7 @@ function autoMigrateSchema($conn) {
         UNIQUE KEY uniq_order_invoice (order_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
-    // Ensure Yamini (or any duplicate master) is demoted — only master-admin stays master
-    $conn->query("UPDATE employees SET is_master = 0 WHERE is_master = 1 AND id != 'master-admin'");
-
-    $cfgRes = $conn->query("SELECT share_id, base_price FROM shares_config");
-    if ($cfgRes) {
-        while ($cfgRow = $cfgRes->fetch_assoc()) {
-            $sync = $conn->prepare("UPDATE shares SET base_price = ? WHERE share_id = ?");
-            $sync->bind_param('ds', $cfgRow['base_price'], $cfgRow['share_id']);
-            $sync->execute();
-        }
-    }
+    seedDefaultSharesIfEmpty($conn);
 }
 autoMigrateSchema($conn);
 if (getenv('GU_DEV_MODE') === '1') {
@@ -326,7 +333,9 @@ function issueOtpForEmail($conn, $email) {
             'success' => false,
             'dev_mode' => false,
             'email_sent' => false,
-            'error' => 'Could not send verification email. Ask admin to configure SMTP (info@go-unlisted.com), then try again.',
+            'error' => guSmtpConfigured()
+                ? 'Could not deliver verification email. Please try again in a minute or contact support.'
+                : 'Email service is not configured on the server. Contact support — admin must set up SMTP (info@go-unlisted.com).',
         ];
     }
 
@@ -418,7 +427,7 @@ function refreshAdminSession(mysqli $conn): bool {
         return false;
     }
     $adminId = (string) $_SESSION['admin_id'];
-    $stmt = $conn->prepare('SELECT is_master, permissions FROM employees WHERE id = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT is_master, permissions, employee_id FROM employees WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return false;
     }
@@ -441,6 +450,7 @@ function refreshAdminSession(mysqli $conn): bool {
     $_SESSION['admin_permissions'] = $isMaster
         ? ['*']
         : parseEmployeePermissions($row['permissions'] ?? '');
+    $_SESSION['employee_id'] = strtoupper(trim((string) ($row['employee_id'] ?? '')));
     $_SESSION['admin_portal'] = $isMaster ? 'master' : 'staff';
     return true;
 }
@@ -507,6 +517,135 @@ function requireAnyPermission(array $permissions): void {
     }
     http_response_code(403);
     sendResponse(['error' => 'You do not have permission for this action']);
+}
+
+function isMasterAdminSession(): bool {
+    return !empty($_SESSION['is_master']);
+}
+
+function currentEmployeeCode(mysqli $conn): string {
+    if (isMasterAdminSession()) {
+        return '';
+    }
+    if (!refreshAdminSession($conn)) {
+        return '';
+    }
+    return strtoupper(trim((string) ($_SESSION['employee_id'] ?? '')));
+}
+
+function getSettingValue(mysqli $conn, string $key, string $default = ''): string {
+    $stmt = $conn->prepare('SELECT setting_value FROM settings WHERE setting_key = ? LIMIT 1');
+    $stmt->bind_param('s', $key);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return trim((string) ($row['setting_value'] ?? $default));
+}
+
+function lookupRmForReferralCode(mysqli $conn, string $code): ?array {
+    $code = strtoupper(trim($code));
+    if ($code === '') {
+        return null;
+    }
+    $stmt = $conn->prepare(
+        'SELECT name, email, phone, employee_id FROM employees
+         WHERE is_master = 0 AND UPPER(TRIM(employee_id)) = ? LIMIT 1'
+    );
+    $stmt->bind_param('s', $code);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row ?: null;
+}
+
+function defaultDirectUserCode(): string {
+    return 'GU00';
+}
+
+function normalizeUserCode(string $code): string {
+    $code = strtoupper(trim($code));
+    return $code !== '' ? $code : defaultDirectUserCode();
+}
+
+/** Raw code for DB writes — never invent GU00 on save. */
+function sanitizeStoredUserCode(string $code): string {
+    return strtoupper(trim($code));
+}
+
+function mapUserRow(array $row): array {
+    return [
+        'id' => $row['id'],
+        'name' => $row['name'],
+        'email' => $row['email'],
+        'phone' => $row['phone'],
+        'kycStatus' => $row['kyc_status'],
+        'kycRejectReason' => $row['kyc_reject_reason'] ?? '',
+        'kycPan' => $row['kyc_pan'],
+        'kycDemat' => $row['kyc_demat'],
+        'bankAccount' => $row['bank_account'],
+        'ifsc' => $row['ifsc'],
+        'referralCode' => normalizeUserCode((string) ($row['referral_code'] ?? '')),
+    ];
+}
+
+function lookupEmployeeCodeForUser(mysqli $conn, string $userId): string {
+    if ($userId === '' || str_starts_with($userId, 'admin:')) {
+        return '';
+    }
+    $stmt = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
+    $stmt->bind_param('s', $userId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return sanitizeStoredUserCode((string) ($row['referral_code'] ?? ''));
+}
+
+function orderBelongsToEmployee(mysqli $conn, array $orderRow): bool {
+    if (isMasterAdminSession()) {
+        return true;
+    }
+    $code = currentEmployeeCode($conn);
+    if ($code === '') {
+        return false;
+    }
+    if (strtoupper(trim((string) ($orderRow['employee_code'] ?? ''))) === $code) {
+        return true;
+    }
+    $userId = (string) ($orderRow['user_id'] ?? '');
+    if ($userId !== '' && lookupEmployeeCodeForUser($conn, $userId) === $code) {
+        return true;
+    }
+    if ($userId === 'admin:' . ($_SESSION['admin_id'] ?? '')) {
+        return true;
+    }
+    return false;
+}
+
+function initiatedBelongsToEmployee(mysqli $conn, array $row): bool {
+    if (isMasterAdminSession()) {
+        return true;
+    }
+    $code = currentEmployeeCode($conn);
+    if ($code === '') {
+        return false;
+    }
+    return strtoupper(trim((string) ($row['employee_code'] ?? ''))) === $code;
+}
+
+function mapInitiatedCheckoutRow(array $row): array {
+    return [
+        'sessionId' => $row['session_id'],
+        'shareId' => $row['share_id'],
+        'shareName' => $row['share_name'],
+        'shareTicker' => $row['share_ticker'],
+        'buyerName' => $row['buyer_name'],
+        'buyerEmail' => $row['buyer_email'],
+        'buyerPhone' => $row['buyer_phone'],
+        'qty' => (int) $row['qty'],
+        'pricePerShare' => (float) $row['price_per_share'],
+        'totalAmount' => (float) $row['total_amount'],
+        'paymentMode' => $row['payment_mode'],
+        'status' => $row['status'],
+        'employeeCode' => normalizeUserCode((string) ($row['employee_code'] ?? '')),
+        'initiatedAt' => $row['created_at'],
+    ];
 }
 
 /** Block privilege escalation via manipulated order status (Burp Suite). */
@@ -584,10 +723,45 @@ function normalizeIndianPhone($phone) {
     return $phone;
 }
 
+function resolveUserByLoginId(mysqli $conn, string $loginId): ?array {
+    $loginId = trim($loginId);
+    if ($loginId === '') {
+        return null;
+    }
+
+    if (isValidEmail($loginId)) {
+        $email = strtolower($loginId);
+        $stmt = $conn->prepare('SELECT id, email, phone FROM users WHERE LOWER(email) = ? LIMIT 1');
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        return $row ?: null;
+    }
+
+    $phone = normalizeIndianPhone($loginId);
+    if ($phone !== '' && isValidIndianMobile($phone)) {
+        $stmt = $conn->prepare('SELECT id, email, phone FROM users WHERE phone = ? LIMIT 1');
+        $stmt->bind_param('s', $phone);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if ($row) {
+            return $row;
+        }
+    }
+
+    // Legacy rows or partial match (last 10 digits).
+    $stmt = $conn->prepare('SELECT id, email, phone FROM users WHERE email = ? OR phone = ? LIMIT 1');
+    $stmt->bind_param('ss', $loginId, $loginId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    return $row ?: null;
+}
+
 // CSRF — validate all state-changing POSTs except public auth entry points
 ensureCsrfToken();
 $csrfExempt = [
     'getCsrfToken', 'sendOtp', 'verifyOtp', 'sendResetOtp', 'resetMpin',
+    'sendStaffResetOtp', 'resetStaffPassword',
     'loginAdmin', 'loginUser', 'saveUser', 'checkAuth', 'checkEmail',
 ];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action && !in_array($action, $csrfExempt, true)) {
@@ -673,14 +847,13 @@ switch ($action) {
             break;
         }
 
-        $stmt = $conn->prepare('SELECT email, phone FROM users WHERE email = ? OR phone = ? LIMIT 1');
-        $stmt->bind_param('ss', $loginId, $loginId);
-        $stmt->execute();
-        $userRow = $stmt->get_result()->fetch_assoc();
+        $userRow = resolveUserByLoginId($conn, $loginId);
 
         if (!$userRow) {
-            $empStmt = $conn->prepare('SELECT email FROM employees WHERE email = ? OR employee_id = ? LIMIT 1');
-            $empStmt->bind_param('ss', $loginId, $loginId);
+            $empLookup = trim($loginId);
+            $empEmail = isValidEmail($empLookup) ? strtolower($empLookup) : $empLookup;
+            $empStmt = $conn->prepare('SELECT email FROM employees WHERE LOWER(email) = ? OR employee_id = ? LIMIT 1');
+            $empStmt->bind_param('ss', $empEmail, $empLookup);
             $empStmt->execute();
             if ($empStmt->get_result()->num_rows > 0) {
                 http_response_code(400);
@@ -692,13 +865,14 @@ switch ($action) {
             }
             sleep(1);
             sendResponse([
-                'success' => true,
-                'message' => 'If an account exists, OTP has been sent to your registered email.',
+                'success' => false,
+                'email_sent' => false,
+                'error' => 'No investor account found with this email or phone. Check spelling or register first.',
             ]);
             break;
         }
 
-        $email = $userRow['email'];
+        $email = strtolower(trim((string) $userRow['email']));
 
         $response = issueOtpForEmail($conn, $email);
         $response['email'] = $email;
@@ -744,6 +918,77 @@ switch ($action) {
 
         unset($_SESSION['otp_verified'][$email]);
         sendResponse(['success' => true, 'message' => 'MPIN reset successfully']);
+        break;
+
+    case 'sendStaffResetOtp':
+        $data = getPostData();
+        $loginId = trim($data['loginId'] ?? $data['email'] ?? '');
+
+        if (empty($loginId)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Email or employee ID is required']);
+            break;
+        }
+
+        $empStmt = $conn->prepare('SELECT email FROM employees WHERE email = ? OR employee_id = ? LIMIT 1');
+        $empStmt->bind_param('ss', $loginId, $loginId);
+        $empStmt->execute();
+        $empRow = $empStmt->get_result()->fetch_assoc();
+
+        if (!$empRow) {
+            sleep(1);
+            sendResponse([
+                'success' => true,
+                'message' => 'If a team account exists, OTP has been sent to the registered work email.',
+            ]);
+            break;
+        }
+
+        $email = strtolower(trim((string) $empRow['email']));
+        $response = issueOtpForEmail($conn, $email);
+        $response['email'] = $email;
+        if (($response['success'] ?? true) === false) {
+            http_response_code(503);
+        }
+        sendResponse($response);
+        break;
+
+    case 'resetStaffPassword':
+        $data = getPostData();
+        $email = strtolower(trim($data['email'] ?? ''));
+        $password = $data['password'] ?? '';
+
+        if (empty($email) || !isValidEmail($email)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Valid work email is required']);
+            break;
+        }
+        if (strlen($password) < 6) {
+            http_response_code(400);
+            sendResponse(['error' => 'Password must be at least 6 characters']);
+            break;
+        }
+
+        $verifiedAt = $_SESSION['otp_verified'][$email] ?? null;
+        if (!$verifiedAt || (time() - $verifiedAt) > 900) {
+            http_response_code(403);
+            sendResponse(['error' => 'OTP verification required. Please verify OTP first.']);
+            break;
+        }
+
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $conn->prepare('UPDATE employees SET password = ? WHERE email = ?');
+        $stmt->bind_param('ss', $hash, $email);
+        $stmt->execute();
+
+        if ($stmt->affected_rows === 0) {
+            http_response_code(404);
+            sendResponse(['error' => 'Team account not found']);
+            break;
+        }
+
+        unset($_SESSION['otp_verified'][$email]);
+        sendResponse(['success' => true, 'message' => 'Password reset successfully. You can sign in at /staff/login']);
         break;
 
     case 'verifyOtp':
@@ -848,36 +1093,29 @@ switch ($action) {
         $loginId = $data['email'] ?? $data['loginId'] ?? '';
         $password = $data['password'] ?? '';
 
-        $stmt = $conn->prepare("SELECT id, password, name, email, phone, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE email = ? OR phone = ?");
-        $stmt->bind_param("ss", $loginId, $loginId);
-        $stmt->execute();
-        $result = $stmt->get_result();
+        $userRow = resolveUserByLoginId($conn, $loginId);
+        if ($userRow) {
+            $uid = $userRow['id'];
+            $stmt = $conn->prepare("SELECT id, password, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE id = ? LIMIT 1");
+            $stmt->bind_param('s', $uid);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+        } else {
+            $row = null;
+        }
 
-        if ($row = $result->fetch_assoc()) {
-            if (password_verify($password, $row['password'])) {
-                session_regenerate_id(true);
-                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                $_SESSION['user_id'] = $row['id'];
-                logAudit($conn, 'User Login', $row['id'], []);
-                sendResponse([
-                    "success" => true,
-                    "user" => [
-                        "id" => $row['id'],
-                        "name" => $row['name'],
-                        "email" => $row['email'],
-                        "phone" => $row['phone'],
-                        "kycStatus" => $row['kyc_status'],
-                        "kycRejectReason" => $row['kyc_reject_reason'] ?? '',
-                        "kycPan" => $row['kyc_pan'],
-                        "kycDemat" => $row['kyc_demat'],
-                        "bankAccount" => $row['bank_account'],
-                        "ifsc" => $row['ifsc']
-                    ]
-                ]);
-            }
+        if ($row && password_verify($password, $row['password'])) {
+            session_regenerate_id(true);
+            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            $_SESSION['user_id'] = $row['id'];
+            logAudit($conn, 'User Login', $row['id'], []);
+            sendResponse([
+                'success' => true,
+                'user' => mapUserRow($row),
+            ]);
         }
         http_response_code(401);
-        sendResponse(["error" => "Invalid email/phone or MPIN"]);
+        sendResponse(['error' => 'Invalid email/phone or MPIN']);
         break;
 
     case 'logout':
@@ -903,12 +1141,13 @@ switch ($action) {
                 "id" => $_SESSION['admin_id'],
                 "isMaster" => !empty($_SESSION['is_master']),
                 "portal" => $portal,
+                "employeeCode" => $_SESSION['employee_id'] ?? '',
                 "permissions" => $perms,
                 "csrfToken" => ensureCsrfToken(),
             ]);
         } else if (isset($_SESSION['user_id'])) {
             $uid = $_SESSION['user_id'];
-            $stmt = $conn->prepare('SELECT id, name, email, phone, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE id = ?');
+            $stmt = $conn->prepare('SELECT id, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE id = ?');
             $stmt->bind_param('s', $uid);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -917,18 +1156,7 @@ switch ($action) {
                     'authenticated' => true,
                     'type' => 'user',
                     'id' => $row['id'],
-                    'user' => [
-                        'id' => $row['id'],
-                        'name' => $row['name'],
-                        'email' => $row['email'],
-                        'phone' => $row['phone'],
-                        'kycStatus' => $row['kyc_status'],
-                        'kycRejectReason' => $row['kyc_reject_reason'] ?? '',
-                        'kycPan' => $row['kyc_pan'],
-                        'kycDemat' => $row['kyc_demat'],
-                        'bankAccount' => $row['bank_account'],
-                        'ifsc' => $row['ifsc'],
-                    ],
+                    'user' => mapUserRow($row),
                     'csrfToken' => ensureCsrfToken(),
                 ]);
                 break;
@@ -952,7 +1180,7 @@ switch ($action) {
     case 'getEmployees':
         requireMasterAdmin();
         // Master Admin first, then employees by name
-        $res = $conn->query("SELECT id, employee_id, name, email, is_master, permissions, created_at FROM employees ORDER BY is_master DESC, name ASC");
+        $res = $conn->query("SELECT id, employee_id, name, email, phone, is_master, permissions, created_at FROM employees ORDER BY is_master DESC, name ASC");
         $data = [];
         while ($row = $res->fetch_assoc()) {
             $row['is_master'] = (int) ($row['is_master'] ?? 0);
@@ -972,6 +1200,8 @@ switch ($action) {
         $name = htmlspecialchars($data['name']);
         $email = htmlspecialchars($data['email']);
         $employee_id = htmlspecialchars($data['employeeId'] ?? '');
+        $phoneRaw = trim((string) ($data['phone'] ?? ''));
+        $phone = $phoneRaw !== '' ? htmlspecialchars(normalizeIndianPhone($phoneRaw)) : '';
         $permissionsJson = json_encode(parseEmployeePermissions($data['permissions'] ?? defaultEmployeePermissions()));
 
         $stmtCheck = $conn->prepare("SELECT id, is_master FROM employees WHERE id=?");
@@ -989,19 +1219,19 @@ switch ($action) {
             if (!empty($data['password'])) {
                 $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
                 if ($permissionsJson !== null) {
-                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, password=?, permissions=? WHERE id=? AND is_master=0");
-                    $stmt->bind_param("ssssss", $name, $email, $employee_id, $hashed, $permissionsJson, $id);
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, phone=?, employee_id=?, password=?, permissions=? WHERE id=? AND is_master=0");
+                    $stmt->bind_param("sssssss", $name, $email, $phone, $employee_id, $hashed, $permissionsJson, $id);
                 } else {
-                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, password=? WHERE id=?");
-                    $stmt->bind_param("sssss", $name, $email, $employee_id, $hashed, $id);
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, phone=?, employee_id=?, password=? WHERE id=?");
+                    $stmt->bind_param("ssssss", $name, $email, $phone, $employee_id, $hashed, $id);
                 }
             } else {
                 if ($permissionsJson !== null) {
-                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=?, permissions=? WHERE id=? AND is_master=0");
-                    $stmt->bind_param("sssss", $name, $email, $employee_id, $permissionsJson, $id);
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, phone=?, employee_id=?, permissions=? WHERE id=? AND is_master=0");
+                    $stmt->bind_param("ssssss", $name, $email, $phone, $employee_id, $permissionsJson, $id);
                 } else {
-                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, employee_id=? WHERE id=?");
-                    $stmt->bind_param("ssss", $name, $email, $employee_id, $id);
+                    $stmt = $conn->prepare("UPDATE employees SET name=?, email=?, phone=?, employee_id=? WHERE id=?");
+                    $stmt->bind_param("sssss", $name, $email, $phone, $employee_id, $id);
                 }
             }
             if (!$stmt->execute()) {
@@ -1014,8 +1244,8 @@ switch ($action) {
                 sendResponse(["error" => "Password must be at least 6 characters"]);
             }
             $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO employees (id, name, email, employee_id, password, permissions, is_master) VALUES (?, ?, ?, ?, ?, ?, 0)");
-            $stmt->bind_param("ssssss", $id, $name, $email, $employee_id, $hashed, $permissionsJson);
+            $stmt = $conn->prepare("INSERT INTO employees (id, name, email, phone, employee_id, password, permissions, is_master) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
+            $stmt->bind_param("sssssss", $id, $name, $email, $phone, $employee_id, $hashed, $permissionsJson);
             if (!$stmt->execute()) {
                 http_response_code(400);
                 sendResponse(["error" => "Failed to add employee. Email or Employee ID may already exist."]);
@@ -1168,9 +1398,17 @@ switch ($action) {
     // -----------------------------------------
     case 'getUsers':
         requirePermission('users');
-        $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users");
+        if (isMasterAdminSession()) {
+            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users ORDER BY created_at DESC");
+        } else {
+            $code = currentEmployeeCode($conn);
+            $stmt = $conn->prepare("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users WHERE UPPER(referral_code) = ? ORDER BY created_at DESC");
+            $stmt->bind_param('s', $code);
+            $stmt->execute();
+            $res = $stmt->get_result();
+        }
         $data = [];
-        while($row = $res->fetch_assoc()) { $data[] = $row; }
+        while ($row = $res->fetch_assoc()) { $data[] = $row; }
         sendResponse($data);
         break;
 
@@ -1190,6 +1428,19 @@ switch ($action) {
         }
         if ($exists && isset($_SESSION['admin_id'])) {
             requirePermission('users');
+            if (!isMasterAdminSession()) {
+                $code = currentEmployeeCode($conn);
+                $chk = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
+                $chk->bind_param('s', $id);
+                $chk->execute();
+                $u = $chk->get_result()->fetch_assoc();
+                if (!$u || strtoupper(trim((string) ($u['referral_code'] ?? ''))) !== $code) {
+                    http_response_code(403);
+                    sendResponse(['error' => 'You can only edit users signed up with your employee code']);
+                    break;
+                }
+                $referral_code = $code;
+            }
         }
 
         // SEC: Role is never escalated via API — investors are always role=user
@@ -1198,7 +1449,18 @@ switch ($action) {
         $name = htmlspecialchars($data['name']);
         $phone = htmlspecialchars($data['phone']);
         $email = htmlspecialchars($data['email']);
-        $referral_code = htmlspecialchars($data['referralCode'] ?? '');
+        if (!isset($referral_code)) {
+            $referral_code = htmlspecialchars($data['referralCode'] ?? '');
+        }
+        if (!$exists) {
+            $referral_code = sanitizeStoredUserCode($referral_code);
+        }
+        if (isset($_SESSION['admin_id']) && !isMasterAdminSession() && !$exists) {
+            $empCode = currentEmployeeCode($conn);
+            if ($empCode !== '' && ($referral_code === '' || strtoupper($referral_code) !== $empCode)) {
+                $referral_code = $empCode;
+            }
+        }
         $kyc_status = htmlspecialchars($data['kycStatus'] ?? 'Not Submitted');
         $kyc_reject_reason = htmlspecialchars($data['kycRejectReason'] ?? $data['kyc_reject_reason'] ?? '');
         if ($kyc_status === 'Verified') {
@@ -1283,6 +1545,18 @@ switch ($action) {
         requirePermission('users');
         $data = getPostData();
         $email = $data['email'] ?? '';
+        if (!isMasterAdminSession()) {
+            $code = currentEmployeeCode($conn);
+            $chk = $conn->prepare('SELECT referral_code FROM users WHERE email = ? LIMIT 1');
+            $chk->bind_param('s', $email);
+            $chk->execute();
+            $u = $chk->get_result()->fetch_assoc();
+            if (!$u || strtoupper(trim((string) ($u['referral_code'] ?? ''))) !== $code) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only delete users signed up with your employee code']);
+                break;
+            }
+        }
         $stmt = $conn->prepare("DELETE FROM users WHERE email=?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
@@ -1314,6 +1588,81 @@ switch ($action) {
         sendResponse(["success" => true, "kycStatus" => $kyc_status]);
         break;
 
+    case 'getAccountContacts':
+        requireAuth();
+        $userId = $_SESSION['user_id'] ?? '';
+        $stmt = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
+        $stmt->bind_param('s', $userId);
+        $stmt->execute();
+        $userRow = $stmt->get_result()->fetch_assoc();
+        $referralCode = normalizeUserCode((string) ($userRow['referral_code'] ?? ''));
+
+        $supportPhone = getSettingValue($conn, 'mobile', '9820897828');
+        $supportEmail = getSettingValue($conn, 'email', 'infogounlisted@gmail.com');
+        $supportWhatsapp = getSettingValue($conn, 'whatsapp', $supportPhone);
+
+        $rm = lookupRmForReferralCode($conn, $referralCode);
+        $rmPayload = null;
+        if ($rm) {
+            $rmPhone = normalizeIndianPhone((string) ($rm['phone'] ?? ''));
+            $rmPayload = [
+                'name' => $rm['name'],
+                'email' => $rm['email'],
+                'phone' => $rmPhone,
+                'employeeId' => strtoupper(trim((string) ($rm['employee_id'] ?? ''))),
+            ];
+        }
+
+        sendResponse([
+            'success' => true,
+            'support' => [
+                'phone' => normalizeIndianPhone($supportPhone),
+                'email' => $supportEmail,
+                'whatsapp' => normalizeIndianPhone($supportWhatsapp ?: $supportPhone),
+            ],
+            'relationManager' => $rmPayload,
+            'referralCode' => $referralCode,
+        ]);
+        break;
+
+    case 'deleteMyAccount':
+        requireAuth();
+        $data = getPostData();
+        $userId = $_SESSION['user_id'] ?? '';
+        $stmt = $conn->prepare('SELECT email FROM users WHERE id = ? LIMIT 1');
+        $stmt->bind_param('s', $userId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) {
+            http_response_code(404);
+            sendResponse(['error' => 'Account not found']);
+            break;
+        }
+        $email = strtolower(trim((string) $row['email']));
+
+        $verifiedAt = $_SESSION['otp_verified'][$email] ?? null;
+        if (!$verifiedAt || (time() - $verifiedAt) > 900) {
+            http_response_code(403);
+            sendResponse(['error' => 'Email verification required. Confirm OTP before deleting your account.']);
+            break;
+        }
+
+        $confirm = strtolower(trim((string) ($data['confirm'] ?? '')));
+        if ($confirm !== 'delete') {
+            http_response_code(400);
+            sendResponse(['error' => 'Type DELETE to confirm account removal']);
+            break;
+        }
+
+        $del = $conn->prepare('DELETE FROM users WHERE id = ?');
+        $del->bind_param('s', $userId);
+        $del->execute();
+        unset($_SESSION['otp_verified'][$email], $_SESSION['user_id']);
+        logAudit($conn, 'User Self Delete', $userId, ['email' => $email]);
+        session_destroy();
+        sendResponse(['success' => true, 'message' => 'Your account has been deleted']);
+        break;
+
     // -----------------------------------------
     // ORDERS
     // -----------------------------------------
@@ -1322,7 +1671,21 @@ switch ($action) {
         // If user is not admin, only return their own orders
         if (isset($_SESSION['admin_id'])) {
             requireAnyPermission(['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund']);
-            $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
+            if (isMasterAdminSession()) {
+                $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
+            } else {
+                $code = currentEmployeeCode($conn);
+                $adminUser = 'admin:' . $_SESSION['admin_id'];
+                $stmt = $conn->prepare(
+                    "SELECT o.* FROM orders o
+                     LEFT JOIN users u ON u.id = o.user_id AND o.user_id NOT LIKE 'admin:%'
+                     WHERE UPPER(o.employee_code) = ?
+                        OR UPPER(u.referral_code) = ?
+                        OR o.user_id = ?
+                     ORDER BY o.created_at DESC"
+                );
+                $stmt->bind_param('sss', $code, $code, $adminUser);
+            }
         } else {
             $stmt = $conn->prepare("SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC");
             $stmt->bind_param("s", $_SESSION['user_id']);
@@ -1332,6 +1695,11 @@ switch ($action) {
         
         $data = [];
         while($row = $res->fetch_assoc()) { 
+            $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
+            if ($employeeCode === '' && !str_starts_with((string) ($row['user_id'] ?? ''), 'admin:')) {
+                $employeeCode = lookupEmployeeCodeForUser($conn, (string) ($row['user_id'] ?? ''));
+            }
+            $employeeCode = normalizeUserCode($employeeCode);
             // BUG 3 FIX: Return ALL fields the frontend expects
             $data[] = [
                 "orderId" => htmlspecialchars($row['order_id']),
@@ -1355,6 +1723,7 @@ switch ($action) {
                 "transactionId" => htmlspecialchars($row['transaction_id'] ?? ''),
                 "utr" => htmlspecialchars($row['transaction_id'] ?? ''),
                 "orderSource" => htmlspecialchars($row['order_source'] ?? 'Online'),
+                "employeeCode" => htmlspecialchars($employeeCode),
                 "opsNote" => htmlspecialchars($row['ops_note'] ?? ''),
                 "date" => $row['created_at'],
                 "userId" => htmlspecialchars($row['user_id'] ?? ''),
@@ -1376,13 +1745,18 @@ switch ($action) {
         $isAdmin = isset($_SESSION['admin_id']);
         $isUser = isset($_SESSION['user_id']);
 
-        $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status FROM orders WHERE order_id=?");
+        $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code FROM orders WHERE order_id=?");
         $stmtCheck->bind_param("s", $order_id);
         $stmtCheck->execute();
         $existingOrder = $stmtCheck->get_result()->fetch_assoc();
 
         // Admin status update only — never wipe UTR
         if ($existingOrder) {
+            if ($isAdmin && !orderBelongsToEmployee($conn, $existingOrder)) {
+                http_response_code(403);
+                sendResponse(["error" => "You can only update orders assigned to your employee code"]);
+                break;
+            }
             $status = trim($data['status'] ?? $existingOrder['status']);
             requireOrderStatusChange($status);
             $ops_note = trim($data['opsNote'] ?? $data['ops_note'] ?? '');
@@ -1533,12 +1907,20 @@ switch ($action) {
         $transaction_id = htmlspecialchars($transaction_id);
         $order_source = htmlspecialchars($order_source);
 
+        $employee_code = '';
+        if ($isAdmin && !isMasterAdminSession()) {
+            $employee_code = currentEmployeeCode($conn);
+        } elseif ($isUser) {
+            $employee_code = lookupEmployeeCodeForUser($conn, $user_id);
+        }
+        $employee_code = sanitizeStoredUserCode($employee_code);
+
         $stmt = $conn->prepare(
-            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $stmt->bind_param(
-            "ssssssssdidssss",
+            "ssssssssdidsssss",
             $order_id,
             $user_id,
             $buyer_name,
@@ -1553,7 +1935,8 @@ switch ($action) {
             $method,
             $transaction_id,
             $status,
-            $order_source
+            $order_source,
+            $employee_code
         );
         if (!$stmt->execute()) {
             error_log('saveOrder INSERT failed: ' . $stmt->error);
@@ -1588,32 +1971,38 @@ switch ($action) {
         $price = (float)($data['pricePerShare'] ?? 0);
         $total = (float)($data['totalAmount'] ?? 0);
         $mode = htmlspecialchars($data['paymentMode'] ?? '');
-        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated') ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), created_at=CURRENT_TIMESTAMP");
-        $stmt->bind_param("sssssssidds", $session_id, $share_id, $share_name, $share_ticker, $buyer_name, $buyer_email, $buyer_phone, $qty, $price, $total, $mode);
+        $employee_code = '';
+        if (!empty($_SESSION['user_id'])) {
+            $employee_code = lookupEmployeeCodeForUser($conn, (string) $_SESSION['user_id']);
+        } elseif (!empty($_SESSION['admin_id']) && !isMasterAdminSession()) {
+            $employee_code = currentEmployeeCode($conn);
+        } else {
+            $ref = strtoupper(trim((string) ($data['referralCode'] ?? $data['employeeCode'] ?? '')));
+            if ($ref !== '') {
+                $employee_code = $ref;
+            }
+        }
+        $employee_code = sanitizeStoredUserCode($employee_code);
+        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated', ?) ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), employee_code=IF(employee_code IS NULL OR employee_code = '', VALUES(employee_code), employee_code), created_at=CURRENT_TIMESTAMP");
+        $stmt->bind_param("sssssssiddss", $session_id, $share_id, $share_name, $share_ticker, $buyer_name, $buyer_email, $buyer_phone, $qty, $price, $total, $mode, $employee_code);
         $stmt->execute();
         sendResponse(["success" => true]);
         break;
 
     case 'getInitiatedCheckouts':
         requirePermission('initiated');
-        $res = $conn->query("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC");
+        if (isMasterAdminSession()) {
+            $res = $conn->query("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC");
+        } else {
+            $code = currentEmployeeCode($conn);
+            $stmt = $conn->prepare("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' AND UPPER(employee_code) = ? ORDER BY created_at DESC");
+            $stmt->bind_param('s', $code);
+            $stmt->execute();
+            $res = $stmt->get_result();
+        }
         $rows = [];
         while ($row = $res->fetch_assoc()) {
-            $rows[] = [
-                'sessionId' => $row['session_id'],
-                'shareId' => $row['share_id'],
-                'shareName' => $row['share_name'],
-                'shareTicker' => $row['share_ticker'],
-                'buyerName' => $row['buyer_name'],
-                'buyerEmail' => $row['buyer_email'],
-                'buyerPhone' => $row['buyer_phone'],
-                'qty' => (int)$row['qty'],
-                'pricePerShare' => (float)$row['price_per_share'],
-                'totalAmount' => (float)$row['total_amount'],
-                'paymentMode' => $row['payment_mode'],
-                'status' => $row['status'],
-                'initiatedAt' => $row['created_at'],
-            ];
+            $rows[] = mapInitiatedCheckoutRow($row);
         }
         sendResponse($rows);
         break;
@@ -1622,6 +2011,20 @@ switch ($action) {
         requirePermission('initiated');
         $data = getPostData();
         $session_id = htmlspecialchars($data['sessionId'] ?? '');
+        $chk = $conn->prepare('SELECT * FROM initiated_checkouts WHERE session_id = ? LIMIT 1');
+        $chk->bind_param('s', $session_id);
+        $chk->execute();
+        $initRow = $chk->get_result()->fetch_assoc();
+        if (!$initRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'Initiate checkout not found']);
+            break;
+        }
+        if (!initiatedBelongsToEmployee($conn, $initRow)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only manage initiate checkouts for your employee code']);
+            break;
+        }
         $stmt = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");
         $stmt->bind_param("s", $session_id);
         $stmt->execute();
@@ -1639,13 +2042,23 @@ switch ($action) {
         if (!$row) {
             http_response_code(404);
             sendResponse(["error" => "Initiated checkout not found"]);
+            break;
+        }
+        if (!initiatedBelongsToEmployee($conn, $row)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only approve initiate checkouts for your employee code']);
+            break;
         }
         $order_id = $data['orderId'] ?? ('GU' . strtoupper(substr(md5(uniqid('', true)), 0, 8)));
         $user_id = 'admin:' . $_SESSION['admin_id'];
         $method = $row['payment_mode'] ?: 'Offline';
         $status = 'Confirmed';
-        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline')");
-        $ins->bind_param("ssssssssdiiss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $row['total_amount'], $method, $status);
+        $employee_code = strtoupper(trim((string) ($row['employee_code'] ?? '')));
+        if ($employee_code === '' && !isMasterAdminSession()) {
+            $employee_code = currentEmployeeCode($conn);
+        }
+        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?)");
+        $ins->bind_param("ssssssssdidsss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $row['total_amount'], $method, $status, $employee_code);
         $ins->execute();
         $del = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");
         $del->bind_param("s", $session_id);

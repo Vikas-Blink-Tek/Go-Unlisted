@@ -3,7 +3,7 @@ import { whatsappUrl } from '../../utils/whatsapp';
 
 export default function WhatsAppFloat() {
   const { settings } = useSiteSettings();
-  const number = settings.whatsapp || settings.mobile || '918169449826';
+  const number = settings.whatsapp || settings.mobile || '919820897828';
 
   return (
     <a

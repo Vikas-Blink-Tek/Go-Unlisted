@@ -203,11 +203,10 @@
       flex: 1;
       min-height: 0;
       padding: 1rem 0;
-      overflow-y: auto;
+      overflow-y: scroll;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: auto;
     }
-    .sidebar-nav::-webkit-scrollbar { width: 4px; }
-    .sidebar-nav::-webkit-scrollbar-thumb { background: rgba(122,193,66,0.25); border-radius: 4px; }
 
     .sidebar-group-label {
       font-size: 0.62rem;
@@ -255,11 +254,12 @@
       min-width: 0;
       height: 100vh;
       min-height: 0;
-      overflow-y: auto;
+      overflow-y: scroll;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
       display: flex;
       flex-direction: column;
+      scrollbar-width: auto;
     }
 
     /* Admin top bar */
@@ -1058,6 +1058,34 @@
 
     .admin-orders-toolbar {
       margin-bottom: 1rem;
+    }
+
+    .verify-payments-search {
+      background: var(--surface);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .verify-payments-search-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 0.35rem;
+    }
+
+    .verify-payments-utr-input {
+      flex: 1;
+      font-family: monospace;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+
+    .verify-payments-hint {
+      margin: 0.5rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
     }
 
     .admin-kyc-modal {

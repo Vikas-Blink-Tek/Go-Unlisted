@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { displayUserCode } from '../utils/userCode';
 import type { User } from '../types';
 
 export function getUsers() {
@@ -37,7 +38,7 @@ export function mapApiUser(u: Record<string, unknown>): User {
     phone: String(u.phone),
     kycStatus: String(u.kyc_status || u.kycStatus || 'Not Submitted'),
     role: u.role ? String(u.role) : undefined,
-    referralCode: u.referral_code ? String(u.referral_code) : undefined,
+    referralCode: displayUserCode(u.referral_code ? String(u.referral_code) : (u.referralCode as string | undefined)),
     kycPan: u.kyc_pan ? String(u.kyc_pan) : undefined,
     kycDemat: u.kyc_demat ? String(u.kyc_demat) : undefined,
     bankAccount: u.bank_account ? String(u.bank_account) : undefined,

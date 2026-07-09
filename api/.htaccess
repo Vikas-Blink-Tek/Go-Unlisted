@@ -1,5 +1,13 @@
-# Protect db_config.php from being accessed directly
+# Protect config files from direct web access
 <Files "db_config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+<Files "mail_config.php">
+    Order allow,deny
+    Deny from all
+</Files>
+<Files "deploy.config.php">
     Order allow,deny
     Deny from all
 </Files>

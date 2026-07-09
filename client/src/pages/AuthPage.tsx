@@ -95,14 +95,15 @@ export default function AuthPage() {
     try {
       const otpRes = await sendOtp(regForm.email);
       if (!otpRes.success) throw new Error(otpRes.error || 'Failed to send OTP');
+      if (otpRes.email_sent === false && !otpRes.dev_otp) {
+        throw new Error(otpRes.error || 'Could not deliver OTP email. Try again or contact support.');
+      }
       setRegDevOtp(otpRes.dev_otp || null);
       setShowOtp(true);
       if (otpRes.dev_otp) {
         showToast('Local dev: OTP shown on screen below', 'info');
-      } else if (otpRes.email_sent) {
-        showToast(`OTP sent to ${regForm.email}`, 'success');
       } else {
-        showToast(`OTP generated for ${regForm.email}. Check inbox or use Resend.`, 'info');
+        showToast(`OTP sent to ${regForm.email}. Check inbox and spam folder.`, 'success');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');

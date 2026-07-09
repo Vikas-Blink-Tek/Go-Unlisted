@@ -3,8 +3,8 @@ import { getSettings } from '../api/content';
 
 const DEFAULTS: Record<string, string> = {
   email: 'infogounlisted@gmail.com',
-  mobile: '+91 816 944 9826',
-  whatsapp: '918169449826',
+  mobile: '+91 98208 97828',
+  whatsapp: '919820897828',
   address: 'Charkop, Kandivali West, Mumbai – 400067',
   disclaimer: 'Trading in unlisted shares carries significant risk. GO UNLISTED is not a SEBI-registered broker.',
   bank_name: 'Kotak Mahindra Bank',

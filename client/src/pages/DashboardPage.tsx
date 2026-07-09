@@ -142,6 +142,9 @@ export default function DashboardPage() {
         <button type="button" className={`dashboard-tab${tab === 'kyc' ? ' active' : ''}`} onClick={() => setParams({ tab: 'kyc' })}>
           KYC Verification
         </button>
+        <Link to="/dashboard/support" className="dashboard-tab dashboard-tab-link">
+          Support
+        </Link>
       </div>
 
       <div className="orders-wrap">

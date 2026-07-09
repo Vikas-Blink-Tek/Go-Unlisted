@@ -1,8 +1,8 @@
 <?php
 /**
  * Email delivery for OTP and notifications.
- * Configure via GU_SMTP_* in .env.local, or api/mail_config.php on Hostinger.
- * Local dev: OTP is also returned in API as dev_otp when GU_DEV_MODE=1 or localhost.
+ * Configure via api/mail_config.php on Hostinger, or GU_SMTP_* in .env.local.
+ * OTP emails require working SMTP — PHP mail() is not used for OTP (avoids false success).
  */
 
 function guMailConfig(): array {
@@ -10,28 +10,58 @@ function guMailConfig(): array {
     if ($cfg !== null) {
         return $cfg;
     }
+
     $cfg = [
-        'smtp_host' => getenv('GU_SMTP_HOST') ?: '',
-        'smtp_port' => (int) (getenv('GU_SMTP_PORT') ?: 465),
-        'smtp_secure' => strtolower(getenv('GU_SMTP_SECURE') ?: 'ssl'),
-        'smtp_user' => getenv('GU_SMTP_USER') ?: '',
-        'smtp_pass' => getenv('GU_SMTP_PASS') ?: '',
-        'mail_from' => getenv('GU_MAIL_FROM') ?: getenv('GU_SMTP_FROM') ?: '',
+        'smtp_host' => '',
+        'smtp_port' => 465,
+        'smtp_secure' => 'ssl',
+        'smtp_user' => '',
+        'smtp_pass' => '',
+        'mail_from' => '',
     ];
+
     $localFile = __DIR__ . '/mail_config.php';
     if (is_readable($localFile)) {
         $fileCfg = require $localFile;
         if (is_array($fileCfg)) {
             foreach ($fileCfg as $key => $value) {
-                if ($value !== '' && $value !== null && ($cfg[$key] ?? '') === '') {
+                if ($value !== '' && $value !== null) {
                     $cfg[$key] = $value;
                 }
             }
         }
     }
+
+    // Env vars override file only when explicitly set (local dev).
+    $envMap = [
+        'smtp_host' => 'GU_SMTP_HOST',
+        'smtp_port' => 'GU_SMTP_PORT',
+        'smtp_secure' => 'GU_SMTP_SECURE',
+        'smtp_user' => 'GU_SMTP_USER',
+        'smtp_pass' => 'GU_SMTP_PASS',
+        'mail_from' => 'GU_MAIL_FROM',
+    ];
+    foreach ($envMap as $cfgKey => $envKey) {
+        $val = getenv($envKey);
+        if ($val !== false && $val !== '') {
+            $cfg[$cfgKey] = $cfgKey === 'smtp_port' ? (int) $val : $val;
+        }
+    }
+    $fromEnv = getenv('GU_SMTP_FROM');
+    if ($fromEnv !== false && $fromEnv !== '') {
+        $cfg['mail_from'] = $fromEnv;
+    }
+
+    $cfg['smtp_port'] = (int) ($cfg['smtp_port'] ?: 465);
+    $cfg['smtp_secure'] = strtolower((string) ($cfg['smtp_secure'] ?: 'ssl'));
     if ($cfg['mail_from'] === '') {
         $cfg['mail_from'] = $cfg['smtp_user'] !== '' ? $cfg['smtp_user'] : 'info@go-unlisted.com';
     }
+    // Hostinger requires From to match the authenticated mailbox.
+    if ($cfg['smtp_user'] !== '') {
+        $cfg['mail_from'] = $cfg['smtp_user'];
+    }
+
     return $cfg;
 }
 
@@ -41,23 +71,19 @@ function guMailFrom(): string {
 
 function guSmtpConfigured(): bool {
     $cfg = guMailConfig();
-    return $cfg['smtp_host'] !== '' && $cfg['smtp_user'] !== '' && $cfg['smtp_pass'] !== '';
+    return $cfg['smtp_host'] !== ''
+        && $cfg['smtp_user'] !== ''
+        && $cfg['smtp_pass'] !== ''
+        && !str_contains((string) $cfg['smtp_pass'], 'YOUR_')
+        && !str_contains((string) $cfg['smtp_pass'], 'REPLACE_');
 }
 
-function guSendEmailPhpMail(string $to, string $subject, string $body, string $from): bool {
-    $headers = implode("\r\n", [
-        'MIME-Version: 1.0',
-        'Content-Type: text/plain; charset=UTF-8',
-        'Content-Transfer-Encoding: 8bit',
-        "From: Go-Unlisted <{$from}>",
-        "Reply-To: {$from}",
-        'X-Mailer: Go-Unlisted',
-    ]);
-    $ok = @mail($to, $subject, $body, $headers);
-    if (!$ok) {
-        error_log("PHP mail() failed for {$to}");
+function guSmtpEhloHost(array $cfg): string {
+    $from = (string) ($cfg['mail_from'] ?? '');
+    if (str_contains($from, '@')) {
+        return substr($from, strpos($from, '@') + 1);
     }
-    return $ok;
+    return $_SERVER['SERVER_NAME'] ?? 'localhost';
 }
 
 function guSmtpRead($socket): string {
@@ -86,27 +112,48 @@ function guSmtpCmd($socket, string $cmd, array $expectCodes, string $step = ''):
     return true;
 }
 
-function guSendEmailSmtp(string $to, string $subject, string $body, string $from): bool {
-    $cfg = guMailConfig();
-    $host = $cfg['smtp_host'];
-    $user = $cfg['smtp_user'];
-    $pass = $cfg['smtp_pass'];
-    $port = (int) $cfg['smtp_port'];
-    $secure = strtolower($cfg['smtp_secure'] ?: 'ssl');
-
+function guSmtpConnect(string $host, int $port, string $secure) {
+    $secure = strtolower($secure);
     $transport = $secure === 'ssl' ? "ssl://{$host}:{$port}" : "tcp://{$host}:{$port}";
-    $socket = @stream_socket_client($transport, $errno, $errstr, 20);
+    $ctx = stream_context_create([
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+            'allow_self_signed' => false,
+        ],
+    ]);
+    $socket = @stream_socket_client($transport, $errno, $errstr, 25, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$socket && $secure === 'ssl') {
+        // Some shared hosts have incomplete CA bundles — retry once without peer verify.
+        $ctx = stream_context_create(['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]]);
+        $socket = @stream_socket_client($transport, $errno, $errstr, 25, STREAM_CLIENT_CONNECT, $ctx);
+    }
     if (!$socket) {
-        error_log("SMTP connect failed ({$host}:{$port}): {$errstr} ({$errno})");
+        error_log("SMTP connect failed ({$host}:{$port}/{$secure}): {$errstr} ({$errno})");
+        return null;
+    }
+    stream_set_timeout($socket, 25);
+    return $socket;
+}
+
+function guSendEmailSmtpWithConfig(string $to, string $subject, string $body, array $cfg): bool {
+    $host = (string) $cfg['smtp_host'];
+    $user = (string) $cfg['smtp_user'];
+    $pass = (string) $cfg['smtp_pass'];
+    $from = (string) ($cfg['mail_from'] ?: $user);
+    $port = (int) ($cfg['smtp_port'] ?? 465);
+    $secure = strtolower((string) ($cfg['smtp_secure'] ?? 'ssl'));
+    $ehloHost = guSmtpEhloHost($cfg);
+
+    $socket = guSmtpConnect($host, $port, $secure);
+    if (!$socket) {
         return false;
     }
-    stream_set_timeout($socket, 20);
 
     if (!guSmtpCmd($socket, '', [220], 'greeting')) {
         fclose($socket);
         return false;
     }
-    $ehloHost = $_SERVER['SERVER_NAME'] ?? 'localhost';
     if (!guSmtpCmd($socket, "EHLO {$ehloHost}", [250], 'EHLO')) {
         fclose($socket);
         return false;
@@ -151,12 +198,15 @@ function guSendEmailSmtp(string $to, string $subject, string $body, string $from
         return false;
     }
 
+    $encodedSubject = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     $message = implode("\r\n", [
         "From: Go-Unlisted <{$from}>",
         "To: <{$to}>",
-        "Subject: {$subject}",
+        "Subject: {$encodedSubject}",
         'MIME-Version: 1.0',
         'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        'X-Mailer: Go-Unlisted',
         '',
         $body,
         '',
@@ -171,22 +221,78 @@ function guSendEmailSmtp(string $to, string $subject, string $body, string $from
     return true;
 }
 
+function guSmtpAttempts(): array {
+    $cfg = guMailConfig();
+    $attempts = [$cfg];
+    $host = strtolower((string) ($cfg['smtp_host'] ?? ''));
+    if (str_contains($host, 'hostinger')) {
+        $alt = $cfg;
+        if ((int) ($cfg['smtp_port'] ?? 0) === 465 || ($cfg['smtp_secure'] ?? '') === 'ssl') {
+            $alt['smtp_port'] = 587;
+            $alt['smtp_secure'] = 'tls';
+            $attempts[] = $alt;
+        } elseif ((int) ($cfg['smtp_port'] ?? 0) === 587) {
+            $alt['smtp_port'] = 465;
+            $alt['smtp_secure'] = 'ssl';
+            $attempts[] = $alt;
+        }
+    }
+    return $attempts;
+}
+
+function guSendEmailSmtp(string $to, string $subject, string $body, string $from): bool {
+    $cfg = guMailConfig();
+    $cfg['mail_from'] = $from;
+    foreach (guSmtpAttempts() as $attempt) {
+        if (guSendEmailSmtpWithConfig($to, $subject, $body, $attempt)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function guSendEmailPhpMail(string $to, string $subject, string $body, string $from): bool {
+    $headers = implode("\r\n", [
+        'MIME-Version: 1.0',
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        "From: Go-Unlisted <{$from}>",
+        "Reply-To: {$from}",
+        'X-Mailer: Go-Unlisted',
+    ]);
+    $ok = @mail($to, $subject, $body, $headers);
+    if (!$ok) {
+        error_log("PHP mail() failed for {$to}");
+    }
+    return $ok;
+}
+
+/** OTP and auth emails — SMTP only (never mail() fallback). */
+function guSendEmailForOtp(string $to, string $subject, string $body): bool {
+    if (!guSmtpConfigured()) {
+        error_log("OTP email blocked for {$to} — SMTP not configured (api/mail_config.php)");
+        return false;
+    }
+    return guSendEmailSmtp($to, $subject, $body, guMailFrom());
+}
+
 function guSendEmail(string $to, string $subject, string $body): bool {
-    $from = guMailFrom();
     if (guSmtpConfigured()) {
-        $ok = guSendEmailSmtp($to, $subject, $body, $from);
+        $ok = guSendEmailSmtp($to, $subject, $body, guMailFrom());
         if ($ok) {
             return true;
         }
-        error_log("SMTP send failed for {$to}, falling back to mail()");
+        error_log("SMTP send failed for {$to} (host " . guMailConfig()['smtp_host'] . "), falling back to mail()");
+    } elseif (!is_readable(__DIR__ . '/mail_config.php')) {
+        error_log("SMTP not configured for {$to} — create api/mail_config.php from mail_config.example.php");
     }
-    return guSendEmailPhpMail($to, $subject, $body, $from);
+    return guSendEmailPhpMail($to, $subject, $body, guMailFrom());
 }
 
 function guSendOtpEmail(string $to, string $otp): bool {
     $subject = 'Your Go-Unlisted Verification Code';
-    $body = "Welcome to Go-Unlisted!\n\nYour OTP code is: {$otp}\n\nThis code will expire in 10 minutes. Do not share this code with anyone.\n\n— Go-Unlisted";
-    return guSendEmail($to, $subject, $body);
+    $body = "Welcome to Go-Unlisted!\n\nYour OTP code is: {$otp}\n\nThis code will expire in 10 minutes. Do not share this code with anyone.\n\nIf you did not request this, ignore this email.\n\n— Go-Unlisted";
+    return guSendEmailForOtp($to, $subject, $body);
 }
 
 function guMailStatus(): array {
@@ -194,6 +300,8 @@ function guMailStatus(): array {
     return [
         'smtp_configured' => guSmtpConfigured(),
         'smtp_host' => $cfg['smtp_host'] !== '' ? $cfg['smtp_host'] : null,
+        'smtp_port' => $cfg['smtp_port'] ?? null,
         'mail_from' => guMailFrom(),
+        'config_file' => is_readable(__DIR__ . '/mail_config.php'),
     ];
 }

@@ -52,10 +52,13 @@ $admin = $cfg['admin'] ?? [];
 $login = "GO UNLISTED — Login credentials\n"
     . "================================\n\n"
     . 'Site: ' . ($cfg['site_url'] ?? '') . "\n\n"
-    . "ADMIN PANEL\n"
+    . "ADMIN PANEL (Master)\n"
     . "  URL:      /admin/login\n"
     . '  Email:    ' . ($admin['email'] ?? '') . "\n"
     . '  Password: ' . ($admin['password'] ?? '') . "\n\n"
+    . "STAFF LOGIN (Employees)\n"
+    . "  URL:      /staff/{EMPLOYEE_ID}  (e.g. /staff/GUE001)\n"
+    . "  Signup:   /login?ref={EMPLOYEE_ID}\n\n"
     . "OTP EMAIL\n"
     . '  From:     ' . ($smtp['from'] ?? '') . "\n"
     . '  Mailbox:  ' . ($smtp['user'] ?? '') . "\n\n"
@@ -64,9 +67,9 @@ $login = "GO UNLISTED — Login credentials\n"
     . '  Name:     ' . ($db['name'] ?? '') . "\n"
     . '  User:     ' . ($db['user'] ?? '') . "\n\n"
     . "After upload:\n"
-    . "  1. Import schema.sql in phpMyAdmin (first time only)\n"
-    . "  2. Visit /setup.php → Activate → delete setup.php\n"
-    . "  3. Admin → Site Settings → Test SMTP\n";
+    . "  Re-deploy: overwrite app files only — keep api/db_config.php, do NOT import schema.sql\n"
+    . "  First install: import schema.sql from repo root, then upload zip\n"
+    . "  Admin → Site Settings → Test SMTP\n";
 
 file_put_contents(dirname($outDir) . '/LOGIN_CREDENTIALS.txt', $login);
 

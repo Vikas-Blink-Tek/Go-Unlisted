@@ -13,9 +13,12 @@ SET time_zone = "+00:00";
 
 CREATE TABLE `employees` (
   `id` varchar(50) NOT NULL,
+  `employee_id` varchar(50) DEFAULT NULL,
   `name` varchar(100) NOT NULL,
   `email` varchar(100) NOT NULL,
+  `phone` varchar(20) DEFAULT NULL,
   `password` varchar(255) NOT NULL,
+  `permissions` text DEFAULT NULL,
   `is_master` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -67,6 +70,8 @@ CREATE TABLE `orders` (
   `total_amount` decimal(15,2) NOT NULL,
   `method` varchar(50) NOT NULL,
   `status` varchar(50) NOT NULL,
+  `order_source` varchar(30) DEFAULT 'Online',
+  `employee_code` varchar(50) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -88,7 +93,8 @@ CREATE TABLE `shares_config` (
 
 ALTER TABLE `employees`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `email` (`email`);
+  ADD UNIQUE KEY `email` (`email`),
+  ADD UNIQUE KEY `employee_id` (`employee_id`);
 
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
