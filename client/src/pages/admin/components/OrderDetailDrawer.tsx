@@ -1,7 +1,8 @@
 import type { Order, User } from '../../../types';
-import { formatCurrency, formatDate, formatDateTime } from '../../../utils/format';
+import { formatCurrency, formatDate, formatDateTime, formatIndianPhoneDisplay, formatPersonName, getOrderDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
-import { getOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
+import CopyTextButton from '../../../components/ui/CopyTextButton';
 
 type Props = {
   order: Order | null;
@@ -26,8 +27,13 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
       <aside className="admin-drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Order details">
         <div className="admin-drawer-header">
           <div>
-            <h3>Order {order.orderId}</h3>
-            <span className={`status-badge ${getOrderStatusClass(order.status)}`}>{getOrderStatusLabel(order.status)}</span>
+            <h3 className="admin-id-cell" style={{ gap: '0.5rem' }}>
+              <span>Order {order.orderId}</span>
+              <CopyTextButton value={order.orderId} label="Order ID copied" />
+            </h3>
+            <span className={`status-badge status-badge--admin ${getOrderStatusClass(order.status)}`}>
+              {getAdminOrderStatusLabel(order.status)}
+            </span>
           </div>
           <button type="button" className="admin-drawer-close" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -35,9 +41,9 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
         <div className="admin-drawer-body">
           <section className="admin-drawer-section">
             <h4>Buyer</h4>
-            <p><strong>{order.buyerName || 'Guest'}</strong></p>
+            <p><strong>{formatPersonName(order.buyerName)}</strong></p>
             <p>{order.buyerEmail || '—'}</p>
-            <p>{order.buyerPhone || '—'}</p>
+            <p>{order.buyerPhone ? formatIndianPhoneDisplay(order.buyerPhone) : '—'}</p>
             {buyer && (
               <p className="admin-drawer-kyc">
                 KYC: <span className={`status-badge ${buyer.kycStatus === 'Verified' ? 'status-confirmed' : 'status-pending'}`}>{buyer.kycStatus}</span>
@@ -53,7 +59,7 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
           <section className="admin-drawer-section">
             <h4>Order info</h4>
             <div className="admin-drawer-grid">
-              <div><span>Date / Time</span><strong>{order.date ? formatDateTime(order.date) : '—'}</strong></div>
+              <div><span>Date / Time</span><strong>{getOrderDate(order) ? formatDateTime(getOrderDate(order)) : '—'}</strong></div>
               <div><span>User code</span><strong style={{ fontFamily: 'monospace' }}>{displayUserCode(order.employeeCode)}</strong></div>
               <div><span>Source</span><strong>{order.orderSource || 'Online'}</strong></div>
             </div>
@@ -70,7 +76,7 @@ export default function OrderDetailDrawer({ order, users, onClose, onVerify, onR
                   {order.transactionId || order.utr || '—'}
                 </strong>
               </div>
-              <div><span>Date</span><strong>{order.date ? formatDate(order.date) : '—'}</strong></div>
+              <div><span>Date</span><strong>{getOrderDate(order) ? formatDate(getOrderDate(order)) : '—'}</strong></div>
             </div>
           </section>
 

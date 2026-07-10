@@ -5,7 +5,7 @@ import { updateKyc } from '../api/auth';
 import { getOrders } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { formatCurrency, formatDate, validateDemat, validatePAN } from '../utils/format';
+import { formatCurrency, formatDateTime, getOrderDate, validateDemat, validatePAN } from '../utils/format';
 import { getOrderStatusClass, getOrderStatusLabel } from '../utils/orderStatus';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
@@ -192,7 +192,7 @@ export default function DashboardPage() {
                       <th>UTR</th>
                       <th>Payment</th>
                       <th>Status</th>
-                      <th>Date</th>
+                      <th>Date / Time</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -209,7 +209,7 @@ export default function DashboardPage() {
                             {getOrderStatusLabel(o.status)}
                           </span>
                         </td>
-                        <td style={{ color: 'var(--text-dim)' }}>{formatDate(o.date)}</td>
+                        <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{formatDateTime(getOrderDate(o))}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -231,7 +231,7 @@ export default function DashboardPage() {
                       <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
                       <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
                       <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
-                      <div><span>Date</span><strong>{formatDate(o.date)}</strong></div>
+                      <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                     </div>
                   </div>
                 ))}

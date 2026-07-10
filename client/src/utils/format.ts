@@ -5,14 +5,21 @@ export function formatCurrency(amount: number) {
 }
 
 const IST = 'Asia/Kolkata';
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** MySQL datetimes from our API are India wall-clock (IST). */
+/**
+ * Parse MySQL / API datetimes. Our API returns India wall-clock (IST) strings
+ * like "2026-07-09 16:12:00" — treat them as IST, never as UTC.
+ */
 export function parseDbDateTime(value?: string | null): Date | null {
   if (!value) return null;
   const s = value.trim();
   if (!s) return null;
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
     return new Date(`${s.replace(' ', 'T')}+05:30`);
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+$/.test(s)) {
+    return new Date(`${s.split('.')[0].replace(' ', 'T')}+05:30`);
   }
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     return new Date(`${s}T00:00:00+05:30`);
@@ -21,7 +28,32 @@ export function parseDbDateTime(value?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** Format IST wall-clock from API without re-converting timezones. */
+function formatIstWallClock(value: string, includeSeconds = false): string | null {
+  const m = value
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return null;
+  const year = m[1];
+  const month = MONTHS_SHORT[Number(m[2]) - 1];
+  const day = m[3];
+  const hour24 = Number(m[4]);
+  const minute = m[5];
+  const second = m[6] || '00';
+  if (!month || Number.isNaN(hour24)) return null;
+  const ampm = hour24 >= 12 ? 'pm' : 'am';
+  const hour12 = hour24 % 12 || 12;
+  const hh = String(hour12).padStart(2, '0');
+  const time = includeSeconds ? `${hh}:${minute}:${second} ${ampm}` : `${hh}:${minute} ${ampm}`;
+  return `${day} ${month} ${year}, ${time}`;
+}
+
 export function formatDate(isoString?: string) {
+  const wall = isoString?.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (wall) {
+    const month = MONTHS_SHORT[Number(wall[2]) - 1];
+    if (month) return `${wall[3]} ${month} ${wall[1]}`;
+  }
   const d = parseDbDateTime(isoString);
   if (!d) return '—';
   return d.toLocaleDateString('en-IN', {
@@ -33,6 +65,9 @@ export function formatDate(isoString?: string) {
 }
 
 export function formatDateTime(isoString?: string, includeSeconds = false) {
+  if (!isoString) return '—';
+  const direct = formatIstWallClock(isoString, includeSeconds);
+  if (direct) return direct;
   const d = parseDbDateTime(isoString);
   if (!d) return '—';
   return d.toLocaleString('en-IN', {
@@ -47,12 +82,15 @@ export function formatDateTime(isoString?: string, includeSeconds = false) {
   });
 }
 
+/** Resolve order timestamp from API field variants. */
+export function getOrderDate(order?: { date?: string; createdAt?: string; created_at?: string; initiatedAt?: string } | null): string | undefined {
+  if (!order) return undefined;
+  return order.date || order.createdAt || order.created_at || order.initiatedAt;
+}
+
 export function generateOrderId() {
-  return (
-    'GU' +
-    Date.now().toString(36).toUpperCase() +
-    Math.random().toString(36).substring(2, 5).toUpperCase()
-  );
+  // Server assigns short sequential IDs (GU0001, GU0002…) on saveOrder when omitted.
+  return '';
 }
 
 export function generateSessionId() {
@@ -64,6 +102,21 @@ export function formatIndianPhoneDisplay(phone: string): string {
   const local = digits.length >= 10 ? digits.slice(-10) : digits;
   if (local.length !== 10) return phone || '—';
   return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
+}
+
+/** Title-case person / company names for admin display (e.g. "sonam gond" → "Sonam Gond"). */
+export function formatPersonName(name?: string | null): string {
+  const raw = (name || '').trim();
+  if (!raw) return 'Guest';
+  return raw
+    .split(/\s+/)
+    .map((part) => {
+      if (!part) return part;
+      // Keep short all-caps tokens (e.g. LLP, PVT) as-is when already uppercase
+      if (part.length <= 4 && part === part.toUpperCase() && /[A-Z]/.test(part)) return part;
+      return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+    })
+    .join(' ');
 }
 
 export function validatePAN(pan: string) {

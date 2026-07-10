@@ -1056,6 +1056,99 @@
       background: rgba(122, 193, 66, 0.04);
     }
 
+    .admin-orders-table-wrap {
+      overflow-x: auto;
+    }
+
+    .admin-orders-table {
+      table-layout: auto;
+      min-width: 960px;
+    }
+
+    .admin-orders-table th,
+    .admin-orders-table td {
+      vertical-align: middle;
+      padding-top: 0.85rem;
+      padding-bottom: 0.85rem;
+    }
+
+    .admin-orders-col-id {
+      white-space: nowrap;
+      min-width: 11.5rem;
+    }
+
+    .admin-orders-col-id .admin-id-cell {
+      flex-wrap: nowrap;
+    }
+
+    .admin-orders-col-id .admin-order-id {
+      white-space: nowrap;
+      word-break: normal;
+      font-size: 0.8rem;
+      letter-spacing: 0.02em;
+    }
+
+    .admin-orders-col-date {
+      white-space: nowrap;
+      font-size: 0.8rem;
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .admin-orders-col-code {
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .admin-orders-col-buyer {
+      min-width: 9rem;
+      max-width: 12rem;
+    }
+
+    .admin-orders-buyer-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #0f172a;
+      line-height: 1.3;
+      text-transform: none;
+    }
+
+    .admin-orders-buyer-meta {
+      margin-top: 0.15rem;
+      font-size: 0.75rem;
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .admin-orders-col-share {
+      max-width: 14rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #1e293b;
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .admin-orders-col-amount {
+      white-space: nowrap;
+      font-size: 0.875rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #0f172a;
+    }
+
+    .admin-orders-col-utr,
+    .admin-orders-col-status,
+    .admin-orders-col-actions {
+      white-space: nowrap;
+    }
+
     .admin-orders-toolbar {
       margin-bottom: 1rem;
     }
@@ -1138,21 +1231,103 @@
       margin-top: 0.5rem;
     }
 
-    .admin-utr-code {
-      display: inline-block;
+    .admin-id-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: 100%;
+    }
+
+    .admin-order-id {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.78rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #1e293b;
+      white-space: nowrap;
+      letter-spacing: 0.02em;
+    }
+
+    .admin-copy-btn {
+      flex-shrink: 0;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 0.65rem;
       font-weight: 700;
       letter-spacing: 0.02em;
-      background: #fffbeb;
-      border: 1px solid #fbbf24;
-      color: #92400e;
-      padding: 0.2rem 0.45rem;
-      border-radius: 6px;
-      max-width: 160px;
+      text-transform: uppercase;
+      padding: 0.15rem 0.4rem;
+      border-radius: 5px;
+      cursor: pointer;
+      line-height: 1.2;
+    }
+
+    .admin-copy-btn:hover {
+      background: #ecfdf5;
+      border-color: #86efac;
+      color: #047857;
+    }
+
+    .admin-utr-code {
+      display: inline-flex;
+      align-items: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      color: #9a3412;
+      padding: 0.28rem 0.55rem;
+      border-radius: 8px;
+      max-width: 180px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      line-height: 1.2;
+      vertical-align: middle;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.28rem 0.65rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      white-space: nowrap;
+      line-height: 1.2;
+      max-width: none;
+    }
+
+    .status-badge--admin {
+      border-radius: 6px;
+      text-transform: none;
+      letter-spacing: 0.01em;
+      font-size: 0.75rem;
+      font-weight: 650;
+      padding: 0.3rem 0.7rem;
+    }
+
+    .status-confirmed {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+    }
+
+    .status-pending {
+      background: #fffbeb;
+      color: #b45309;
+      border: 1px solid #fcd34d;
+    }
+
+    .status-cancelled {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
     }
 
     .emp-modal-card {
@@ -1271,31 +1446,6 @@
 
     .stat-card-highlight .stat-value {
       color: #f59e0b;
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 50px;
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
-    .status-confirmed {
-      background: rgba(57, 181, 74, 0.12);
-      color: var(--green);
-    }
-
-    .status-pending {
-      background: rgba(245, 158, 11, 0.12);
-      color: #f59e0b;
-    }
-
-    .status-cancelled {
-      background: rgba(239, 68, 68, 0.1);
-      color: #ef4444;
     }
 
     .qr-upload-box {
@@ -1705,6 +1855,39 @@
       gap: 0.5rem;
       margin-bottom: 1rem;
       justify-content: flex-end;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .invoice-charge-toggles {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1rem;
+      align-items: center;
+      margin-right: auto;
+    }
+
+    .invoice-charge-hint {
+      font-size: 0.75rem;
+      color: #6b7280;
+      font-weight: 600;
+    }
+
+    .invoice-charge-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      color: #374151;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .invoice-charge-check input {
+      width: 1rem;
+      height: 1rem;
+      accent-color: #7ac142;
+      cursor: pointer;
     }
 
     .invoice-doc-header {

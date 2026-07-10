@@ -4,7 +4,7 @@ import { getOrders } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import { getInitiatedCheckouts } from '../../../api/initiated';
 import { exportCsv } from '../../../utils/exportCsv';
-import { formatCurrency, formatDateTime, parseDbDateTime } from '../../../utils/format';
+import { formatCurrency, formatDateTime, getOrderDate, parseDbDateTime } from '../../../utils/format';
 import { displayUserCode, DEFAULT_USER_CODE } from '../../../utils/userCode';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
@@ -38,7 +38,7 @@ export default function AdminReportsPanel() {
       orderId: o.orderId,
       amount: o.totalPaid || 0,
       status: o.status,
-      date: o.date || '',
+      date: getOrderDate(o) || '',
       txnId: o.transactionId || o.orderId,
     })),
     ...initiated.map((i) => ({
@@ -72,7 +72,7 @@ export default function AdminReportsPanel() {
     const q = search.toLowerCase();
     if (q && !o.orderId.toLowerCase().includes(q) && !(o.buyerPhone || '').includes(q) && !(o.companyName || '').toLowerCase().includes(q)) return false;
     if (statusFilter && !o.status.toLowerCase().includes(statusFilter)) return false;
-    return inRange(o.date || '');
+    return inRange(getOrderDate(o) || '');
   });
 
   const filteredPayments = payments.filter((p) => {
@@ -86,7 +86,7 @@ export default function AdminReportsPanel() {
     if (tab === 'users') {
       exportCsv('user-report.csv', ['Name', 'Email', 'Phone', 'Referral Code', 'Source', 'KYC', 'Joined'], filteredUsers.map((u) => [u.name, u.email, u.phone, displayUserCode(u.referralCode), referralSourceLabel(u.referralCode), u.kycStatus, u.createdAt || '']));
     } else if (tab === 'orders') {
-      exportCsv('order-report.csv', ['Order ID', 'Buyer', 'Phone', 'Share', 'Qty', 'Amount', 'User Code', 'Source', 'Status', 'Date'], filteredOrders.map((o) => [o.orderId, o.buyerName, o.buyerPhone || '', o.companyName || '', o.qty, o.totalPaid || 0, displayUserCode(o.employeeCode), referralSourceLabel(o.employeeCode), o.status, o.date || '']));
+      exportCsv('order-report.csv', ['Order ID', 'Buyer', 'Phone', 'Share', 'Qty', 'Amount', 'User Code', 'Source', 'Status', 'Date'], filteredOrders.map((o) => [o.orderId, o.buyerName, o.buyerPhone || '', o.companyName || '', o.qty, o.totalPaid || 0, displayUserCode(o.employeeCode), referralSourceLabel(o.employeeCode), o.status, getOrderDate(o) || '']));
     } else {
       exportCsv('payment-report.csv', ['Name', 'Phone', 'Email', 'Order/Session', 'Txn ID', 'Amount', 'Status', 'Date'], filteredPayments.map((p) => [p.name, p.phone, p.email, p.orderId, p.txnId, p.amount, p.status, p.date]));
     }
@@ -173,7 +173,7 @@ export default function AdminReportsPanel() {
                   <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{displayUserCode(o.employeeCode)}</td>
                   <td style={{ fontSize: '0.78rem' }}>{referralSourceLabel(o.employeeCode)}</td>
                   <td>{o.status}</td>
-                  <td>{formatDateTime(o.date)}</td>
+                  <td>{formatDateTime(getOrderDate(o))}</td>
                 </tr>
               ))}
             </tbody>

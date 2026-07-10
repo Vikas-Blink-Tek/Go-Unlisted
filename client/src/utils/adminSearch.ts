@@ -9,6 +9,8 @@ export function matchesAdminSearch(
   const ql = q.toLowerCase();
   const qDigits = q.replace(/\D/g, '');
   const qNorm = q.replace(/\s+/g, '').toUpperCase();
+  // Indian mobiles often typed with 91 / +91 — also match last 10 digits
+  const qMobile = qDigits.length >= 10 ? qDigits.slice(-10) : '';
 
   return fields.some((field) => {
     if (!field) return false;
@@ -19,7 +21,14 @@ export function matchesAdminSearch(
     }
     if (qDigits.length >= 3) {
       const fieldDigits = field.replace(/\D/g, '');
-      if (fieldDigits.includes(qDigits)) return true;
+      if (!fieldDigits) return false;
+      if (fieldDigits.includes(qDigits) || qDigits.includes(fieldDigits)) return true;
+      if (qMobile && fieldDigits.length >= 10) {
+        const fieldMobile = fieldDigits.slice(-10);
+        if (fieldMobile === qMobile || fieldMobile.includes(qMobile) || qMobile.includes(fieldMobile)) {
+          return true;
+        }
+      }
     }
     return false;
   });

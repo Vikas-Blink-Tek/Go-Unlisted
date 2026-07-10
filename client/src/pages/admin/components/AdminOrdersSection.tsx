@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import type { Order, User } from '../../../types';
-import { formatCurrency, formatDateTime, parseDbDateTime } from '../../../utils/format';
+import { formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, parseDbDateTime, getOrderDate } from '../../../utils/format';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
-import { getOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
+import CopyTextButton from '../../../components/ui/CopyTextButton';
 import OrderDetailDrawer from './OrderDetailDrawer';
 
 type Props = {
@@ -45,12 +46,12 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
       if (activeStatusFilter === 'confirmed' && !o.status.toLowerCase().includes('confirm')) return false;
       if (activeStatusFilter === 'completed' && !o.status.toLowerCase().includes('complete')) return false;
       if (activeStatusFilter === 'rejected' && !/reject|cancel|refund/i.test(o.status)) return false;
-      if (dateFrom && o.date) {
-        const t = parseDbDateTime(o.date)?.getTime();
+      if (dateFrom && getOrderDate(o)) {
+        const t = parseDbDateTime(getOrderDate(o))?.getTime();
         if (t !== undefined && t < new Date(dateFrom).getTime()) return false;
       }
-      if (dateTo && o.date) {
-        const t = parseDbDateTime(o.date)?.getTime();
+      if (dateTo && getOrderDate(o)) {
+        const t = parseDbDateTime(getOrderDate(o))?.getTime();
         if (t !== undefined && t > new Date(`${dateTo}T23:59:59+05:30`).getTime()) return false;
       }
       return matchesAdminSearch(
@@ -142,8 +143,8 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
           </div>
         </div>
       ) : (
-        <div className="price-table-wrap">
-          <table className="data-table">
+        <div className="price-table-wrap admin-orders-table-wrap">
+          <table className="data-table admin-orders-table">
             <thead>
               <tr>
                 <th>Order ID</th>
@@ -160,27 +161,36 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
             <tbody>
               {display.map((o) => (
                 <tr key={o.orderId} className="admin-order-row" onClick={() => setSelected(o)}>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</td>
-                  <td style={{ fontSize: '0.78rem', whiteSpace: 'nowrap', color: 'var(--text-dim)' }}>
-                    {formatDateTime(o.date)}
+                  <td className="admin-orders-col-id" onClick={(e) => e.stopPropagation()}>
+                    <div className="admin-id-cell">
+                      <code className="admin-order-id">{o.orderId}</code>
+                      <CopyTextButton value={o.orderId} label="Order ID copied" />
+                    </div>
                   </td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '0.78rem', fontWeight: 600 }}>
-                    {displayUserCode(o.employeeCode)}
+                  <td className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</td>
+                  <td className="admin-orders-col-code">{displayUserCode(o.employeeCode)}</td>
+                  <td className="admin-orders-col-buyer">
+                    <div className="admin-orders-buyer-name">{formatPersonName(o.buyerName)}</div>
+                    <div className="admin-orders-buyer-meta">
+                      {o.buyerPhone ? formatIndianPhoneDisplay(o.buyerPhone) : o.buyerEmail || '—'}
+                    </div>
                   </td>
-                  <td>
-                    <div>{o.buyerName || 'Guest'}</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{o.buyerPhone || o.buyerEmail || '—'}</div>
+                  <td className="admin-orders-col-share" title={o.companyName || o.shareName || ''}>
+                    {o.companyName || o.shareName || '—'}
                   </td>
-                  <td>{o.companyName || o.shareName}</td>
-                  <td>{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                  <td>
+                  <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                  <td className="admin-orders-col-utr">
                     <code className="admin-utr-code" title="Payment reference from buyer">
                       {o.transactionId || o.utr || '—'}
                     </code>
                   </td>
-                  <td><span className={`status-badge ${getOrderStatusClass(o.status)}`}>{getOrderStatusLabel(o.status)}</span></td>
+                  <td className="admin-orders-col-status">
+                    <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                      {getAdminOrderStatusLabel(o.status)}
+                    </span>
+                  </td>
                   {showActionCol && (
-                    <td style={{ whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
+                    <td className="admin-orders-col-actions" onClick={(e) => e.stopPropagation()}>
                       {showActions && isPendingOrder(o.status) && (
                         <>
                           <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>Verify</button>

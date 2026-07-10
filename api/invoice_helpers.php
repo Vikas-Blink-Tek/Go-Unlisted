@@ -36,15 +36,56 @@ function mapInvoiceRow(array $row): array {
         'status' => $row['status'] ?? '',
         'invoiceDate' => $row['invoice_date'],
         'createdAt' => $row['created_at'],
+        'includePlatformFee' => (float) ($row['platform_fee'] ?? 0) > 0,
+        'includeStampDuty' => (float) ($row['stamp_duty'] ?? 0) > 0,
     ];
 }
 
-function createInvoiceFromOrder(mysqli $conn, string $orderId): ?array {
+/**
+ * @param array{includePlatformFee?: bool, includeStampDuty?: bool, updateExisting?: bool} $options
+ */
+function calcInvoiceCharges(float $subtotal, array $options): array {
+    $includeFee = !empty($options['includePlatformFee']);
+    $includeStamp = !empty($options['includeStampDuty']);
+    $platformFee = $includeFee ? round($subtotal * 0.01, 2) : 0.0;
+    $stampDuty = $includeStamp ? round($subtotal * 0.00015, 2) : 0.0;
+    $total = round($subtotal + $platformFee + $stampDuty, 2);
+    return [
+        'platformFee' => $platformFee,
+        'stampDuty' => $stampDuty,
+        'total' => $total,
+    ];
+}
+
+/**
+ * Create invoice from order. Fees are optional via $options.
+ * Auto-confirm callers omit options → both charges included (legacy default).
+ * Manual generate passes includePlatformFee / includeStampDuty from checkboxes.
+ * If invoice exists and updateExisting is true, recalculates fee lines.
+ *
+ * @param array{includePlatformFee?: bool, includeStampDuty?: bool, updateExisting?: bool} $options
+ */
+function createInvoiceFromOrder(mysqli $conn, string $orderId, array $options = []): ?array {
+    $hasFeeOpt = array_key_exists('includePlatformFee', $options);
+    $hasStampOpt = array_key_exists('includeStampDuty', $options);
+    // Legacy auto-create (no options): include both. Explicit false/true from UI wins.
+    $includePlatformFee = $hasFeeOpt ? !empty($options['includePlatformFee']) : true;
+    $includeStampDuty = $hasStampOpt ? !empty($options['includeStampDuty']) : true;
+    $updateExisting = !empty($options['updateExisting']) || $hasFeeOpt || $hasStampOpt;
+
+    $chargeOpts = [
+        'includePlatformFee' => $includePlatformFee,
+        'includeStampDuty' => $includeStampDuty,
+    ];
+
     $check = $conn->prepare('SELECT invoice_id FROM invoices WHERE order_id = ? LIMIT 1');
     $check->bind_param('s', $orderId);
     $check->execute();
     $existing = $check->get_result()->fetch_assoc();
     if ($existing) {
+        if ($updateExisting) {
+            return updateInvoiceCharges($conn, (string) $existing['invoice_id'], $chargeOpts);
+        }
         $get = $conn->prepare('SELECT * FROM invoices WHERE invoice_id = ? LIMIT 1');
         $get->bind_param('s', $existing['invoice_id']);
         $get->execute();
@@ -63,12 +104,10 @@ function createInvoiceFromOrder(mysqli $conn, string $orderId): ?array {
     $qty = (int) $order['quantity'];
     $price = (float) $order['price_per_share'];
     $subtotal = round($qty * $price, 2);
-    $platformFee = round($subtotal * 0.01, 2);
-    $stampDuty = round($subtotal * 0.00015, 2);
-    $total = (float) $order['total_amount'];
-    if ($total <= 0) {
-        $total = round($subtotal + $platformFee + $stampDuty, 2);
-    }
+    $charges = calcInvoiceCharges($subtotal, $chargeOpts);
+    $platformFee = $charges['platformFee'];
+    $stampDuty = $charges['stampDuty'];
+    $total = $charges['total'];
 
     $invoiceId = generateInvoiceId($conn);
     $invoiceDate = date('Y-m-d');
@@ -108,4 +147,39 @@ function createInvoiceFromOrder(mysqli $conn, string $orderId): ?array {
     $get->execute();
     $row = $get->get_result()->fetch_assoc();
     return $row ? mapInvoiceRow($row) : null;
+}
+
+/**
+ * Recalculate platform fee / stamp duty on an existing invoice.
+ *
+ * @param array{includePlatformFee?: bool, includeStampDuty?: bool} $options
+ */
+function updateInvoiceCharges(mysqli $conn, string $invoiceId, array $options): ?array {
+    $get = $conn->prepare('SELECT * FROM invoices WHERE invoice_id = ? LIMIT 1');
+    $get->bind_param('s', $invoiceId);
+    $get->execute();
+    $row = $get->get_result()->fetch_assoc();
+    if (!$row) {
+        return null;
+    }
+
+    $subtotal = (float) $row['subtotal'];
+    $charges = calcInvoiceCharges($subtotal, $options);
+    $platformFee = $charges['platformFee'];
+    $stampDuty = $charges['stampDuty'];
+    $total = $charges['total'];
+
+    $upd = $conn->prepare(
+        'UPDATE invoices SET platform_fee = ?, stamp_duty = ?, total_amount = ? WHERE invoice_id = ?'
+    );
+    $upd->bind_param('ddds', $platformFee, $stampDuty, $total, $invoiceId);
+    if (!$upd->execute()) {
+        return null;
+    }
+
+    $get2 = $conn->prepare('SELECT * FROM invoices WHERE invoice_id = ? LIMIT 1');
+    $get2->bind_param('s', $invoiceId);
+    $get2->execute();
+    $updated = $get2->get_result()->fetch_assoc();
+    return $updated ? mapInvoiceRow($updated) : null;
 }

@@ -89,6 +89,8 @@ export interface Order {
   orderSource?: string;
   employeeCode?: string;
   date?: string;
+  createdAt?: string;
+  created_at?: string;
 }
 
 export interface Article {

@@ -20,6 +20,13 @@ export interface Invoice {
   status: string;
   invoiceDate: string;
   createdAt?: string;
+  includePlatformFee?: boolean;
+  includeStampDuty?: boolean;
+}
+
+export interface InvoiceChargeOptions {
+  includePlatformFee?: boolean;
+  includeStampDuty?: boolean;
 }
 
 export function getInvoices() {
@@ -30,6 +37,18 @@ export function getInvoice(invoiceId: string) {
   return apiRequest<Invoice>('getInvoice', 'GET', undefined, { invoiceId });
 }
 
-export function generateInvoice(orderId: string) {
-  return apiRequest<{ success: boolean; invoice: Invoice }>('generateInvoice', 'POST', { orderId });
+export function generateInvoice(orderId: string, options: InvoiceChargeOptions = {}) {
+  return apiRequest<{ success: boolean; invoice: Invoice }>('generateInvoice', 'POST', {
+    orderId,
+    includePlatformFee: !!options.includePlatformFee,
+    includeStampDuty: !!options.includeStampDuty,
+  });
+}
+
+export function updateInvoiceCharges(invoiceId: string, options: InvoiceChargeOptions) {
+  return apiRequest<{ success: boolean; invoice: Invoice }>('updateInvoiceCharges', 'POST', {
+    invoiceId,
+    includePlatformFee: !!options.includePlatformFee,
+    includeStampDuty: !!options.includeStampDuty,
+  });
 }

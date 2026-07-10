@@ -12,6 +12,8 @@ export default function AdminInvoicesPanel() {
   const [search, setSearch] = useState('');
   const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
   const [orderIdInput, setOrderIdInput] = useState('');
+  const [includePlatformFee, setIncludePlatformFee] = useState(false);
+  const [includeStampDuty, setIncludeStampDuty] = useState(false);
   const [showGenerate, setShowGenerate] = useState(false);
 
   const { data: invoices = [], isLoading } = useQuery({
@@ -38,12 +40,15 @@ export default function AdminInvoicesPanel() {
   );
 
   const generateMutation = useMutation({
-    mutationFn: generateInvoice,
+    mutationFn: (orderId: string) =>
+      generateInvoice(orderId, { includePlatformFee, includeStampDuty }),
     onSuccess: (res) => {
       showToast('Invoice generated', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
       setShowGenerate(false);
       setOrderIdInput('');
+      setIncludePlatformFee(false);
+      setIncludeStampDuty(false);
       if (res.invoice) setViewInvoice(res.invoice);
     },
     onError: (e: Error) => showToast(e.message, 'error'),
@@ -54,7 +59,7 @@ export default function AdminInvoicesPanel() {
       <AdminSectionHeader
         compact
         title="Invoices"
-        subtitle="Tax invoices for confirmed orders — auto-created on payment confirmation"
+        subtitle="Tax invoices for confirmed orders — tick platform fee / stamp duty only when needed"
         badge={`${invoices.length} invoices`}
       />
 
@@ -99,7 +104,9 @@ export default function AdminInvoicesPanel() {
           <tbody>
             {filtered.map((inv) => (
               <tr key={inv.invoiceId}>
-                <td><strong>{inv.invoiceId}</strong></td>
+                <td>
+                  <strong>{inv.invoiceId}</strong>
+                </td>
                 <td>{formatDate(inv.invoiceDate)}</td>
                 <td>
                   <div>{inv.buyerName}</div>
@@ -110,8 +117,12 @@ export default function AdminInvoicesPanel() {
                   <small style={{ color: 'var(--muted)' }}>{inv.shareTicker}</small>
                 </td>
                 <td>{inv.qty}</td>
-                <td><strong>{formatCurrency(inv.totalAmount)}</strong></td>
-                <td><code className="inv-order-code">{inv.orderId}</code></td>
+                <td>
+                  <strong>{formatCurrency(inv.totalAmount)}</strong>
+                </td>
+                <td>
+                  <code className="inv-order-code">{inv.orderId}</code>
+                </td>
                 <td>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setViewInvoice(inv)}>
                     View / Print
@@ -124,7 +135,8 @@ export default function AdminInvoicesPanel() {
         {!filtered.length && !isLoading && (
           <div className="admin-table-empty">
             <strong>No invoices yet</strong>
-            Invoices are created automatically when you confirm an order, or generate one manually from an order ID.
+            Invoices are created automatically when you confirm an order, or generate one manually from an
+            order ID.
           </div>
         )}
       </div>
@@ -133,15 +145,35 @@ export default function AdminInvoicesPanel() {
         <div className="modal-overlay" onClick={() => setShowGenerate(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
             <h3>Generate Invoice</h3>
-            <p className="modal-subtitle">Enter a confirmed order ID to create or open its invoice.</p>
+            <p className="modal-subtitle">
+              Enter order ID. Leave fee boxes unchecked to keep them off the PDF (only subtotal).
+            </p>
             <div className="form-group">
               <label className="form-label">Order ID</label>
               <input
                 className="form-input"
-                placeholder="e.g. GU..."
+                placeholder="e.g. GU0001"
                 value={orderIdInput}
                 onChange={(e) => setOrderIdInput(e.target.value)}
               />
+            </div>
+            <div className="invoice-charge-toggles" style={{ marginBottom: '1rem', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <label className="invoice-charge-check">
+                <input
+                  type="checkbox"
+                  checked={includePlatformFee}
+                  onChange={(e) => setIncludePlatformFee(e.target.checked)}
+                />
+                Include platform fee (1%)
+              </label>
+              <label className="invoice-charge-check">
+                <input
+                  type="checkbox"
+                  checked={includeStampDuty}
+                  onChange={(e) => setIncludeStampDuty(e.target.checked)}
+                />
+                Include stamp duty (0.015%)
+              </label>
             </div>
             <button
               type="button"
@@ -159,7 +191,12 @@ export default function AdminInvoicesPanel() {
       )}
 
       {viewInvoice && (
-        <InvoicePrintView invoice={viewInvoice} onClose={() => setViewInvoice(null)} />
+        <InvoicePrintView
+          key={`${viewInvoice.invoiceId}-${viewInvoice.platformFee}-${viewInvoice.stampDuty}`}
+          invoice={viewInvoice}
+          onClose={() => setViewInvoice(null)}
+          onUpdated={setViewInvoice}
+        />
       )}
     </div>
   );

@@ -10,6 +10,19 @@ export function getOrderStatusLabel(status: string): string {
   return status;
 }
 
+/** Short labels for admin tables — avoid long buyer-facing copy wrapping in pills. */
+export function getAdminOrderStatusLabel(status: string): string {
+  const s = status.toLowerCase();
+  if (s.includes('pending') || s === 'initiated') return 'Pending';
+  if (s.includes('transfer initiated')) return 'Transferring';
+  if (s.includes('complete')) return 'Completed';
+  if (s.includes('confirm')) return 'Verified';
+  if (s.includes('reject')) return 'Rejected';
+  if (s.includes('cancel')) return 'Cancelled';
+  if (s.includes('refund')) return 'Refunded';
+  return status;
+}
+
 export function getOrderStatusClass(status: string): string {
   const s = status.toLowerCase();
   if (s.includes('confirm') || s.includes('complete') || s.includes('transfer')) return 'status-confirmed';

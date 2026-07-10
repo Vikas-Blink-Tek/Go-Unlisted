@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
-import { calcOrderTotal, formatCurrency, generateOrderId, generateSessionId } from '../utils/format';
+import { calcOrderTotal, formatCurrency, generateSessionId } from '../utils/format';
 import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 
@@ -156,13 +156,10 @@ export default function CheckoutPage() {
       showToast('Enter your UTR / UPI reference (6–30 characters) from your bank app', 'warning');
       return;
     }
-    const id = generateOrderId();
-    setOrderId(id);
     setPaying(true);
     const methodLabel = PAYMENT_MODES.find((m) => m.id === paymentMode)?.label || 'Manual';
     try {
       const res = await saveOrder({
-        orderId: id,
         shareId: share.id,
         shareName: share.name,
         shareTicker: share.ticker,
@@ -177,6 +174,7 @@ export default function CheckoutPage() {
         orderSource: 'Online',
       });
       setSubmittedUtr(res.transactionId || utrClean);
+      setOrderId(res.orderId || '');
       try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
       setStep(3);
       showToast('Order placed! UTR sent to admin for verification.', 'success');

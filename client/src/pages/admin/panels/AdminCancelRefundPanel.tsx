@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getOrders, updateOrderStatus } from '../../../api/orders';
 import { useToast } from '../../../context/ToastContext';
-import { formatCurrency, formatDateTime } from '../../../utils/format';
+import { formatCurrency, formatDateTime, getOrderDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
-import { getOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
 export default function AdminCancelRefundPanel() {
@@ -65,7 +65,7 @@ export default function AdminCancelRefundPanel() {
               return (
                 <tr key={o.orderId}>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
-                  <td style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', color: 'var(--text-dim)' }}>{formatDateTime(o.date)}</td>
+                  <td style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', color: 'var(--text-dim)' }}>{formatDateTime(getOrderDate(o))}</td>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', fontWeight: 600 }}>{displayUserCode(o.employeeCode)}</td>
                   <td>
                     <div>{o.buyerName}</div>
@@ -73,7 +73,11 @@ export default function AdminCancelRefundPanel() {
                   </td>
                   <td>{o.companyName || o.shareName}</td>
                   <td>{formatCurrency(o.totalPaid || 0)}</td>
-                  <td><span className={`status-badge ${getOrderStatusClass(o.status)}`}>{getOrderStatusLabel(o.status)}</span></td>
+                  <td>
+                    <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                      {getAdminOrderStatusLabel(o.status)}
+                    </span>
+                  </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {(isConfirmed || isTransferring) && (
                       <button type="button" className="btn btn-primary btn-sm" onClick={() => markCompleted(o.orderId)}>

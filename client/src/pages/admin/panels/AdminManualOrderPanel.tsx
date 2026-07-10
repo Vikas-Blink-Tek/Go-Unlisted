@@ -3,14 +3,14 @@ import { useState } from 'react';
 import { saveOrder, getOrders } from '../../../api/orders';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
-import { calcOrderTotal, formatCurrency, generateOrderId } from '../../../utils/format';
-import { getOrderStatusClass } from '../../../utils/orderStatus';
+import { calcOrderTotal, formatCurrency } from '../../../utils/format';
+import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 import AutofillBlocker from '../../../components/forms/AutofillBlocker';
 import { blockTelInput, blockTextInput } from '../../../utils/autofill';
 import type { Order } from '../../../types';
 
-const empty = { orderId: '', name: '', phone: '', shareId: '', qty: '', price: '', method: 'NEFT', source: 'Offline' };
+const empty = { orderId: '', name: '', phone: '', shareId: '', qty: '', price: '', method: 'NEFT', utr: '', source: 'Offline' };
 
 export default function AdminManualOrderPanel() {
   const { showToast } = useToast();
@@ -24,8 +24,8 @@ export default function AdminManualOrderPanel() {
 
   const saveMut = useMutation({
     mutationFn: saveOrder,
-    onSuccess: () => {
-      showToast(editId ? 'Order updated' : 'Order created', 'success');
+    onSuccess: (res) => {
+      showToast(editId ? 'Order updated' : `Order ${res.orderId || ''} created`, 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       setForm(empty);
       setEditId(null);
@@ -42,9 +42,13 @@ export default function AdminManualOrderPanel() {
       showToast('Fill all required fields correctly', 'error');
       return;
     }
-    const orderId = editId || generateOrderId();
+    const utrClean = form.utr.trim().replace(/\s+/g, '').toUpperCase();
+    if (utrClean && (utrClean.length < 6 || utrClean.length > 30)) {
+      showToast('UTR / reference must be 6–30 characters', 'error');
+      return;
+    }
     saveMut.mutate({
-      orderId,
+      ...(editId ? { orderId: editId } : {}),
       shareId: share.id,
       shareName: share.name,
       shareTicker: share.ticker,
@@ -54,6 +58,7 @@ export default function AdminManualOrderPanel() {
       pricePerShare: price,
       qty,
       method: form.method,
+      transactionId: utrClean || undefined,
       status: 'Confirmed',
       orderSource: form.source,
       _fullUpdate: !!editId,
@@ -70,6 +75,7 @@ export default function AdminManualOrderPanel() {
       qty: String(o.qty),
       price: String(o.pricePerShare),
       method: o.method || 'Offline',
+      utr: o.transactionId || o.utr || '',
       source: o.orderSource || 'Offline',
     });
   };
@@ -119,6 +125,16 @@ export default function AdminManualOrderPanel() {
                 {['NEFT', 'IMPS', 'UPI', 'Cash', 'Offline'].map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
+            <div className="report-filter-group">
+              <label className="report-filter-label">UTR / Reference No.</label>
+              <input
+                className="report-filter-input"
+                placeholder="Bank UTR or payment reference (optional for cash)"
+                value={form.utr}
+                onChange={(e) => setForm({ ...form, utr: e.target.value.toUpperCase() })}
+                {...blockTextInput({ name: 'manual-order-utr' })}
+              />
+            </div>
           </div>
           {form.shareId && form.qty && form.price && (
             <div className="pay-amount-box" style={{ marginTop: '1rem' }}>
@@ -136,7 +152,7 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader compact title="Recent Manual Orders" badge={`${manualOrders.length} orders`} />
       <div className="price-table-wrap">
         <table className="data-table">
-          <thead><tr><th>Order ID</th><th>Client</th><th>Share</th><th>Qty</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Client</th><th>Share</th><th>Qty</th><th>Total</th><th>UTR / Ref</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {manualOrders.slice(0, 20).map((o) => (
               <tr key={o.orderId}>
@@ -145,7 +161,12 @@ export default function AdminManualOrderPanel() {
                 <td>{o.companyName || o.shareName}</td>
                 <td>{o.qty}</td>
                 <td>{formatCurrency(o.totalPaid || 0)}</td>
-                <td><span className={`status-badge ${getOrderStatusClass(o.status)}`}>{o.status}</span></td>
+                <td style={{ fontFamily: 'monospace', fontSize: '0.72rem' }}>{o.transactionId || o.utr || '—'}</td>
+                <td>
+                  <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                    {getAdminOrderStatusLabel(o.status)}
+                  </span>
+                </td>
                 <td><button type="button" className="btn btn-ghost btn-sm" onClick={() => loadEdit(o)}>Edit</button></td>
               </tr>
             ))}

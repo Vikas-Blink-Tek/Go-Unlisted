@@ -174,6 +174,10 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE orders ADD COLUMN employee_code VARCHAR(50) DEFAULT NULL AFTER order_source");
     }
+    $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'created_at'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE orders ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
+    }
 
     $res = $conn->query("SHOW COLUMNS FROM initiated_checkouts LIKE 'employee_code'");
     if ($res && $res->num_rows === 0) {
@@ -570,6 +574,40 @@ function sanitizeStoredUserCode(string $code): string {
     return strtoupper(trim($code));
 }
 
+/** Short sequential IDs for new orders: GU0001, GU0002, … (legacy long IDs still accepted). */
+function allocateNextOrderId(mysqli $conn): string {
+    $res = $conn->query(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(order_id, 3) AS UNSIGNED)), 0) AS n
+         FROM orders WHERE order_id REGEXP '^GU[0-9]+$'"
+    );
+    $next = (int) (($res->fetch_assoc()['n'] ?? 0)) + 1;
+    $id = $next < 10000 ? sprintf('GU%04d', $next) : 'GU' . $next;
+    $chk = $conn->prepare('SELECT 1 FROM orders WHERE order_id = ? LIMIT 1');
+    $chk->bind_param('s', $id);
+    $chk->execute();
+    if ($chk->get_result()->fetch_assoc()) {
+        return 'GU' . strtoupper(bin2hex(random_bytes(3)));
+    }
+    return $id;
+}
+
+function isValidOrderId(string $orderId): bool {
+    return (bool) preg_match('/^GU[A-Z0-9]{3,20}$/', strtoupper($orderId));
+}
+
+function orderRowDate(array $row): ?string {
+    return rowTimestampIst($row, 'created_at');
+}
+
+/** TIMESTAMP from MySQL — connection uses SET time_zone = '+05:30', so values are already IST. */
+function rowTimestampIst(array $row, string $column = 'created_at'): ?string {
+    $raw = $row[$column] ?? null;
+    if ($raw === null || trim((string) $raw) === '') {
+        return null;
+    }
+    return (string) $raw;
+}
+
 function mapUserRow(array $row): array {
     return [
         'id' => $row['id'],
@@ -644,7 +682,7 @@ function mapInitiatedCheckoutRow(array $row): array {
         'paymentMode' => $row['payment_mode'],
         'status' => $row['status'],
         'employeeCode' => normalizeUserCode((string) ($row['employee_code'] ?? '')),
-        'initiatedAt' => $row['created_at'],
+        'initiatedAt' => rowTimestampIst($row, 'created_at'),
     ];
 }
 
@@ -656,11 +694,16 @@ function requireOrderStatusChange(string $newStatus): void {
         requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
         return;
     }
-    if (strpos($s, 'confirm') !== false || strpos($s, 'complete') !== false || strpos($s, 'transfer') !== false) {
+    // Verify Payments: confirm or reject payment against bank UTR
+    if (strpos($s, 'confirm') !== false || strpos($s, 'reject') !== false) {
         requirePermission('pending');
         return;
     }
-    if (strpos($s, 'reject') !== false || strpos($s, 'cancel') !== false || strpos($s, 'refund') !== false) {
+    if (strpos($s, 'complete') !== false || strpos($s, 'transfer') !== false) {
+        requirePermission('pending');
+        return;
+    }
+    if (strpos($s, 'cancel') !== false || strpos($s, 'refund') !== false) {
         requirePermission('cancel-refund');
         return;
     }
@@ -1377,6 +1420,7 @@ switch ($action) {
 
     case 'generateInvoice':
         requireMasterAdmin();
+        validateCsrfToken();
         $data = getPostData();
         $orderId = trim($data['orderId'] ?? '');
         if (!$orderId) {
@@ -1384,10 +1428,50 @@ switch ($action) {
             sendResponse(['error' => 'Order ID required']);
             break;
         }
-        $invoice = createInvoiceFromOrder($conn, $orderId);
+        // Explicit booleans from checkboxes (false must clear existing fee lines)
+        $includeFee = array_key_exists('includePlatformFee', $data)
+            ? filter_var($data['includePlatformFee'], FILTER_VALIDATE_BOOLEAN)
+            : false;
+        $includeStamp = array_key_exists('includeStampDuty', $data)
+            ? filter_var($data['includeStampDuty'], FILTER_VALIDATE_BOOLEAN)
+            : false;
+        $opts = [
+            'includePlatformFee' => $includeFee,
+            'includeStampDuty' => $includeStamp,
+            'updateExisting' => true,
+        ];
+        $invoice = createInvoiceFromOrder($conn, $orderId, $opts);
         if (!$invoice) {
             http_response_code(404);
             sendResponse(['error' => 'Could not generate invoice for this order']);
+            break;
+        }
+        sendResponse(['success' => true, 'invoice' => $invoice]);
+        break;
+
+    case 'updateInvoiceCharges':
+        requireMasterAdmin();
+        validateCsrfToken();
+        $data = getPostData();
+        $invoiceId = trim($data['invoiceId'] ?? '');
+        if ($invoiceId === '') {
+            http_response_code(400);
+            sendResponse(['error' => 'Invoice ID required']);
+            break;
+        }
+        $includeFee = array_key_exists('includePlatformFee', $data)
+            ? filter_var($data['includePlatformFee'], FILTER_VALIDATE_BOOLEAN)
+            : false;
+        $includeStamp = array_key_exists('includeStampDuty', $data)
+            ? filter_var($data['includeStampDuty'], FILTER_VALIDATE_BOOLEAN)
+            : false;
+        $invoice = updateInvoiceCharges($conn, $invoiceId, [
+            'includePlatformFee' => $includeFee,
+            'includeStampDuty' => $includeStamp,
+        ]);
+        if (!$invoice) {
+            http_response_code(404);
+            sendResponse(['error' => 'Invoice not found']);
             break;
         }
         sendResponse(['success' => true, 'invoice' => $invoice]);
@@ -1674,6 +1758,7 @@ switch ($action) {
             if (isMasterAdminSession()) {
                 $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
             } else {
+                // Employee: only their referral / tagged orders (including Verify Payments)
                 $code = currentEmployeeCode($conn);
                 $adminUser = 'admin:' . $_SESSION['admin_id'];
                 $stmt = $conn->prepare(
@@ -1725,7 +1810,8 @@ switch ($action) {
                 "orderSource" => htmlspecialchars($row['order_source'] ?? 'Online'),
                 "employeeCode" => htmlspecialchars($employeeCode),
                 "opsNote" => htmlspecialchars($row['ops_note'] ?? ''),
-                "date" => $row['created_at'],
+                "date" => orderRowDate($row),
+                "createdAt" => orderRowDate($row),
                 "userId" => htmlspecialchars($row['user_id'] ?? ''),
             ];
         }
@@ -1734,21 +1820,22 @@ switch ($action) {
 
     case 'saveOrder':
         $data = getPostData();
-        $order_id = trim($data['orderId'] ?? '');
-
-        if (!preg_match('/^GU[A-Z0-9]{5,20}$/', $order_id)) {
-            http_response_code(400);
-            sendResponse(["error" => "Invalid Order ID format"]);
-            break;
-        }
-
+        $order_id = strtoupper(trim($data['orderId'] ?? ''));
         $isAdmin = isset($_SESSION['admin_id']);
         $isUser = isset($_SESSION['user_id']);
 
-        $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code FROM orders WHERE order_id=?");
-        $stmtCheck->bind_param("s", $order_id);
-        $stmtCheck->execute();
-        $existingOrder = $stmtCheck->get_result()->fetch_assoc();
+        $existingOrder = null;
+        if ($order_id !== '') {
+            if (!isValidOrderId($order_id)) {
+                http_response_code(400);
+                sendResponse(["error" => "Invalid Order ID format"]);
+                break;
+            }
+            $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code FROM orders WHERE order_id=?");
+            $stmtCheck->bind_param("s", $order_id);
+            $stmtCheck->execute();
+            $existingOrder = $stmtCheck->get_result()->fetch_assoc();
+        }
 
         // Admin status update only — never wipe UTR
         if ($existingOrder) {
@@ -1818,9 +1905,12 @@ switch ($action) {
         $price_per_share = (float) ($data['pricePerShare'] ?? 0);
         $quantity = (int) ($data['qty'] ?? 0);
         $method = trim($data['method'] ?? $data['paymentMethod'] ?? 'Online');
-        $status = 'Pending Verification';
-        $transaction_id = strtoupper(preg_replace('/\s+/', '', trim($data['transactionId'] ?? '')));
         $order_source = trim($data['orderSource'] ?? $data['source'] ?? 'Online');
+        $transaction_id = strtoupper(preg_replace('/\s+/', '', trim($data['transactionId'] ?? $data['utr'] ?? '')));
+        $isManualAdmin = $isAdmin && !$isUser && ($order_source === 'Offline' || strtolower(trim($data['status'] ?? '')) === 'confirmed');
+        $status = $isManualAdmin
+            ? trim($data['status'] ?? 'Confirmed')
+            : 'Pending Verification';
 
         if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
             $buyer_name = $buyer_email !== '' ? explode('@', $buyer_email)[0] : ($buyer_phone !== '' ? 'Buyer ' . substr($buyer_phone, -4) : 'Buyer');
@@ -1840,19 +1930,27 @@ switch ($action) {
             sendResponse(["error" => "Invalid share or quantity"]);
             break;
         }
-        if (strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+        if ($transaction_id !== '') {
+            if (strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+                http_response_code(400);
+                sendResponse(["error" => "Enter a valid UTR / transaction ID (6–30 characters)"]);
+                break;
+            }
+        } elseif (!$isManualAdmin) {
             http_response_code(400);
             sendResponse(["error" => "Enter a valid UTR / transaction ID (6–30 characters)"]);
             break;
         }
 
-        // Server-side price from catalog when available
+        // Server-side price from catalog when available (online checkout — manual keeps entered price)
         $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty FROM shares WHERE share_id = ? AND is_active = 1");
         $priceStmt->bind_param("s", $share_id);
         $priceStmt->execute();
         $priceRow = $priceStmt->get_result()->fetch_assoc();
         if ($priceRow) {
-            $price_per_share = (float) $priceRow['base_price'];
+            if (!$isManualAdmin) {
+                $price_per_share = (float) $priceRow['base_price'];
+            }
             if ($share_name === '') {
                 $share_name = $priceRow['name'];
             }
@@ -1872,13 +1970,15 @@ switch ($action) {
         }
 
         // Block duplicate UTR (same payment submitted twice)
-        $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
-        $dupUtr->bind_param("s", $transaction_id);
-        $dupUtr->execute();
-        if ($dupUtr->get_result()->num_rows > 0) {
-            http_response_code(409);
-            sendResponse(["error" => "This UTR is already registered. Contact support if you need help."]);
-            break;
+        if ($transaction_id !== '') {
+            $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
+            $dupUtr->bind_param("s", $transaction_id);
+            $dupUtr->execute();
+            if ($dupUtr->get_result()->num_rows > 0) {
+                http_response_code(409);
+                sendResponse(["error" => "This UTR is already registered. Contact support if you need help."]);
+                break;
+            }
         }
 
         $subtotal = $price_per_share * $quantity;
@@ -1915,12 +2015,19 @@ switch ($action) {
         }
         $employee_code = sanitizeStoredUserCode($employee_code);
 
+        if ($order_id === '') {
+            $order_id = allocateNextOrderId($conn);
+        }
+
+        // Lock purchase time in IST at buy moment (not MySQL server TZ quirks)
+        $purchasedAt = date('Y-m-d H:i:s');
+
         $stmt = $conn->prepare(
-            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $stmt->bind_param(
-            "ssssssssdidsssss",
+            "ssssssssdidssssss",
             $order_id,
             $user_id,
             $buyer_name,
@@ -1936,13 +2043,18 @@ switch ($action) {
             $transaction_id,
             $status,
             $order_source,
-            $employee_code
+            $employee_code,
+            $purchasedAt
         );
         if (!$stmt->execute()) {
             error_log('saveOrder INSERT failed: ' . $stmt->error);
             http_response_code(500);
             sendResponse(["error" => "Could not place order. Please try again."]);
             break;
+        }
+
+        if ($isManualAdmin && stripos($status, 'confirm') !== false) {
+            createInvoiceFromOrder($conn, $order_id);
         }
 
         sendResponse([
@@ -1983,7 +2095,7 @@ switch ($action) {
             }
         }
         $employee_code = sanitizeStoredUserCode($employee_code);
-        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated', ?) ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), employee_code=IF(employee_code IS NULL OR employee_code = '', VALUES(employee_code), employee_code), created_at=CURRENT_TIMESTAMP");
+        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated', ?) ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), employee_code=IF(employee_code IS NULL OR employee_code = '', VALUES(employee_code), employee_code)");
         $stmt->bind_param("sssssssiddss", $session_id, $share_id, $share_name, $share_ticker, $buyer_name, $buyer_email, $buyer_phone, $qty, $price, $total, $mode, $employee_code);
         $stmt->execute();
         sendResponse(["success" => true]);
@@ -1992,10 +2104,18 @@ switch ($action) {
     case 'getInitiatedCheckouts':
         requirePermission('initiated');
         if (isMasterAdminSession()) {
-            $res = $conn->query("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC");
+            $res = $conn->query(
+                "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                        qty, price_per_share, total_amount, payment_mode, status, employee_code, created_at
+                 FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC"
+            );
         } else {
             $code = currentEmployeeCode($conn);
-            $stmt = $conn->prepare("SELECT * FROM initiated_checkouts WHERE status = 'Initiated' AND UPPER(employee_code) = ? ORDER BY created_at DESC");
+            $stmt = $conn->prepare(
+                "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                        qty, price_per_share, total_amount, payment_mode, status, employee_code, created_at
+                 FROM initiated_checkouts WHERE status = 'Initiated' AND UPPER(employee_code) = ? ORDER BY created_at DESC"
+            );
             $stmt->bind_param('s', $code);
             $stmt->execute();
             $res = $stmt->get_result();
@@ -2049,7 +2169,10 @@ switch ($action) {
             sendResponse(['error' => 'You can only approve initiate checkouts for your employee code']);
             break;
         }
-        $order_id = $data['orderId'] ?? ('GU' . strtoupper(substr(md5(uniqid('', true)), 0, 8)));
+        $order_id = strtoupper(trim($data['orderId'] ?? ''));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            $order_id = allocateNextOrderId($conn);
+        }
         $user_id = 'admin:' . $_SESSION['admin_id'];
         $method = $row['payment_mode'] ?: 'Offline';
         $status = 'Confirmed';
@@ -2057,8 +2180,9 @@ switch ($action) {
         if ($employee_code === '' && !isMasterAdminSession()) {
             $employee_code = currentEmployeeCode($conn);
         }
-        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?)");
-        $ins->bind_param("ssssssssdidsss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $row['total_amount'], $method, $status, $employee_code);
+        $purchasedAt = date('Y-m-d H:i:s');
+        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?, ?)");
+        $ins->bind_param("ssssssssdidssss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $row['total_amount'], $method, $status, $employee_code, $purchasedAt);
         $ins->execute();
         $del = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");
         $del->bind_param("s", $session_id);
