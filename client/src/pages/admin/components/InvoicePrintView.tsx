@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { updateInvoiceCharges, type Invoice } from '../../../api/invoices';
 import { useToast } from '../../../context/ToastContext';
+import { useSiteSettings } from '../../../hooks/useSiteSettings';
+import { formatSitePhoneDisplay } from '../../../constants/siteContact';
 
 interface Props {
   invoice: Invoice;
@@ -20,6 +22,10 @@ function calcPreview(subtotal: number, includeFee: boolean, includeStamp: boolea
 export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props) {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  const { settings } = useSiteSettings();
+  const companyPhone = formatSitePhoneDisplay(settings.mobile);
+  const companyAddress = settings.address;
+  const companyEmail = settings.email;
   const [includePlatformFee, setIncludePlatformFee] = useState(
     invoice.includePlatformFee ?? invoice.platformFee > 0,
   );
@@ -115,6 +121,11 @@ export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props)
               <img src="/logo.png" alt="Go-Unlisted" className="invoice-logo" />
               <p className="invoice-company">Go-Unlisted</p>
               <p className="invoice-tagline">Pre-IPO &amp; Unlisted Shares Marketplace</p>
+              <p className="invoice-company-contact" style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                {companyAddress}
+                <br />
+                {companyPhone} · {companyEmail}
+              </p>
             </div>
             <div className="invoice-doc-meta">
               <h1>Tax Invoice</h1>
@@ -196,7 +207,9 @@ export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props)
               This is a computer-generated invoice for unlisted share transactions facilitated through
               Go-Unlisted.
             </p>
-            <p>For queries, contact support via the website.</p>
+            <p>
+              For queries: {companyPhone} · {companyEmail} · {companyAddress}
+            </p>
           </footer>
         </article>
       </div>

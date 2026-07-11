@@ -1,3 +1,4 @@
+import { SITE_CONTACT_DEFAULTS, formatSitePhoneDisplay } from '../../constants/siteContact';
 import type { SiteSettings } from '../../types';
 
 export type LegalModalType = 'Privacy Policy' | 'Terms of Service' | 'Refund Policy' | 'Grievance';
@@ -10,7 +11,7 @@ const BASE_CONTENT: Record<LegalModalType, string> = {
   'Refund Policy':
     '<p>Due to the nature of unlisted share transactions, all sales are final. Refunds are only processed if a transaction fails before shares are transferred...</p><p><em>(Placeholder for detailed Refund Policy)</em></p>',
   Grievance:
-    '<p>If you have any grievances, please contact our support team at infogounlisted@gmail.com. We aim to resolve all issues within 48 hours...</p><p><em>(Placeholder for detailed Grievance Redressal Policy)</em></p>',
+    '<p>If you have any grievances, please contact our support team. We aim to resolve all issues within 48 hours...</p><p><em>(Placeholder for detailed Grievance Redressal Policy)</em></p>',
 };
 
 type Props = {
@@ -22,7 +23,14 @@ type Props = {
 export default function LegalModal({ type, settings, onClose }: Props) {
   if (!type) return null;
 
+  const email = settings?.email || SITE_CONTACT_DEFAULTS.email;
+  const phone = formatSitePhoneDisplay(settings?.mobile || SITE_CONTACT_DEFAULTS.mobile);
+  const address = settings?.address || SITE_CONTACT_DEFAULTS.address;
+
   let html = BASE_CONTENT[type];
+  if (type === 'Grievance') {
+    html += `<p><strong>Contact:</strong> <a href="mailto:${email}">${email}</a> · ${phone}<br/><strong>Address:</strong> ${address}</p>`;
+  }
   if (settings?.legal) {
     const escaped = settings.legal
       .replace(/&/g, '&amp;')

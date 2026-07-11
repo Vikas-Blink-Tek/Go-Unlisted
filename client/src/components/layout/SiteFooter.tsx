@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../hooks/useSiteSettings';
 import type { LegalModalType } from './LegalModal';
+import { formatSitePhoneDisplay } from '../../constants/siteContact';
 import { whatsappUrl } from '../../utils/whatsapp';
 
 const WarnIcon = () => (
@@ -41,7 +42,7 @@ export default function SiteFooter({ onLegalOpen }: Props) {
   const { settings } = useSiteSettings();
 
   const email = settings.email;
-  const phone = settings.mobile;
+  const phone = formatSitePhoneDisplay(settings.mobile);
   const whatsapp = settings.whatsapp || settings.mobile;
   const address = settings.address;
   const disclaimer = settings.disclaimer;

@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { useToast } from '../context/ToastContext';
 import { blockAutofillOnFocus, blockEmailInput, blockTextInput } from '../utils/autofill';
+import { formatSitePhoneDisplay } from '../constants/siteContact';
 import { whatsappUrl } from '../utils/whatsapp';
 
 export default function ContactPage() {
@@ -15,10 +16,10 @@ export default function ContactPage() {
   const [form, setForm] = useState({ name: '', email: '', message: '' });
   const [sending, setSending] = useState(false);
 
-  const email = settings.email || 'infogounlisted@gmail.com';
-  const phone = settings.mobile || '+91 98208 97828';
-  const whatsapp = settings.whatsapp || settings.mobile || '919820897828';
-  const address = settings.address || 'Charkop, Kandivali West, Mumbai – 400067';
+  const email = settings.email;
+  const phone = formatSitePhoneDisplay(settings.mobile);
+  const whatsapp = settings.whatsapp || settings.mobile;
+  const address = settings.address;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +51,7 @@ export default function ContactPage() {
           </div>
 
           <div className="contact-item">
-            <div className="contact-item-label">Phone / WhatsApp</div>
+            <div className="contact-item-label">Phone</div>
             <div className="contact-item-value" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div>
                 <a href={`tel:${phone.replace(/\s/g, '')}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>{phone}</a>

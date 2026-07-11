@@ -386,6 +386,14 @@ const PUBLIC_SETTINGS_KEYS = [
     'bank_name', 'bank_ac_name', 'bank_ac_no', 'bank_ifsc', 'bank_upi', 'bank_branch', 'bank_address',
 ];
 
+/** Fallback company contact when settings row is missing (Admin → Site Settings overrides). */
+const SITE_CONTACT_DEFAULTS = [
+    'email' => 'infogounlisted@gmail.com',
+    'mobile' => '+91 81694 49826',
+    'whatsapp' => '918169449826',
+    'address' => 'Malad West, Ijmima, Mumbai – 400064',
+];
+
 function logAudit($conn, $action, $user_id, $details) {
     $ip = getClientIP();
     $detailsJson = json_encode($details);
@@ -841,7 +849,7 @@ switch ($action) {
         $stmt->bind_param('ssss', $name, $email, $message, $ip);
         $stmt->execute();
 
-        $to = 'infogounlisted@gmail.com';
+        $to = getSettingValue($conn, 'email', SITE_CONTACT_DEFAULTS['email']);
         $subject = "Go-Unlisted Contact: $name";
         $body = "Name: $name\nEmail: $email\nIP: $ip\n\nMessage:\n$message";
         $headers = "From: Go-Unlisted <info@go-unlisted.com>\r\nReply-To: $email";
@@ -1681,9 +1689,9 @@ switch ($action) {
         $userRow = $stmt->get_result()->fetch_assoc();
         $referralCode = normalizeUserCode((string) ($userRow['referral_code'] ?? ''));
 
-        $supportPhone = getSettingValue($conn, 'mobile', '9820897828');
-        $supportEmail = getSettingValue($conn, 'email', 'infogounlisted@gmail.com');
-        $supportWhatsapp = getSettingValue($conn, 'whatsapp', $supportPhone);
+        $supportPhone = getSettingValue($conn, 'mobile', SITE_CONTACT_DEFAULTS['mobile']);
+        $supportEmail = getSettingValue($conn, 'email', SITE_CONTACT_DEFAULTS['email']);
+        $supportWhatsapp = getSettingValue($conn, 'whatsapp', SITE_CONTACT_DEFAULTS['whatsapp'] ?: $supportPhone);
 
         $rm = lookupRmForReferralCode($conn, $referralCode);
         $rmPayload = null;

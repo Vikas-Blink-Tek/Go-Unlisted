@@ -1,21 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { getSettings } from '../api/content';
+import {
+  SITE_BANK_DEFAULTS,
+  SITE_CONTACT_DEFAULTS,
+  SITE_DISCLAIMER_DEFAULT,
+} from '../constants/siteContact';
 
 const DEFAULTS: Record<string, string> = {
-  email: 'infogounlisted@gmail.com',
-  mobile: '+91 98208 97828',
-  whatsapp: '919820897828',
-  address: 'Charkop, Kandivali West, Mumbai – 400067',
-  disclaimer: 'Trading in unlisted shares carries significant risk. GO UNLISTED is not a SEBI-registered broker.',
-  bank_name: 'Kotak Mahindra Bank',
-  bank_ac_name: 'GOUNLISTED',
-  bank_ac_no: '0053829665',
-  bank_ifsc: 'KKBK0001364',
-  bank_upi: 'gounlisted@kotak',
-  bank_branch: 'MUM - ANDHERI - SAKIVIHAR ROAD',
-  bank_address: 'HYDE PARK, MAROL, SAKI VIHAR ROAD, ANDHERI EAST, Mumbai 400072',
+  ...SITE_CONTACT_DEFAULTS,
+  ...SITE_BANK_DEFAULTS,
+  disclaimer: SITE_DISCLAIMER_DEFAULT,
 };
-
 
 export function useSiteSettings() {
   const query = useQuery({
@@ -25,5 +20,5 @@ export function useSiteSettings() {
   });
 
   const settings = { ...DEFAULTS, ...(query.data || {}) };
-  return { settings, isLoading: query.isLoading };
+  return { settings, isLoading: query.isLoading, refetch: query.refetch };
 }

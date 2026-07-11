@@ -10,6 +10,11 @@ import { formatCurrency } from '../../utils/format';
 import { isPendingOrder } from '../../utils/orderStatus';
 import { blockAutofillOnFocus, blockTextInput } from '../../utils/autofill';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
+import {
+  SITE_CONTACT_DEFAULTS,
+  formatSitePhoneDisplay,
+} from '../../constants/siteContact';
+import { normalizeWhatsAppNumber } from '../../utils/whatsapp';
 import AdminEmployees from './AdminEmployees';
 import AdminAccessDenied from './components/AdminAccessDenied';
 import AdminSectionHeader from './components/AdminSectionHeader';
@@ -102,6 +107,30 @@ export default function AdminDashboard() {
   };
 
   const settingsVal = (key: string) => settingsForm[key] ?? settingsQuery.data?.[key] ?? '';
+
+  const setSettingField = (key: string, value: string) => {
+    setSettingsForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const syncWhatsAppFromPhone = () => {
+    const phone = settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile;
+    setSettingField('whatsapp', normalizeWhatsAppNumber(phone));
+  };
+
+  const applyClientContactDefaults = () => {
+    setSettingsForm((prev) => ({
+      ...prev,
+      email: SITE_CONTACT_DEFAULTS.email,
+      mobile: SITE_CONTACT_DEFAULTS.mobile,
+      whatsapp: SITE_CONTACT_DEFAULTS.whatsapp,
+      address: SITE_CONTACT_DEFAULTS.address,
+    }));
+    showToast('Filled Malad West / 81694 49826 — click Save Settings to publish', 'success');
+  };
+
+  const previewPhone = formatSitePhoneDisplay(settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile);
+  const previewAddress = settingsVal('address') || SITE_CONTACT_DEFAULTS.address;
+  const previewEmail = settingsVal('email') || SITE_CONTACT_DEFAULTS.email;
 
   if (!canAccessPanel(activePanel)) {
     return <AdminAccessDenied />;
@@ -213,24 +242,89 @@ export default function AdminDashboard() {
         <div className="report-filter-box" style={{ position: 'relative' }}>
           <div className="report-filter-title">Site settings</div>
           <p style={{ fontSize: '0.85rem', color: 'var(--muted)', margin: '-0.5rem 0 1rem' }}>
-            Contact details, bank info, and disclaimer shown on checkout, footer, and WhatsApp.
+            Edit company phone and address here — they appear on the public website (footer, Contact page,
+            WhatsApp button, grievance, invoices, and buyer support).
           </p>
           <AutofillBlocker />
-          <div className="report-filter-title">Contact & WhatsApp</div>
+
+          <div className="report-filter-title">Company contact (public website)</div>
+          <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '0 0 0.75rem' }}>
+            Client can change these anytime. Use one mobile for now if only one number should show.
+          </p>
           <div className="report-filter-grid">
-            {[['email', 'Email'], ['mobile', 'Phone / WhatsApp'], ['whatsapp', 'WhatsApp number (digits only)'], ['address', 'Address']].map(([key, label]) => (
-              <div className="report-filter-group" key={key} style={key === 'address' ? { gridColumn: 'span 2' } : undefined}>
-                <label className="report-filter-label">{label}</label>
-                <input className="report-filter-input" value={settingsVal(key)} onChange={(e) => setSettingsForm({ ...settingsForm, [key]: e.target.value })} {...blockTextInput({ name: `settings-${key}` })} />
+            <div className="report-filter-group">
+              <label className="report-filter-label">Public email</label>
+              <input
+                className="report-filter-input"
+                value={settingsVal('email')}
+                placeholder={SITE_CONTACT_DEFAULTS.email}
+                onChange={(e) => setSettingField('email', e.target.value)}
+                {...blockTextInput({ name: 'settings-email' })}
+              />
+            </div>
+            <div className="report-filter-group">
+              <label className="report-filter-label">Phone (shown on website)</label>
+              <input
+                className="report-filter-input"
+                value={settingsVal('mobile')}
+                placeholder={SITE_CONTACT_DEFAULTS.mobile}
+                onChange={(e) => setSettingField('mobile', e.target.value)}
+                {...blockTextInput({ name: 'settings-mobile' })}
+              />
+            </div>
+            <div className="report-filter-group">
+              <label className="report-filter-label">WhatsApp (digits, with 91)</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  className="report-filter-input"
+                  style={{ flex: 1 }}
+                  value={settingsVal('whatsapp')}
+                  placeholder={SITE_CONTACT_DEFAULTS.whatsapp}
+                  onChange={(e) => setSettingField('whatsapp', e.target.value)}
+                  {...blockTextInput({ name: 'settings-whatsapp' })}
+                />
+                <button type="button" className="btn btn-ghost btn-sm" onClick={syncWhatsAppFromPhone}>
+                  Sync from phone
+                </button>
               </div>
-            ))}
+            </div>
+            <div className="report-filter-group" style={{ gridColumn: 'span 2' }}>
+              <label className="report-filter-label">Company address (shown on website)</label>
+              <textarea
+                className="report-filter-input"
+                rows={2}
+                value={settingsVal('address')}
+                placeholder={SITE_CONTACT_DEFAULTS.address}
+                onChange={(e) => setSettingField('address', e.target.value)}
+                autoComplete="off"
+                {...blockAutofillOnFocus}
+              />
+            </div>
           </div>
+
+          <div
+            className="report-filter-box"
+            style={{ marginTop: '1rem', padding: '0.85rem 1rem', background: 'var(--surface-2, #f8fafc)' }}
+          >
+            <div className="report-filter-title" style={{ marginBottom: 6 }}>Website preview</div>
+            <p style={{ margin: 0, fontSize: '0.85rem', lineHeight: 1.5 }}>
+              <strong>{previewAddress}</strong>
+              <br />
+              {previewPhone} · {previewEmail}
+            </p>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={applyClientContactDefaults}>
+                Fill client defaults (Malad West / 81694 49826)
+              </button>
+            </div>
+          </div>
+
           <div className="report-filter-title" style={{ marginTop: '1.5rem' }}>Bank & UPI (shown at checkout)</div>
           <div className="report-filter-grid">
             {[['bank_name', 'Bank Name'], ['bank_ac_name', 'Account Name'], ['bank_ac_no', 'Account No'], ['bank_ifsc', 'IFSC'], ['bank_upi', 'UPI ID'], ['bank_branch', 'Branch']].map(([key, label]) => (
-              <div className="report-filter-group" key={key}><label className="report-filter-label">{label}</label><input className="report-filter-input" value={settingsVal(key)} onChange={(e) => setSettingsForm({ ...settingsForm, [key]: e.target.value })} {...blockTextInput({ name: `settings-${key}` })} /></div>
+              <div className="report-filter-group" key={key}><label className="report-filter-label">{label}</label><input className="report-filter-input" value={settingsVal(key)} onChange={(e) => setSettingField(key, e.target.value)} {...blockTextInput({ name: `settings-${key}` })} /></div>
             ))}
-            <div className="report-filter-group" style={{ gridColumn: 'span 2' }}><label className="report-filter-label">Branch Address</label><input className="report-filter-input" value={settingsVal('bank_address')} onChange={(e) => setSettingsForm({ ...settingsForm, bank_address: e.target.value })} {...blockTextInput({ name: 'settings-bank-address' })} /></div>
+            <div className="report-filter-group" style={{ gridColumn: 'span 2' }}><label className="report-filter-label">Branch Address</label><input className="report-filter-input" value={settingsVal('bank_address')} onChange={(e) => setSettingField('bank_address', e.target.value)} {...blockTextInput({ name: 'settings-bank-address' })} /></div>
           </div>
           <div className="qr-upload-box">
             <h4>UPI QR Code</h4>
@@ -239,7 +333,7 @@ export default function AdminDashboard() {
               <div><input type="file" accept="image/jpeg,image/png" onChange={(e) => setQrFile(e.target.files?.[0] || null)} /><br /><button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={async () => { if (!qrFile) return showToast('Select file', 'warning'); await uploadQr(qrFile); setQrVersion(Date.now()); showToast('QR updated', 'success'); }}>Upload</button></div>
             </div>
           </div>
-          <div className="report-filter-group" style={{ marginTop: '1rem' }}><label className="report-filter-label">Disclaimer (footer + checkout)</label><textarea className="report-filter-input" rows={4} value={settingsVal('disclaimer')} onChange={(e) => setSettingsForm({ ...settingsForm, disclaimer: e.target.value })} autoComplete="off" {...blockAutofillOnFocus} /></div>
+          <div className="report-filter-group" style={{ marginTop: '1rem' }}><label className="report-filter-label">Disclaimer (footer + checkout)</label><textarea className="report-filter-input" rows={4} value={settingsVal('disclaimer')} onChange={(e) => setSettingField('disclaimer', e.target.value)} autoComplete="off" {...blockAutofillOnFocus} /></div>
 
           {isMaster && (
             <div className="report-filter-box" style={{ marginTop: '1.5rem', padding: '1rem' }}>
