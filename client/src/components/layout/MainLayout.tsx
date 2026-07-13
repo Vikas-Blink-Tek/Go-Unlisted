@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { getSettings } from '../../api/content';
 import SiteFooter from './SiteFooter';
-import LegalModal, { type LegalModalType } from './LegalModal';
+
 import WhatsAppFloat from './WhatsAppFloat';
 import WelcomeAuthModal from '../auth/WelcomeAuthModal';
 import { kycBadgeClass, kycBadgeLabel, userInitials } from '../../utils/kyc';
@@ -63,7 +63,7 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdown, setDropdown] = useState(false);
-  const [legalType, setLegalType] = useState<LegalModalType | null>(null);
+
 
   const settingsQuery = useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
 
@@ -214,9 +214,9 @@ export default function MainLayout() {
         <Outlet />
       </main>
 
-      <SiteFooter onLegalOpen={setLegalType} />
+      <SiteFooter />
 
-      <LegalModal type={legalType} settings={settingsQuery.data} onClose={() => setLegalType(null)} />
+
 
       <WhatsAppFloat />
       <WelcomeAuthModal pathname={location.pathname} />

@@ -11,6 +11,10 @@ import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import ArticlesPage from './pages/ArticlesPage';
 import ArticleDetailPage from './pages/ArticleDetailPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsConditionsPage from './pages/TermsConditionsPage';
+import DisclaimerPage from './pages/DisclaimerPage';
+import RiskDisclosurePage from './pages/RiskDisclosurePage';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -31,6 +35,10 @@ export default function AppRouter() {
           <Route path="contact" element={<ContactPage />} />
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/:slug" element={<ArticleDetailPage />} />
+          <Route path="privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="terms-and-conditions" element={<TermsConditionsPage />} />
+          <Route path="disclaimer" element={<DisclaimerPage />} />
+          <Route path="risk-disclosure" element={<RiskDisclosurePage />} />
         </Route>
 
         <Route path="admin/login" element={<AdminLoginPage portal="master" />} />

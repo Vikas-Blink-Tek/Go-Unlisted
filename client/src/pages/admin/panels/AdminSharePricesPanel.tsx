@@ -497,7 +497,7 @@ export default function AdminSharePricesPanel() {
                   />
                 </label>
                 <label className="price-field price-field--listing">
-                  <span className="price-field-label">Listing ₹ *</span>
+                  <span className="price-field-label">Listing ₹</span>
                   <input
                     className="price-input price-input--listing"
                     type="number"

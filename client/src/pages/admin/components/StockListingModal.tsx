@@ -217,7 +217,6 @@ export default function StockListingModal({
                   </Field>
                   <Field
                     label="Listing price (₹)"
-                    required
                     hint="IPO / listing price — powers homepage comparison"
                   >
                     <input

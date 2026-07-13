@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../hooks/useSiteSettings';
-import type { LegalModalType } from './LegalModal';
+
 import { formatSitePhoneDisplay } from '../../constants/siteContact';
 import { whatsappUrl } from '../../utils/whatsapp';
 
@@ -33,11 +33,7 @@ const PhoneIcon = () => (
   </svg>
 );
 
-type Props = {
-  onLegalOpen: (type: LegalModalType) => void;
-};
-
-export default function SiteFooter({ onLegalOpen }: Props) {
+export default function SiteFooter() {
   const { user } = useAuth();
   const { settings } = useSiteSettings();
 
@@ -97,10 +93,10 @@ export default function SiteFooter({ onLegalOpen }: Props) {
           <div className="footer-col">
             <h4>Legal</h4>
             <div className="footer-links">
-              <button type="button" className="footer-link" onClick={() => onLegalOpen('Privacy Policy')}>Privacy Policy</button>
-              <button type="button" className="footer-link" onClick={() => onLegalOpen('Terms of Service')}>Terms of Service</button>
-              <button type="button" className="footer-link" onClick={() => onLegalOpen('Refund Policy')}>Refund Policy</button>
-              <button type="button" className="footer-link" onClick={() => onLegalOpen('Grievance')}>Grievance</button>
+              <Link to="/privacy-policy" className="footer-link">Privacy Policy</Link>
+              <Link to="/terms-and-conditions" className="footer-link">Terms &amp; Conditions</Link>
+              <Link to="/disclaimer" className="footer-link">Disclaimer</Link>
+              <Link to="/risk-disclosure" className="footer-link">Risk Disclosure</Link>
             </div>
           </div>
         </div>
