@@ -65,7 +65,7 @@ export default function MainLayout() {
   const [dropdown, setDropdown] = useState(false);
 
 
-  const settingsQuery = useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
+  useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
