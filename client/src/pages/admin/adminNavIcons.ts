@@ -1,6 +1,6 @@
 import type { AdminPanelId } from '../../context/AdminPanelContext';
 
-const ICONS: Record<AdminPanelId, string> = {
+const ICONS: Partial<Record<AdminPanelId, string>> = {
   dashboard: '◫',
   pending: '◎',
   initiated: '↩',
@@ -8,6 +8,7 @@ const ICONS: Record<AdminPanelId, string> = {
   'manual-order': '✎',
   'cancel-refund': '↺',
   users: '◉',
+  signups: '⊕',
   employees: '⊞',
   inventory: '▦',
   invoices: '▧',

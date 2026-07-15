@@ -9,7 +9,8 @@ import { formatCurrency, formatDateTime, getOrderDate, validateDemat, validatePA
 import { getOrderStatusClass, getOrderStatusLabel } from '../utils/orderStatus';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
-
+import { getInvoiceByOrder, type Invoice } from '../api/invoices';
+import InvoicePrintView from './admin/components/InvoicePrintView';
 function orderMatchesUser(
   o: { buyerEmail?: string; buyerPhone?: string },
   user: { email: string; phone?: string },
@@ -37,6 +38,24 @@ export default function DashboardPage() {
   });
   const [kycError, setKycError] = useState('');
 
+  const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
+  const [loadingInvoice, setLoadingInvoice] = useState<string | null>(null);
+
+  const handleViewInvoice = async (orderId: string) => {
+    setLoadingInvoice(orderId);
+    try {
+      const res = await getInvoiceByOrder(orderId);
+      if (res.invoiceId) {
+        setViewingInvoice(res);
+      } else {
+        showToast('Invoice not found', 'error');
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not fetch invoice', 'error');
+    } finally {
+      setLoadingInvoice(null);
+    }
+  };
   const ordersQuery = useQuery({
     queryKey: ['orders'],
     queryFn: getOrders,
@@ -53,6 +72,17 @@ export default function DashboardPage() {
     }
   }, [user, authLoading, navigate]);
 
+  useEffect(() => {
+    if (user) {
+      setKycForm({
+        pan: user.kycPan || '',
+        demat: user.kycDemat || '',
+        bankAccount: user.bankAccount || '',
+        ifsc: user.ifsc || '',
+      });
+    }
+  }, [user]);
+
   if (authLoading) {
     return (
       <div className="view" id="view-dashboard">
@@ -66,19 +96,6 @@ export default function DashboardPage() {
   if (!user) {
     return null;
   }
-
-  useEffect(() => {
-    if (user) {
-      setKycForm({
-        pan: user.kycPan || '',
-        demat: user.kycDemat || '',
-        bankAccount: user.bankAccount || '',
-        ifsc: user.ifsc || '',
-      });
-    }
-  }, [user]);
-
-  if (authLoading || !user) return null;
 
   const myOrders = (ordersQuery.data || []).filter((o) => orderMatchesUser(o, user));
   const totalInvested = myOrders.reduce((sum, o) => sum + (o.totalPaid || o.total || 0), 0);
@@ -202,12 +219,25 @@ export default function DashboardPage() {
                         <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
                         <td>{o.qty}</td>
                         <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                        <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.transactionId || ''}>{o.transactionId || '—'}</td>
                         <td>{o.method || o.paymentMethod || '—'}</td>
                         <td>
-                          <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
-                            {getOrderStatusLabel(o.status)}
-                          </span>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem' }}>
+                            <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
+                              {getOrderStatusLabel(o.status)}
+                            </span>
+                            {['Confirmed', 'Payment Verified — Transfer Starting', 'Payment Verified', 'Transfer Started'].includes(o.status) && (
+                              <button
+                                type="button"
+                                className="btn btn-outline btn-sm"
+                                style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
+                                onClick={() => handleViewInvoice(o.orderId)}
+                                disabled={loadingInvoice === o.orderId}
+                              >
+                                {loadingInvoice === o.orderId ? '...' : 'View Invoice'}
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{formatDateTime(getOrderDate(o))}</td>
                       </tr>
@@ -232,6 +262,18 @@ export default function DashboardPage() {
                       <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
                       <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
                       <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
+                      {['Confirmed', 'Payment Verified — Transfer Starting', 'Payment Verified', 'Transfer Started'].includes(o.status) && (
+                        <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleViewInvoice(o.orderId)}
+                            disabled={loadingInvoice === o.orderId}
+                          >
+                            {loadingInvoice === o.orderId ? 'Loading...' : 'View Invoice'}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -298,6 +340,14 @@ export default function DashboardPage() {
         </div>
       )}
       </div>
+
+      {viewingInvoice && (
+        <InvoicePrintView
+          invoice={viewingInvoice}
+          readOnly={true}
+          onClose={() => setViewingInvoice(null)}
+        />
+      )}
     </div>
   );
 }

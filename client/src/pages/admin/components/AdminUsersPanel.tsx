@@ -4,6 +4,8 @@ import { saveUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
+import { formatDate } from '../../../utils/format';
+import { displayUserCode } from '../../../utils/userCode';
 import AdminSectionHeader from './AdminSectionHeader';
 
 type Props = {
@@ -162,6 +164,8 @@ export default function AdminUsersPanel({ users }: Props) {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Registered</th>
+              <th>Code</th>
               <th>Email</th>
               <th>Phone</th>
               <th>KYC</th>
@@ -174,6 +178,12 @@ export default function AdminUsersPanel({ users }: Props) {
             {filtered.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
+                <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>
+                  {u.createdAt ? formatDate(u.createdAt) : '—'}
+                </td>
+                <td style={{ fontFamily: 'monospace' }}>
+                  {displayUserCode(u.referralCode)}
+                </td>
                 <td>{u.email}</td>
                 <td>{u.phone || '—'}</td>
                 <td>

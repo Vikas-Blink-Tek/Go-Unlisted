@@ -17,7 +17,15 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
           secure: isLiveApi,
-          cookieDomainRewrite: isLiveApi ? '' : '127.0.0.1',
+          cookieDomainRewrite: '127.0.0.1',
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              const sc = proxyRes.headers['set-cookie'];
+              if (sc) {
+                proxyRes.headers['set-cookie'] = sc.map((c) => c.replace(/;\\s*Secure/gi, ''));
+              }
+            });
+          },
         },
         '/uploads': {
           target: apiTarget,

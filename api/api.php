@@ -644,7 +644,7 @@ function lookupEmployeeCodeForUser(mysqli $conn, string $userId): string {
 }
 
 function orderBelongsToEmployee(mysqli $conn, array $orderRow): bool {
-    if (isMasterAdminSession()) {
+    if (isMasterAdminSession() || adminCan('view-all-orders')) {
         return true;
     }
     $code = currentEmployeeCode($conn);
@@ -665,7 +665,7 @@ function orderBelongsToEmployee(mysqli $conn, array $orderRow): bool {
 }
 
 function initiatedBelongsToEmployee(mysqli $conn, array $row): bool {
-    if (isMasterAdminSession()) {
+    if (isMasterAdminSession() || adminCan('view-all-orders')) {
         return true;
     }
     $code = currentEmployeeCode($conn);
@@ -1407,20 +1407,60 @@ switch ($action) {
         break;
 
     case 'getInvoice':
-        requireMasterAdmin();
+        requireAuth();
         $invoiceId = $_GET['invoiceId'] ?? '';
         if (!$invoiceId) {
             http_response_code(400);
             sendResponse(['error' => 'Invoice ID required']);
             break;
         }
-        $stmt = $conn->prepare('SELECT * FROM invoices WHERE invoice_id = ? LIMIT 1');
+        $stmt = $conn->prepare('
+            SELECT i.*, o.user_id 
+            FROM invoices i 
+            LEFT JOIN orders o ON i.order_id = o.order_id 
+            WHERE i.invoice_id = ? LIMIT 1
+        ');
         $stmt->bind_param('s', $invoiceId);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         if (!$row) {
             http_response_code(404);
             sendResponse(['error' => 'Invoice not found']);
+            break;
+        }
+        if (!isset($_SESSION['admin_id']) && $row['user_id'] !== $_SESSION['user_id']) {
+            http_response_code(403);
+            sendResponse(['error' => 'Access denied']);
+            break;
+        }
+        sendResponse(mapInvoiceRow($row));
+        break;
+
+    case 'getInvoiceByOrder':
+        requireAuth();
+        $orderId = $_GET['orderId'] ?? '';
+        if (!$orderId) {
+            http_response_code(400);
+            sendResponse(['error' => 'Order ID required']);
+            break;
+        }
+        $stmt = $conn->prepare('
+            SELECT i.*, o.user_id 
+            FROM invoices i 
+            LEFT JOIN orders o ON i.order_id = o.order_id 
+            WHERE i.order_id = ? LIMIT 1
+        ');
+        $stmt->bind_param('s', $orderId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) {
+            http_response_code(404);
+            sendResponse(['error' => 'Invoice not found']);
+            break;
+        }
+        if (!isset($_SESSION['admin_id']) && $row['user_id'] !== $_SESSION['user_id']) {
+            http_response_code(403);
+            sendResponse(['error' => 'Access denied']);
             break;
         }
         sendResponse(mapInvoiceRow($row));
@@ -1485,12 +1525,33 @@ switch ($action) {
         sendResponse(['success' => true, 'invoice' => $invoice]);
         break;
 
+    case 'adminDeleteInvoice':
+        requireAdmin();
+        $postData = getPostData();
+        $invoiceId = $postData['invoiceId'] ?? '';
+        if ($invoiceId === '') {
+            http_response_code(400);
+            sendResponse(['error' => 'Invoice ID is required']);
+            break;
+        }
+        $stmt = $conn->prepare("DELETE FROM invoices WHERE invoice_id=?");
+        $stmt->bind_param("s", $invoiceId);
+        $stmt->execute();
+        if ($stmt->affected_rows === 0) {
+            http_response_code(404);
+            sendResponse(['error' => 'Invoice not found or already deleted']);
+            break;
+        }
+        logAudit($conn, 'Delete Invoice', $_SESSION['admin_id'], ['invoiceId' => $invoiceId]);
+        sendResponse(['success' => true]);
+        break;
+
     // -----------------------------------------
     // USERS (Admin Only or Self)
     // -----------------------------------------
     case 'getUsers':
         requirePermission('users');
-        if (isMasterAdminSession()) {
+        if (isMasterAdminSession() || adminCan('view-all-kyc')) {
             $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users ORDER BY created_at DESC");
         } else {
             $code = currentEmployeeCode($conn);
@@ -1520,7 +1581,7 @@ switch ($action) {
         }
         if ($exists && isset($_SESSION['admin_id'])) {
             requirePermission('users');
-            if (!isMasterAdminSession()) {
+            if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
                 $code = currentEmployeeCode($conn);
                 $chk = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
                 $chk->bind_param('s', $id);
@@ -1547,7 +1608,7 @@ switch ($action) {
         if (!$exists) {
             $referral_code = sanitizeStoredUserCode($referral_code);
         }
-        if (isset($_SESSION['admin_id']) && !isMasterAdminSession() && !$exists) {
+        if (isset($_SESSION['admin_id']) && !isMasterAdminSession() && !adminCan('view-all-kyc') && !$exists) {
             $empCode = currentEmployeeCode($conn);
             if ($empCode !== '' && ($referral_code === '' || strtoupper($referral_code) !== $empCode)) {
                 $referral_code = $empCode;
@@ -1763,7 +1824,7 @@ switch ($action) {
         // If user is not admin, only return their own orders
         if (isset($_SESSION['admin_id'])) {
             requireAnyPermission(['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund']);
-            if (isMasterAdminSession()) {
+            if (isMasterAdminSession() || adminCan('view-all-orders')) {
                 $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
             } else {
                 // Employee: only their referral / tagged orders (including Verify Payments)
@@ -1993,9 +2054,18 @@ switch ($action) {
         $platformFee = (int) round($subtotal * 0.01);
         $total_amount = $subtotal + $platformFee;
 
-        // Online checkout requires a logged-in user (admin manual orders still allowed)
+        // Online checkout requires a logged-in user and KYC verification
         if ($isUser) {
             $user_id = $_SESSION['user_id'];
+            $kycStmt = $conn->prepare("SELECT kyc_status FROM users WHERE id = ? LIMIT 1");
+            $kycStmt->bind_param("s", $user_id);
+            $kycStmt->execute();
+            $kycRow = $kycStmt->get_result()->fetch_assoc();
+            if (!$kycRow || $kycRow['kyc_status'] !== 'Verified') {
+                http_response_code(403);
+                sendResponse(["error" => "KYC Verification is required to place an order"]);
+                break;
+            }
         } elseif ($isAdmin) {
             requirePermission('manual-order');
             $user_id = 'admin:' . $_SESSION['admin_id'];
@@ -2111,7 +2181,7 @@ switch ($action) {
 
     case 'getInitiatedCheckouts':
         requirePermission('initiated');
-        if (isMasterAdminSession()) {
+        if (isMasterAdminSession() || adminCan('view-all-orders')) {
             $res = $conn->query(
                 "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
                         qty, price_per_share, total_amount, payment_mode, status, employee_code, created_at
@@ -2589,10 +2659,18 @@ switch ($action) {
     case 'saveSettings':
         requirePermission('settings');
         $data = getPostData();
+        // Whitelist allowed setting keys to prevent arbitrary key injection
+        $allowedKeys = [
+            'email', 'mobile', 'whatsapp', 'address',
+            'bank_name', 'bank_ac_name', 'bank_ac_no', 'bank_ifsc', 'bank_upi', 'bank_branch', 'bank_address',
+            'disclaimer',
+            'enable_invoice_charges', 'invoice_custom_charges',
+        ];
         $stmt = $conn->prepare("INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
         foreach ($data as $key => $val) {
-            $k = htmlspecialchars($key);
-            $v = htmlspecialchars($val);
+            if (!in_array($key, $allowedKeys, true)) continue;
+            $k = (string) $key;
+            $v = (string) $val;
             $stmt->bind_param("ss", $k, $v);
             $stmt->execute();
         }

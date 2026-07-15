@@ -259,16 +259,18 @@ export default function StockListingModal({
                     />
                   </Field>
                   <Field label="Sector" required>
-                    <select
+                    <input
+                      list="sector-options"
                       className="slm-input"
                       value={form.sector}
                       onChange={(e) => set({ sector: e.target.value })}
-                    >
-                      <option value="">Select…</option>
+                      placeholder="Select or type..."
+                    />
+                    <datalist id="sector-options">
                       {sectorOptions.map((s) => (
-                        <option key={s} value={s}>{s}</option>
+                        <option key={s} value={s} />
                       ))}
-                    </select>
+                    </datalist>
                   </Field>
                   <Field label="Listing type">
                     <select

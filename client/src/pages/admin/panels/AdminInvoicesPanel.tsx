@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { generateInvoice, getInvoices, type Invoice } from '../../../api/invoices';
+import { generateInvoice, getInvoices, deleteInvoice, type Invoice } from '../../../api/invoices';
 import { useToast } from '../../../context/ToastContext';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import AdminSectionHeader from '../components/AdminSectionHeader';
@@ -50,6 +50,15 @@ export default function AdminInvoicesPanel() {
       setIncludePlatformFee(false);
       setIncludeStampDuty(false);
       if (res.invoice) setViewInvoice(res.invoice);
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (invoiceId: string) => deleteInvoice(invoiceId),
+    onSuccess: () => {
+      showToast('Invoice deleted', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -123,9 +132,22 @@ export default function AdminInvoicesPanel() {
                 <td>
                   <code className="inv-order-code">{inv.orderId}</code>
                 </td>
-                <td>
+                <td style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={() => setViewInvoice(inv)}>
                     View / Print
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-ghost btn-sm" 
+                    style={{ color: 'var(--danger)' }}
+                    disabled={deleteMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm('Delete this invoice?')) {
+                        deleteMutation.mutate(inv.invoiceId);
+                      }
+                    }}
+                  >
+                    Delete
                   </button>
                 </td>
               </tr>

@@ -21,6 +21,7 @@ export type AdminPanelId =
   | 'orders'
   | 'manual-order'
   | 'users'
+  | 'signups'
   | 'cancel-refund'
   | 'employees'
   | 'inventory'
@@ -28,7 +29,9 @@ export type AdminPanelId =
   | 'prices'
   | 'articles'
   | 'reports'
-  | 'settings';
+  | 'settings'
+  | 'view-all-orders'
+  | 'view-all-kyc';
 
 export interface AdminPanelDef {
   id: AdminPanelId;
@@ -52,6 +55,9 @@ export const EMPLOYEE_PERMISSION_OPTIONS: { id: AdminPanelId; label: string; gro
   { id: 'manual-order', label: 'Manual Order', group: 'Orders' },
   { id: 'cancel-refund', label: 'Cancel / Refund', group: 'Orders' },
   { id: 'users', label: 'Users & KYC', group: 'Clients' },
+  { id: 'signups', label: 'User Signups', group: 'Clients' },
+  { id: 'view-all-orders', label: 'View All Orders (all codes)', group: 'Data Scope' },
+  { id: 'view-all-kyc', label: 'View All KYC (all codes)', group: 'Data Scope' },
   { id: 'prices', label: 'Stocks & Listings', group: 'Catalog' },
   { id: 'articles', label: 'Articles / Blog', group: 'Content' },
   { id: 'reports', label: 'Reports & Export', group: 'Analytics' },
@@ -66,6 +72,7 @@ export const DEFAULT_EMPLOYEE_PERMISSIONS: AdminPanelId[] = [
   'manual-order',
   'cancel-refund',
   'users',
+  'signups',
 ];
 
 export const ADMIN_PANELS: AdminPanelDef[] = [
@@ -76,6 +83,7 @@ export const ADMIN_PANELS: AdminPanelDef[] = [
   { id: 'manual-order', label: 'Manual Order', group: 'Order Pipeline', hint: 'Enter offline / phone orders' },
   { id: 'cancel-refund', label: 'Cancel / Refund', group: 'Order Pipeline', hint: 'Update order status' },
   { id: 'users', label: 'Users & KYC', group: 'Clients', hint: 'Registered investors' },
+  { id: 'signups', label: 'User Signups', group: 'Clients', hint: 'Signup dates, timing & employee codes' },
   { id: 'employees', label: 'Employees', group: 'Team', masterOnly: true },
   { id: 'inventory', label: 'Inventory', group: 'Back Office', masterOnly: true, hint: 'Qty on hand, cost & margins' },
   { id: 'invoices', label: 'Invoices', group: 'Back Office', masterOnly: true, hint: 'Tax invoices for confirmed orders' },

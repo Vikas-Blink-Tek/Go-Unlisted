@@ -5,14 +5,6 @@ import { useSiteSettings } from '../../hooks/useSiteSettings';
 import { formatSitePhoneDisplay } from '../../constants/siteContact';
 import { whatsappUrl } from '../../utils/whatsapp';
 
-const WarnIcon = () => (
-  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4, color: '#ffc107' }}>
-    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-    <line x1="12" y1="9" x2="12" y2="13" />
-    <line x1="12" y1="17" x2="12.01" y2="17" />
-  </svg>
-);
-
 const PinIcon = () => (
   <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: 4 }}>
     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
@@ -41,7 +33,6 @@ export default function SiteFooter() {
   const phone = formatSitePhoneDisplay(settings.mobile);
   const whatsapp = settings.whatsapp || settings.mobile;
   const address = settings.address;
-  const disclaimer = settings.disclaimer;
 
   return (
     <footer>
@@ -103,18 +94,8 @@ export default function SiteFooter() {
 
         <hr className="footer-divider" />
 
-        <div className="site-disclaimer-block">
-          <strong>Disclaimer:</strong>
-          <p id="site-disclaimer">{disclaimer}</p>
-        </div>
-
         <div className="footer-bottom">
           <div className="footer-disclaimer">
-            <strong><WarnIcon /> Disclaimer:</strong> GO UNLISTED is not a SEBI-registered broker.
-            This platform is for informational and transactional facilitation only.
-            Invest at your own risk. Unlisted shares are subject to market risks.
-            Please read all related documents carefully before investing.
-            <br />
             <strong><PinIcon /> Address:</strong> {address} {' | '}
             <strong><MailIcon /></strong>{' '}
             <a href={`mailto:${email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{email}</a>

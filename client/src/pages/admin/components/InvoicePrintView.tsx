@@ -1,8 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 import { formatCurrency, formatDate } from '../../../utils/format';
-import { updateInvoiceCharges, type Invoice } from '../../../api/invoices';
-import { useToast } from '../../../context/ToastContext';
+import { type Invoice } from '../../../api/invoices';
 import { useSiteSettings } from '../../../hooks/useSiteSettings';
 import { formatSitePhoneDisplay } from '../../../constants/siteContact';
 
@@ -10,69 +7,45 @@ interface Props {
   invoice: Invoice;
   onClose?: () => void;
   onUpdated?: (invoice: Invoice) => void;
+  readOnly?: boolean;
 }
 
-function calcPreview(subtotal: number, includeFee: boolean, includeStamp: boolean) {
-  const platformFee = includeFee ? Math.round(subtotal * 0.01 * 100) / 100 : 0;
-  const stampDuty = includeStamp ? Math.round(subtotal * 0.00015 * 100) / 100 : 0;
-  const totalAmount = Math.round((subtotal + platformFee + stampDuty) * 100) / 100;
-  return { platformFee, stampDuty, totalAmount };
+/**
+ * Calculate invoice totals using ONLY the custom charges from Site Settings.
+ * No hardcoded platform fee or stamp duty — only what the admin configures.
+ */
+function calcPreview(subtotal: number, invoiceChargesEnabled: boolean, customCharges: { name: string; price: number }[]) {
+  if (!invoiceChargesEnabled || customCharges.length === 0) {
+    return { charges: [], chargesTotal: 0, totalAmount: subtotal };
+  }
+  const charges = customCharges.map((c) => ({
+    name: c.name,
+    amount: Number(c.price) || 0,
+  }));
+  const chargesTotal = charges.reduce((acc, c) => acc + c.amount, 0);
+  const totalAmount = Math.round((subtotal + chargesTotal) * 100) / 100;
+  return { charges, chargesTotal, totalAmount };
 }
 
-export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props) {
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
+export default function InvoicePrintView({ invoice, onClose }: Props) {
   const { settings } = useSiteSettings();
   const companyPhone = formatSitePhoneDisplay(settings.mobile);
   const companyAddress = settings.address;
   const companyEmail = settings.email;
-  const [includePlatformFee, setIncludePlatformFee] = useState(
-    invoice.includePlatformFee ?? invoice.platformFee > 0,
-  );
-  const [includeStampDuty, setIncludeStampDuty] = useState(
-    invoice.includeStampDuty ?? invoice.stampDuty > 0,
-  );
-
-  useEffect(() => {
-    setIncludePlatformFee(invoice.includePlatformFee ?? invoice.platformFee > 0);
-    setIncludeStampDuty(invoice.includeStampDuty ?? invoice.stampDuty > 0);
-  }, [invoice.invoiceId, invoice.platformFee, invoice.stampDuty, invoice.includePlatformFee, invoice.includeStampDuty]);
-
-  const chargesMut = useMutation({
-    mutationFn: (opts: { includePlatformFee: boolean; includeStampDuty: boolean }) =>
-      updateInvoiceCharges(invoice.invoiceId, opts),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
-      if (res.invoice) onUpdated?.(res.invoice);
-    },
-    onError: (e: Error) => showToast(e.message, 'error'),
-  });
-
-  const applyCharges = (fee: boolean, stamp: boolean) => {
-    setIncludePlatformFee(fee);
-    setIncludeStampDuty(stamp);
-    chargesMut.mutate({ includePlatformFee: fee, includeStampDuty: stamp });
-  };
-
-  const preview = calcPreview(invoice.subtotal, includePlatformFee, includeStampDuty);
-  const savedMismatch =
-    includePlatformFee !== (invoice.platformFee > 0) ||
-    includeStampDuty !== (invoice.stampDuty > 0);
-
-  const handlePrint = async () => {
-    if (savedMismatch) {
-      try {
-        const res = await updateInvoiceCharges(invoice.invoiceId, {
-          includePlatformFee,
-          includeStampDuty,
-        });
-        if (res.invoice) onUpdated?.(res.invoice);
-        queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
-      } catch (e) {
-        showToast(e instanceof Error ? e.message : 'Could not save charges', 'error');
-        return;
-      }
+  
+  const invoiceChargesEnabled = settings.enable_invoice_charges !== '0';
+  const customChargesStr = settings.invoice_custom_charges;
+  const customCharges: { name: string; price: number }[] = (() => {
+    try {
+      return JSON.parse(customChargesStr || '[]');
+    } catch {
+      return [];
     }
+  })();
+
+  const preview = calcPreview(invoice.subtotal, invoiceChargesEnabled, customCharges);
+
+  const handlePrint = () => {
     // Let React paint updated totals before print dialog
     requestAnimationFrame(() => window.print());
   };
@@ -81,30 +54,6 @@ export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props)
     <div className="invoice-modal-overlay" onClick={onClose}>
       <div className="invoice-modal" onClick={(e) => e.stopPropagation()}>
         <div className="invoice-modal-actions no-print">
-          <div className="invoice-charge-toggles">
-            <span className="invoice-charge-hint">Include on invoice:</span>
-            <label className="invoice-charge-check">
-              <input
-                type="checkbox"
-                checked={includePlatformFee}
-                disabled={chargesMut.isPending}
-                onChange={(e) => applyCharges(e.target.checked, includeStampDuty)}
-              />
-              Platform fee (1%)
-            </label>
-            <label className="invoice-charge-check">
-              <input
-                type="checkbox"
-                checked={includeStampDuty}
-                disabled={chargesMut.isPending}
-                onChange={(e) => applyCharges(includePlatformFee, e.target.checked)}
-              />
-              Stamp duty
-            </label>
-            {chargesMut.isPending && (
-              <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Saving…</span>
-            )}
-          </div>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => void handlePrint()}>
             Print / PDF
           </button>
@@ -184,18 +133,12 @@ export default function InvoicePrintView({ invoice, onClose, onUpdated }: Props)
               <span>Subtotal</span>
               <span>{formatCurrency(invoice.subtotal)}</span>
             </div>
-            {includePlatformFee && (
-              <div className="invoice-totals-row">
-                <span>Platform fee (1%)</span>
-                <span>{formatCurrency(preview.platformFee)}</span>
+            {invoiceChargesEnabled && preview.charges.map((c, i) => (
+              <div className="invoice-totals-row" key={i}>
+                <span>{c.name}</span>
+                <span>{formatCurrency(c.amount)}</span>
               </div>
-            )}
-            {includeStampDuty && (
-              <div className="invoice-totals-row">
-                <span>Stamp duty</span>
-                <span>{formatCurrency(preview.stampDuty)}</span>
-              </div>
-            )}
+            ))}
             <div className="invoice-totals-row invoice-totals-grand">
               <span>Total</span>
               <span>{formatCurrency(preview.totalAmount)}</span>

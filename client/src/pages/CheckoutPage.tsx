@@ -55,6 +55,13 @@ export default function CheckoutPage() {
     if (share?.minQty) setQty(share.minQty);
   }, [share?.id, share?.minQty]);
 
+  useEffect(() => {
+    if (!loading && user && user.kycStatus !== 'Verified') {
+      showToast('KYC Verification is required to proceed with checkout.', 'error');
+      navigate('/dashboard?tab=kyc', { replace: true });
+    }
+  }, [user, loading, navigate, showToast]);
+
   const requireLoginForPayment = () => {
     const returnTo = `/checkout/${share?.id || shareId || ''}`;
     showToast('Login or sign up to continue payment', 'info');

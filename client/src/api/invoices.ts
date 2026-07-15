@@ -37,6 +37,10 @@ export function getInvoice(invoiceId: string) {
   return apiRequest<Invoice>('getInvoice', 'GET', undefined, { invoiceId });
 }
 
+export function getInvoiceByOrder(orderId: string) {
+  return apiRequest<Invoice>('getInvoiceByOrder', 'GET', undefined, { orderId });
+}
+
 export function generateInvoice(orderId: string, options: InvoiceChargeOptions = {}) {
   return apiRequest<{ success: boolean; invoice: Invoice }>('generateInvoice', 'POST', {
     orderId,
@@ -51,4 +55,8 @@ export function updateInvoiceCharges(invoiceId: string, options: InvoiceChargeOp
     includePlatformFee: !!options.includePlatformFee,
     includeStampDuty: !!options.includeStampDuty,
   });
+}
+
+export function deleteInvoice(invoiceId: string) {
+  return apiRequest<{ success: boolean }>('adminDeleteInvoice', 'POST', { invoiceId });
 }

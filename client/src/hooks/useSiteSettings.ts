@@ -10,6 +10,8 @@ const DEFAULTS: Record<string, string> = {
   ...SITE_CONTACT_DEFAULTS,
   ...SITE_BANK_DEFAULTS,
   disclaimer: SITE_DISCLAIMER_DEFAULT,
+  enable_invoice_charges: '1',
+  invoice_custom_charges: '[]',
 };
 
 export function useSiteSettings() {
