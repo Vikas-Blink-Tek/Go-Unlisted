@@ -3,7 +3,7 @@ export function getOrderStatusLabel(status: string): string {
   if (s.includes('pending') || s === 'initiated') return 'Payment under review';
   if (s.includes('transfer initiated')) return 'Shares transferring to your demat';
   if (s.includes('complete')) return 'Complete — shares transferred';
-  if (s.includes('confirm')) return 'Payment verified — transfer starting';
+  if (s.includes('confirm') || s.includes('verif')) return 'Payment verified — transfer starting';
   if (s.includes('reject')) return "Payment not matched — we'll contact you";
   if (s.includes('cancel')) return 'Order cancelled';
   if (s.includes('refund')) return 'Refund processed';
@@ -16,7 +16,7 @@ export function getAdminOrderStatusLabel(status: string): string {
   if (s.includes('pending') || s === 'initiated') return 'Pending';
   if (s.includes('transfer initiated')) return 'Transferring';
   if (s.includes('complete')) return 'Completed';
-  if (s.includes('confirm')) return 'Verified';
+  if (s.includes('confirm') || s.includes('verif')) return 'Verified';
   if (s.includes('reject')) return 'Rejected';
   if (s.includes('cancel')) return 'Cancelled';
   if (s.includes('refund')) return 'Refunded';
@@ -25,7 +25,7 @@ export function getAdminOrderStatusLabel(status: string): string {
 
 export function getOrderStatusClass(status: string): string {
   const s = status.toLowerCase();
-  if (s.includes('confirm') || s.includes('complete') || s.includes('transfer')) return 'status-confirmed';
+  if (s.includes('confirm') || s.includes('verif') || s.includes('complete') || s.includes('transfer')) return 'status-confirmed';
   if (s.includes('pending') || s.includes('initiated')) return 'status-pending';
   if (s.includes('cancel') || s.includes('reject') || s.includes('refund')) return 'status-cancelled';
   return '';
@@ -42,5 +42,11 @@ export function canMarkOrderComplete(status: string): boolean {
   const s = status.toLowerCase();
   if (s.includes('complete')) return false;
   if (/cancel|reject|refund|pending|initiated/.test(s)) return false;
-  return s.includes('confirm') || s.includes('transfer');
+  return s.includes('confirm') || s.includes('verif') || s.includes('transfer');
+}
+
+export function canViewInvoice(status: string): boolean {
+  const s = status.toLowerCase();
+  if (/cancel|reject|refund|pending|initiated/.test(s)) return false;
+  return true;
 }

@@ -6,7 +6,7 @@ import { getOrders } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { formatCurrency, formatDateTime, getOrderDate, validateDemat, validatePAN } from '../utils/format';
-import { getOrderStatusClass, getOrderStatusLabel } from '../utils/orderStatus';
+import { getOrderStatusClass, getOrderStatusLabel, canViewInvoice } from '../utils/orderStatus';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
 import { getInvoiceByOrder, type Invoice } from '../api/invoices';
@@ -226,7 +226,7 @@ export default function DashboardPage() {
                             <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
                               {getOrderStatusLabel(o.status)}
                             </span>
-                            {['Confirmed', 'Payment Verified — Transfer Starting', 'Payment Verified', 'Transfer Started'].includes(o.status) && (
+                            {canViewInvoice(o.status) && (
                               <button
                                 type="button"
                                 className="btn btn-outline btn-sm"
@@ -262,7 +262,7 @@ export default function DashboardPage() {
                       <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
                       <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
                       <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
-                      {['Confirmed', 'Payment Verified — Transfer Starting', 'Payment Verified', 'Transfer Started'].includes(o.status) && (
+                      {canViewInvoice(o.status) && (
                         <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
                           <button
                             type="button"

@@ -4,6 +4,7 @@ import { saveOrder, getOrders } from '../../../api/orders';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
 import { calcOrderTotal, formatCurrency } from '../../../utils/format';
+import { useSiteSettings } from '../../../hooks/useSiteSettings';
 import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 import AutofillBlocker from '../../../components/forms/AutofillBlocker';
@@ -15,6 +16,7 @@ const empty = { orderId: '', name: '', phone: '', shareId: '', qty: '', price: '
 export default function AdminManualOrderPanel() {
   const { showToast } = useToast();
   const { shares } = useShares();
+  const { settings } = useSiteSettings();
   const queryClient = useQueryClient();
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState<string | null>(null);
@@ -139,7 +141,7 @@ export default function AdminManualOrderPanel() {
           {form.shareId && form.qty && form.price && (
             <div className="pay-amount-box" style={{ marginTop: '1rem' }}>
               <span>Total payable</span>
-              <strong>{formatCurrency(calcOrderTotal(parseFloat(form.price), parseInt(form.qty, 10)))}</strong>
+              <strong>{formatCurrency(calcOrderTotal(parseFloat(form.price), parseInt(form.qty, 10), settings))}</strong>
             </div>
           )}
           <div className="report-filter-actions">

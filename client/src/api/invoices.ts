@@ -22,6 +22,7 @@ export interface Invoice {
   createdAt?: string;
   includePlatformFee?: boolean;
   includeStampDuty?: boolean;
+  customChargesJson?: string | null;
 }
 
 export interface InvoiceChargeOptions {

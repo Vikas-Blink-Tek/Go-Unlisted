@@ -42,6 +42,7 @@ export default function AdminDashboard() {
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [newChargeName, setNewChargeName] = useState('');
   const [newChargePrice, setNewChargePrice] = useState('');
+  const [newChargeType, setNewChargeType] = useState<'percentage' | 'flat'>('percentage');
 
   const ordersQuery = useQuery({
     queryKey: ['admin-orders'],
@@ -137,20 +138,21 @@ export default function AdminDashboard() {
 
   const invoiceChargesEnabled = settingsVal('enable_invoice_charges') !== '0';
   const customChargesStr = settingsVal('invoice_custom_charges');
-  const customCharges: { name: string; price: number }[] = (() => {
+  const customCharges: { name: string; type?: 'percentage' | 'flat'; value?: number; price?: number }[] = (() => {
     try {
       return JSON.parse(customChargesStr || '[]');
     } catch {
       return [];
     }
   })();
-  const updateCustomCharges = async (newArr: { name: string; price: number }[]) => {
+  const updateCustomCharges = async (newArr: any[]) => {
     const newVal = JSON.stringify(newArr);
     setSettingField('invoice_custom_charges', newVal);
     try {
       await saveSettings({ ...settingsQuery.data, ...settingsForm, invoice_custom_charges: newVal });
       showToast('Charges updated', 'success');
       settingsQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
     } catch (e) {
       showToast('Failed to save charges', 'error');
     }
@@ -227,7 +229,10 @@ export default function AdminDashboard() {
                   All Orders
                 </button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('users')}>
-                  Users &amp; KYC
+                  KYC
+                </button>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('signups')}>
+                  User Signups
                 </button>
               </div>
             </div>
@@ -256,6 +261,9 @@ export default function AdminDashboard() {
           <AdminOrdersSection
             orders={orders}
             users={users}
+            showActions={can('pending')}
+            onVerify={(id) => statusMutation.mutate({ orderId: id, status: 'Confirmed' })}
+            onReject={(id) => statusMutation.mutate({ orderId: id, status: 'Rejected' })}
             onComplete={can('pending') ? complete : undefined}
           />
         </>
@@ -384,75 +392,85 @@ export default function AdminDashboard() {
                       await saveSettings({ ...settingsQuery.data, ...settingsForm, enable_invoice_charges: val });
                       showToast('Settings saved', 'success');
                       settingsQuery.refetch();
+                      queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
                     } catch (err) {}
                   }}
                 />
               </div>
-              Enable Extra Charges on Invoices
-            </label>
-            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', marginBottom: '1.5rem' }}>
-              If turned off, users will only see the share subtotal on their invoices (no platform fee, stamp duty, or custom charges).
-            </p>
+                Enable Extra Charges on Invoices
+              </label>
+              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', marginBottom: '1.5rem' }}>
+                If turned off, users will only see the share subtotal on their invoices (no platform fee, stamp duty, or custom charges).
+              </p>
+              <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Custom Charges</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+                {customCharges.map((charge, idx) => (
+                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: '#fff', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                    <div style={{ flex: 2, fontWeight: 500 }}>{charge.name}</div>
+                    <div style={{ flex: 1, color: 'var(--accent)', fontWeight: 500 }}>
+                      {(charge.type || 'flat') === 'percentage' ? `${charge.value ?? charge.price}%` : `₹${charge.value ?? charge.price}`}
+                    </div>
+                    <button 
+                      type="button" 
+                      className="btn btn-ghost btn-sm" 
+                      style={{ color: 'var(--danger)' }}
+                      onClick={() => {
+                        const updated = [...customCharges];
+                        updated.splice(idx, 1);
+                        updateCustomCharges(updated);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                {customCharges.length === 0 && (
+                  <div style={{ fontSize: '0.85rem', color: 'var(--muted)', fontStyle: 'italic', padding: '0.5rem 0' }}>
+                    No custom charges added yet.
+                  </div>
+                )}
+              </div>
 
-            <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Custom Charges (Flat ₹ amount)</div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
-              {customCharges.map((charge, idx) => (
-                <div key={idx} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem', background: '#fff', borderRadius: '4px', border: '1px solid var(--border)' }}>
-                  <div style={{ flex: 2, fontWeight: 500 }}>{charge.name}</div>
-                  <div style={{ flex: 1, color: 'var(--accent)', fontWeight: 500 }}>₹{charge.price}</div>
-                  <button 
-                    type="button" 
-                    className="btn btn-ghost btn-sm" 
-                    style={{ color: 'var(--danger)' }}
-                    onClick={() => {
-                      const updated = [...customCharges];
-                      updated.splice(idx, 1);
-                      updateCustomCharges(updated);
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              {customCharges.length === 0 && (
-                <div style={{ fontSize: '0.85rem', color: 'var(--muted)', fontStyle: 'italic', padding: '0.5rem 0' }}>
-                  No custom charges added yet.
-                </div>
-              )}
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '1rem', background: '#fff', borderRadius: '6px', border: '1px dashed var(--border)' }}>
+                <input
+                  type="text"
+                  className="report-filter-input"
+                  placeholder="Charge Name (e.g. Platform Fee)"
+                  value={newChargeName}
+                  onChange={(e) => setNewChargeName(e.target.value)}
+                  style={{ flex: 2 }}
+                />
+                <select
+                  className="report-filter-input"
+                  value={newChargeType}
+                  onChange={(e) => setNewChargeType(e.target.value as 'percentage' | 'flat')}
+                  style={{ flex: 1 }}
+                >
+                  <option value="percentage">Percentage (%)</option>
+                  <option value="flat">Flat Amount (₹)</option>
+                </select>
+                <input
+                  type="number"
+                  className="report-filter-input"
+                  placeholder={newChargeType === 'percentage' ? 'Value (e.g. 1)' : 'Amount (₹)'}
+                  value={newChargePrice}
+                  onChange={(e) => setNewChargePrice(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                <button 
+                  type="button" 
+                  className="btn btn-primary btn-sm" 
+                  disabled={!newChargeName.trim() || !newChargePrice.trim()}
+                  onClick={() => {
+                    updateCustomCharges([...customCharges, { name: newChargeName.trim(), type: newChargeType, value: Number(newChargePrice) }]);
+                    setNewChargeName('');
+                    setNewChargePrice('');
+                  }}
+                >
+                  Add
+                </button>
+              </div>
             </div>
-
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '1rem', background: '#fff', borderRadius: '6px', border: '1px dashed var(--border)' }}>
-              <input
-                type="text"
-                className="report-filter-input"
-                placeholder="Charge Name (e.g. Handling Fee)"
-                value={newChargeName}
-                onChange={(e) => setNewChargeName(e.target.value)}
-                style={{ flex: 2 }}
-              />
-              <input
-                type="number"
-                className="report-filter-input"
-                placeholder="Amount (₹)"
-                value={newChargePrice}
-                onChange={(e) => setNewChargePrice(e.target.value)}
-                style={{ flex: 1 }}
-              />
-              <button 
-                type="button" 
-                className="btn btn-primary btn-sm" 
-                disabled={!newChargeName.trim() || !newChargePrice.trim()}
-                onClick={() => {
-                  updateCustomCharges([...customCharges, { name: newChargeName.trim(), price: Number(newChargePrice) }]);
-                  setNewChargeName('');
-                  setNewChargePrice('');
-                }}
-              >
-                Add Charge
-              </button>
-            </div>
-          </div>
 
           {isMaster && (
             <div className="report-filter-box" style={{ marginTop: '1.5rem', padding: '1rem' }}>

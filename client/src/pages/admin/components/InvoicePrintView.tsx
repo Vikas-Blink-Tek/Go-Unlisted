@@ -10,40 +10,39 @@ interface Props {
   readOnly?: boolean;
 }
 
-/**
- * Calculate invoice totals using ONLY the custom charges from Site Settings.
- * No hardcoded platform fee or stamp duty — only what the admin configures.
- */
-function calcPreview(subtotal: number, invoiceChargesEnabled: boolean, customCharges: { name: string; price: number }[]) {
-  if (!invoiceChargesEnabled || customCharges.length === 0) {
-    return { charges: [], chargesTotal: 0, totalAmount: subtotal };
-  }
-  const charges = customCharges.map((c) => ({
-    name: c.name,
-    amount: Number(c.price) || 0,
-  }));
-  const chargesTotal = charges.reduce((acc, c) => acc + c.amount, 0);
-  const totalAmount = Math.round((subtotal + chargesTotal) * 100) / 100;
-  return { charges, chargesTotal, totalAmount };
-}
-
 export default function InvoicePrintView({ invoice, onClose }: Props) {
   const { settings } = useSiteSettings();
   const companyPhone = formatSitePhoneDisplay(settings.mobile);
   const companyAddress = settings.address;
   const companyEmail = settings.email;
   
-  const invoiceChargesEnabled = settings.enable_invoice_charges !== '0';
-  const customChargesStr = settings.invoice_custom_charges;
-  const customCharges: { name: string; price: number }[] = (() => {
+  let charges: { name: string; amount: number }[] = [];
+  
+  if (invoice.customChargesJson) {
     try {
-      return JSON.parse(customChargesStr || '[]');
-    } catch {
-      return [];
+      const parsed = JSON.parse(invoice.customChargesJson);
+      if (Array.isArray(parsed)) {
+        charges = parsed.map((c: any) => ({
+          name: c.name,
+          amount: Number(c.amount) || 0
+        }));
+      }
+    } catch (e) {
+      // Ignored
     }
-  })();
+  } else {
+    // Legacy fallback for older invoices
+    if (invoice.platformFee > 0) charges.push({ name: 'Platform Fee', amount: invoice.platformFee });
+    if (invoice.stampDuty > 0) charges.push({ name: 'Stamp Duty', amount: invoice.stampDuty });
+  }
 
-  const preview = calcPreview(invoice.subtotal, invoiceChargesEnabled, customCharges);
+  const invoiceChargesEnabled = settings.enable_invoice_charges !== '0';
+  if (!invoiceChargesEnabled) {
+    charges = [];
+  }
+
+  const chargesTotal = charges.reduce((acc, c) => acc + c.amount, 0);
+  const totalAmount = Math.round((invoice.subtotal + chargesTotal) * 100) / 100;
 
   const handlePrint = () => {
     // Let React paint updated totals before print dialog
@@ -133,7 +132,7 @@ export default function InvoicePrintView({ invoice, onClose }: Props) {
               <span>Subtotal</span>
               <span>{formatCurrency(invoice.subtotal)}</span>
             </div>
-            {invoiceChargesEnabled && preview.charges.map((c, i) => (
+            {invoiceChargesEnabled && charges.map((c: any, i: number) => (
               <div className="invoice-totals-row" key={i}>
                 <span>{c.name}</span>
                 <span>{formatCurrency(c.amount)}</span>
@@ -141,7 +140,7 @@ export default function InvoicePrintView({ invoice, onClose }: Props) {
             ))}
             <div className="invoice-totals-row invoice-totals-grand">
               <span>Total</span>
-              <span>{formatCurrency(preview.totalAmount)}</span>
+              <span>{formatCurrency(totalAmount)}</span>
             </div>
           </div>
 

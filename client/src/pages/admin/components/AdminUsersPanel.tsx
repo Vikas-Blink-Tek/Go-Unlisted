@@ -18,6 +18,7 @@ type KycForm = {
   bankAccount: string;
   ifsc: string;
   rejectReason: string;
+  referralCode: string;
 };
 
 function userToForm(u: User): KycForm {
@@ -27,6 +28,7 @@ function userToForm(u: User): KycForm {
     bankAccount: u.bankAccount || '',
     ifsc: u.ifsc || '',
     rejectReason: u.kycRejectReason || '',
+    referralCode: u.referralCode || '',
   };
 }
 
@@ -42,6 +44,7 @@ export default function AdminUsersPanel({ users }: Props) {
     bankAccount: '',
     ifsc: '',
     rejectReason: '',
+    referralCode: '',
   });
 
   const filtered = useMemo(() => {
@@ -50,7 +53,7 @@ export default function AdminUsersPanel({ users }: Props) {
       if (kycFilter === 'verified' && u.kycStatus !== 'Verified') return false;
       if (kycFilter === 'rejected' && u.kycStatus !== 'Rejected') return false;
       if (kycFilter === 'not' && u.kycStatus !== 'Not Submitted') return false;
-      return matchesAdminSearch(search, u.name, u.email, u.phone, u.id);
+      return matchesAdminSearch(search, u.name, u.email, u.phone, u.referralCode);
     });
   }, [users, search, kycFilter]);
 
@@ -78,6 +81,7 @@ export default function AdminUsersPanel({ users }: Props) {
         kycDemat: f.kycDemat.trim(),
         bankAccount: f.bankAccount.trim(),
         ifsc: f.ifsc.trim().toUpperCase(),
+        referralCode: f.referralCode.trim().toUpperCase(),
       });
     },
     onSuccess: (_, vars) => {
@@ -321,6 +325,17 @@ export default function AdminUsersPanel({ users }: Props) {
               />
             </div>
 
+            <div className="form-group">
+              <label className="form-label">Employee Code (Transfer)</label>
+              <input
+                className="form-input"
+                value={form.referralCode}
+                onChange={(e) => setField({ referralCode: e.target.value.toUpperCase() })}
+                placeholder="GUE003 (Optional)"
+              />
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>Change this code to transfer the user to a different employee.</p>
+            </div>
+            
             <div className="kyc-modal-actions">
               <button
                 type="button"

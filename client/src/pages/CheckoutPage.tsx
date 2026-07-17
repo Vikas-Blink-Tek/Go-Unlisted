@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
-import { calcOrderTotal, formatCurrency, generateSessionId } from '../utils/format';
+import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
 import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 
@@ -56,7 +56,7 @@ export default function CheckoutPage() {
   }, [share?.id, share?.minQty]);
 
   useEffect(() => {
-    if (!loading && user && user.kycStatus !== 'Verified') {
+    if (!loading && user && (user.kycStatus || '').trim().toLowerCase() !== 'verified') {
       showToast('KYC Verification is required to proceed with checkout.', 'error');
       navigate('/dashboard?tab=kyc', { replace: true });
     }
@@ -112,8 +112,8 @@ export default function CheckoutPage() {
   const buyerName = user?.name || 'Buyer';
 
   const subtotal = share.price * qty;
-  const total = calcOrderTotal(share.price, qty);
-  const fee = total - subtotal;
+  const total = calcOrderTotal(share.price, qty, settings);
+  const chargesBreakdown = calcOrderChargesBreakdown(share.price, qty, settings);
 
   const selectPaymentMode = async (mode: PaymentMode) => {
     if (!user) {
@@ -348,10 +348,22 @@ export default function CheckoutPage() {
               <strong>{formatCurrency(share.price)}</strong>
             </div>
 
-            <div className="order-total-block">
-              <div className="order-total-label">Total Value</div>
-              <div className="order-total-amount">{formatCurrency(total)}</div>
-              <div className="order-total-breakdown">{qty} shares × {formatCurrency(share.price)} + {formatCurrency(fee)} fee</div>
+            <div className="order-breakdown-box" style={{ background: 'var(--bg)', borderRadius: '8px', padding: '1rem', marginTop: '1.5rem', border: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                <span style={{ color: 'var(--muted)' }}>Shares Value ({qty} × {formatCurrency(share.price)})</span>
+                <span style={{ fontWeight: 500 }}>{formatCurrency(subtotal)}</span>
+              </div>
+              {chargesBreakdown.map((c, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--muted)' }}>{c.name}</span>
+                  <span style={{ fontWeight: 500 }}>{formatCurrency(c.amount)}</span>
+                </div>
+              ))}
+              <div style={{ borderTop: '1px dashed var(--border)', margin: '0.75rem 0' }}></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 600 }}>Total Payable</span>
+                <span style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--text)' }}>{formatCurrency(total)}</span>
+              </div>
             </div>
 
             {!user && (

@@ -127,8 +127,70 @@ export function validateDemat(demat: string) {
   return /^\d{16}$/.test(demat);
 }
 
-export function calcOrderTotal(pricePerShare: number, qty: number) {
+export function calcOrderTotal(pricePerShare: number, qty: number, settings?: any) {
   const subtotal = pricePerShare * qty;
-  const fee = Math.round(subtotal * COMMISSION_RATE);
-  return subtotal + fee;
+  
+  if (!settings) {
+    const fee = Math.round(subtotal * COMMISSION_RATE);
+    return subtotal + fee;
+  }
+
+  const enableCharges = settings.enable_invoice_charges !== '0';
+  if (!enableCharges) return subtotal;
+
+  let fee = 0;
+  try {
+    const charges = JSON.parse(settings.invoice_custom_charges || '[{"name":"Platform Fee","type":"percentage","value":1}]');
+    if (Array.isArray(charges)) {
+      for (const c of charges) {
+        const val = Number(c.value ?? c.price) || 0;
+        if ((c.type || 'flat') === 'percentage') {
+          fee += (subtotal * val) / 100;
+        } else {
+          fee += val;
+        }
+      }
+    }
+  } catch {
+    fee = subtotal * 0.01;
+  }
+  
+  return subtotal + Math.round(fee);
+}
+
+export function calcOrderChargesBreakdown(pricePerShare: number, qty: number, settings?: any): { name: string; amount: number }[] {
+  const subtotal = pricePerShare * qty;
+  const breakdown: { name: string; amount: number }[] = [];
+
+  if (!settings) {
+    breakdown.push({ name: 'Platform Fee (1%)', amount: Math.round(subtotal * COMMISSION_RATE) });
+    return breakdown;
+  }
+
+  const enableCharges = settings.enable_invoice_charges !== '0';
+  if (!enableCharges) return breakdown;
+
+  try {
+    const charges = JSON.parse(settings.invoice_custom_charges || '[{"name":"Platform Fee","type":"percentage","value":1}]');
+    if (Array.isArray(charges)) {
+      for (const c of charges) {
+        const val = Number(c.value ?? c.price) || 0;
+        let amt = 0;
+        let label = c.name || 'Charge';
+        if ((c.type || 'flat') === 'percentage') {
+          amt = (subtotal * val) / 100;
+          label = `${label} (${val}%)`;
+        } else {
+          amt = val;
+        }
+        if (amt > 0) {
+          breakdown.push({ name: label, amount: Math.round(amt) });
+        }
+      }
+    }
+  } catch {
+    breakdown.push({ name: 'Platform Fee (1%)', amount: Math.round(subtotal * 0.01) });
+  }
+
+  return breakdown;
 }

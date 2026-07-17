@@ -39,7 +39,7 @@ export default function AdminSignupsPanel() {
         const t = new Date(u.createdAt).getTime();
         if (t > new Date(`${dateTo}T23:59:59+05:30`).getTime()) return false;
       }
-      return matchesAdminSearch(search, u.name, u.email, u.phone, u.referralCode, u.id);
+      return matchesAdminSearch(search, u.name, u.email, u.phone, u.referralCode);
     });
   }, [users, search, codeFilter, dateFrom, dateTo]);
 
