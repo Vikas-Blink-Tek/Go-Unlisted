@@ -1090,7 +1090,7 @@ switch ($action) {
     // -----------------------------------------
     case 'loginAdmin':
         $data = getPostData();
-        $email = $data['email'] ?? '';
+        $email = trim($data['email'] ?? '');
         $password = $data['password'] ?? '';
         $portal = strtolower(trim((string) ($data['portal'] ?? 'master')));
         if (!in_array($portal, ['master', 'staff'], true)) {
@@ -1143,7 +1143,7 @@ switch ($action) {
 
     case 'loginUser':
         $data = getPostData();
-        $loginId = $data['email'] ?? $data['loginId'] ?? '';
+        $loginId = trim($data['email'] ?? $data['loginId'] ?? '');
         $password = $data['password'] ?? '';
 
         $userRow = resolveUserByLoginId($conn, $loginId);
@@ -1625,6 +1625,19 @@ switch ($action) {
         $kyc_demat = htmlspecialchars($data['kycDemat'] ?? '');
         $bank_account = htmlspecialchars($data['bankAccount'] ?? $data['bank_account'] ?? '');
         $ifsc = htmlspecialchars(strtoupper($data['ifsc'] ?? $data['ifscCode'] ?? ''));
+
+        // Validate Employee Code if it was changed
+        $referral_code = strtoupper(trim($referral_code));
+        if ($referral_code !== '' && $referral_code !== 'GU00') {
+            $empChk = $conn->prepare("SELECT id FROM employees WHERE employee_id = ? LIMIT 1");
+            $empChk->bind_param("s", $referral_code);
+            $empChk->execute();
+            if ($empChk->get_result()->num_rows === 0) {
+                http_response_code(400);
+                sendResponse(["error" => "Invalid employee code: $referral_code does not exist."]);
+                exit;
+            }
+        }
 
         // SEC 3 FIX: Reject empty passwords for new users; require OTP verification
         if (!$exists) {

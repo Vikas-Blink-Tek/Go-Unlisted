@@ -135,6 +135,18 @@ export default function AdminUsersPanel({ users }: Props) {
     });
   };
 
+  const quickTransfer = (user: User) => {
+    const code = prompt(`Transfer ${user.name}\nEnter new Employee Code (e.g. GUE002):`, displayUserCode(user.referralCode));
+    if (code === null) return;
+    const cleanCode = code.trim().toUpperCase();
+    if (cleanCode === displayUserCode(user.referralCode)) return;
+    saveMutation.mutate({
+      user,
+      kycStatus: user.kycStatus,
+      fields: { ...userToForm(user), referralCode: cleanCode },
+    });
+  };
+
   return (
     <div>
       <AdminSectionHeader
@@ -232,6 +244,14 @@ export default function AdminUsersPanel({ users }: Props) {
                         Reject
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={saveMutation.isPending}
+                      onClick={() => quickTransfer(u)}
+                    >
+                      Transfer
+                    </button>
                   </div>
                 </td>
               </tr>

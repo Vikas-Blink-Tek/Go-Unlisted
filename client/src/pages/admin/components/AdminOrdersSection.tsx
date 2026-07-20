@@ -152,6 +152,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                 <th>User Code</th>
                 <th>Buyer</th>
                 <th>Share</th>
+                <th>Price / Share</th>
                 <th>Qty</th>
                 <th>Amount</th>
                 <th>UTR / Txn ID</th>
@@ -179,6 +180,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                   <td className="admin-orders-col-share" title={o.companyName || o.shareName || ''}>
                     {o.companyName || o.shareName || '—'}
                   </td>
+                  <td className="admin-orders-col-price">{formatCurrency(o.pricePerShare || 0)}</td>
                   <td className="admin-orders-col-qty">{o.qty}</td>
                   <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
                   <td className="admin-orders-col-utr">
