@@ -21,6 +21,28 @@ export default function AdminManualOrderPanel() {
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState<string | null>(null);
 
+  const handleQtyChange = (val: string) => {
+    const qty = parseInt(val, 10) || 0;
+    const share = shares.find((s) => s.id === form.shareId);
+    let newPrice = form.price;
+    
+    if (share) {
+      let price = share.price;
+      if (share.discountTiers && share.discountTiers.length > 0) {
+        const sortedTiers = [...share.discountTiers].sort((a, b) => b.minQty - a.minQty);
+        for (const tier of sortedTiers) {
+          if (qty >= tier.minQty) {
+            price = tier.price;
+            break;
+          }
+        }
+      }
+      newPrice = String(price);
+    }
+    
+    setForm({ ...form, qty: val, price: newPrice });
+  };
+
   const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
   const manualOrders = (ordersQuery.data || []).filter((o) => o.orderSource === 'Offline' || o.method === 'Offline');
 
@@ -107,7 +129,19 @@ export default function AdminManualOrderPanel() {
               <label className="report-filter-label">Scrip *</label>
               <select className="report-filter-input" required value={form.shareId} onChange={(e) => {
                 const s = shares.find((x) => x.id === e.target.value);
-                setForm({ ...form, shareId: e.target.value, price: s ? String(s.price) : form.price, qty: s ? String(s.minQty) : form.qty });
+                let newPrice = s ? String(s.price) : form.price;
+                const newQty = s ? String(s.minQty) : form.qty;
+                if (s && s.discountTiers && s.discountTiers.length > 0) {
+                  const sortedTiers = [...s.discountTiers].sort((a, b) => b.minQty - a.minQty);
+                  const parsedQty = parseInt(newQty, 10) || 0;
+                  for (const tier of sortedTiers) {
+                    if (parsedQty >= tier.minQty) {
+                      newPrice = String(tier.price);
+                      break;
+                    }
+                  }
+                }
+                setForm({ ...form, shareId: e.target.value, price: newPrice, qty: newQty });
               }}>
                 <option value="">Select share</option>
                 {shares.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -115,7 +149,7 @@ export default function AdminManualOrderPanel() {
             </div>
             <div className="report-filter-group">
               <label className="report-filter-label">Quantity *</label>
-              <input className="report-filter-input" type="number" required value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+              <input className="report-filter-input" type="number" required value={form.qty} onChange={(e) => handleQtyChange(e.target.value)} />
             </div>
             <div className="report-filter-group">
               <label className="report-filter-label">Price / Share *</label>

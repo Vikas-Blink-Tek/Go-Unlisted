@@ -36,13 +36,7 @@ export default function InvoicePrintView({ invoice, onClose }: Props) {
     if (invoice.stampDuty > 0) charges.push({ name: 'Stamp Duty', amount: invoice.stampDuty });
   }
 
-  const invoiceChargesEnabled = settings.enable_invoice_charges !== '0';
-  if (!invoiceChargesEnabled) {
-    charges = [];
-  }
-
-  const chargesTotal = charges.reduce((acc, c) => acc + c.amount, 0);
-  const totalAmount = Math.round((invoice.subtotal + chargesTotal) * 100) / 100;
+  const totalAmount = invoice.totalAmount;
 
   const handlePrint = () => {
     // Let React paint updated totals before print dialog
@@ -132,7 +126,7 @@ export default function InvoicePrintView({ invoice, onClose }: Props) {
               <span>Subtotal</span>
               <span>{formatCurrency(invoice.subtotal)}</span>
             </div>
-            {invoiceChargesEnabled && charges.map((c: any, i: number) => (
+            {charges.map((c: any, i: number) => (
               <div className="invoice-totals-row" key={i}>
                 <span>{c.name}</span>
                 <span>{formatCurrency(c.amount)}</span>

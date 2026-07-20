@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { saveOrder } from '../api/orders';
 import { deleteInitiatedCheckout, saveInitiatedCheckout } from '../api/initiated';
@@ -46,10 +46,27 @@ export default function CheckoutPage() {
   const [qty, setQty] = useState(share?.minQty || 1);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
   const [utr, setUtr] = useState('');
+  const [customerUpi, setCustomerUpi] = useState('');
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [submittedUtr, setSubmittedUtr] = useState('');
+  const [showTiersModal, setShowTiersModal] = useState(false);
   const [sessionId] = useState(() => generateSessionId());
+
+  const activePrice = useMemo(() => {
+    if (!share) return 0;
+    let price = share.price;
+    if (share.discountTiers && share.discountTiers.length > 0) {
+      const sortedTiers = [...share.discountTiers].sort((a, b) => b.minQty - a.minQty);
+      for (const tier of sortedTiers) {
+        if (qty >= tier.minQty) {
+          price = tier.price;
+          break;
+        }
+      }
+    }
+    return price;
+  }, [share, qty]);
 
   useEffect(() => {
     if (share?.minQty) setQty(share.minQty);
@@ -111,9 +128,14 @@ export default function CheckoutPage() {
   const buyerPhone = user?.phone || '';
   const buyerName = user?.name || 'Buyer';
 
-  const subtotal = share.price * qty;
-  const total = calcOrderTotal(share.price, qty, settings);
-  const chargesBreakdown = calcOrderChargesBreakdown(share.price, qty, settings);
+
+
+  const originalSubtotal = share.price * qty;
+  const subtotal = activePrice * qty;
+  const offerBenefit = originalSubtotal - subtotal;
+  
+  const total = calcOrderTotal(activePrice, qty, settings);
+  const chargesBreakdown = calcOrderChargesBreakdown(activePrice, qty, settings);
 
   const selectPaymentMode = async (mode: PaymentMode) => {
     if (!user) {
@@ -131,7 +153,7 @@ export default function CheckoutPage() {
         buyerEmail,
         buyerPhone,
         qty,
-        pricePerShare: share.price,
+        pricePerShare: activePrice,
         totalAmount: total,
         paymentMode: PAYMENT_MODES.find((m) => m.id === mode)?.label || mode,
       });
@@ -164,7 +186,9 @@ export default function CheckoutPage() {
       return;
     }
     setPaying(true);
-    const methodLabel = PAYMENT_MODES.find((m) => m.id === paymentMode)?.label || 'Manual';
+    const baseMethodLabel = PAYMENT_MODES.find((m) => m.id === paymentMode)?.label || 'Manual';
+    const methodLabel = paymentMode === 'upi' && customerUpi ? `${baseMethodLabel} (${customerUpi})` : baseMethodLabel;
+    
     try {
       const res = await saveOrder({
         shareId: share.id,
@@ -226,9 +250,39 @@ export default function CheckoutPage() {
         )}
         {paymentMode === 'upi' && (
           <div className="pay-upi-card">
-            <p className="pay-instruction-hint">Open any UPI app and pay to the ID below.</p>
+            <p className="pay-instruction-hint">Enter your UPI ID to pay directly via your UPI app.</p>
+            
+            <div className="form-group" style={{ textAlign: 'left', marginBottom: '1rem' }}>
+              <label className="form-label">Your UPI ID</label>
+              <input
+                className="form-input"
+                placeholder="e.g. 9876543210@ybl"
+                value={customerUpi}
+                onChange={(e) => setCustomerUpi(e.target.value)}
+              />
+            </div>
+
+            {customerUpi ? (
+              <a
+                href={`upi://pay?pa=${settings.bank_upi}&pn=${encodeURIComponent(settings.bank_ac_name)}&am=${total}&cu=INR`}
+                className="btn btn-primary btn-full"
+                style={{ display: 'block', textAlign: 'center', marginBottom: '1.5rem', textDecoration: 'none' }}
+              >
+                Pay {formatCurrency(total)} via UPI App
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="btn btn-primary btn-full"
+                style={{ display: 'block', textAlign: 'center', marginBottom: '1.5rem', opacity: 0.5 }}
+              >
+                Enter UPI ID to Pay
+              </button>
+            )}
+
             <div className="pay-upi-id-box">
-              <span>Pay to</span>
+              <span>Or manually pay to</span>
               <strong>{settings.bank_ac_name}</strong>
               <div className="pay-upi-id">{settings.bank_upi}</div>
               <button
@@ -241,10 +295,6 @@ export default function CheckoutPage() {
               >
                 Copy UPI ID
               </button>
-            </div>
-            <div className="pay-amount-box">
-              <span>Amount</span>
-              <strong>{formatCurrency(total)}</strong>
             </div>
           </div>
         )}
@@ -275,9 +325,6 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {settings.disclaimer && (
-          <div className="checkout-disclaimer">{settings.disclaimer}</div>
-        )}
 
         <div className="pay-actions">
           <button type="button" className="btn btn-ghost" onClick={() => setPaymentMode(null)}>← Change method</button>
@@ -347,12 +394,31 @@ export default function CheckoutPage() {
               <span>Price per share</span>
               <strong>{formatCurrency(share.price)}</strong>
             </div>
+            
+            {share.discountTiers && share.discountTiers.length > 0 && (
+              <div style={{ marginTop: '0.25rem', marginBottom: '1rem', textAlign: 'center' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-ghost" 
+                  style={{ color: 'var(--primary)', textDecoration: 'underline', padding: 0 }}
+                  onClick={() => setShowTiersModal(true)}
+                >
+                  Grab this opportunity at {formatCurrency(Math.min(...share.discountTiers.map(t => t.price)))}
+                </button>
+              </div>
+            )}
 
             <div className="order-breakdown-box" style={{ background: 'var(--bg)', borderRadius: '8px', padding: '1rem', marginTop: '1.5rem', border: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                <span style={{ color: 'var(--muted)' }}>Shares Value ({qty} × {formatCurrency(share.price)})</span>
+                <span style={{ color: 'var(--muted)' }}>Shares Value ({qty} × {formatCurrency(activePrice)})</span>
                 <span style={{ fontWeight: 500 }}>{formatCurrency(subtotal)}</span>
               </div>
+              {offerBenefit > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--green)' }}>Offer benefit (Bulk discount)</span>
+                  <span style={{ fontWeight: 500, color: 'var(--green)' }}>- {formatCurrency(offerBenefit)}</span>
+                </div>
+              )}
               {chargesBreakdown.map((c, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--muted)' }}>{c.name}</span>
@@ -443,6 +509,40 @@ export default function CheckoutPage() {
           </div>
         )}
       </div>
+      
+      {/* Tiers Modal */}
+      {showTiersModal && share.discountTiers && (
+        <div className="modal-overlay" onClick={() => setShowTiersModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowTiersModal(false)}>×</button>
+            </div>
+            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Get additional discount on purchasing higher number of units</h3>
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
+              <thead>
+                <tr style={{ backgroundColor: 'var(--primary)', color: 'white' }}>
+                  <th style={{ padding: '0.75rem', fontWeight: 600, border: '1px solid var(--border)' }}>Quantity</th>
+                  <th style={{ padding: '0.75rem', fontWeight: 600, border: '1px solid var(--border)' }}>Rate/Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {share.discountTiers.sort((a, b) => a.minQty - b.minQty).map((tier, idx, arr) => {
+                  const nextTier = arr[idx + 1];
+                  const range = nextTier ? `${tier.minQty} - ${nextTier.minQty - 1}` : `${tier.minQty}+`;
+                  return (
+                    <tr key={idx}>
+                      <td style={{ padding: '0.75rem', border: '1px solid var(--border)' }}>{range}</td>
+                      <td style={{ padding: '0.75rem', border: '1px solid var(--border)', fontWeight: 600 }}>{formatCurrency(tier.price)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -53,9 +53,11 @@ type FormState = {
   logoUrl: string;
   changePositive: boolean;
   isFeatured: boolean;
+  isTop10: boolean;
   logoGradient: string;
   description: string;
   keyHighlights: string;
+  discountTiers: { minQty: number; price: number }[];
 };
 
 const emptyForm = (): FormState => ({
@@ -87,9 +89,11 @@ const emptyForm = (): FormState => ({
   logoUrl: '',
   changePositive: true,
   isFeatured: false,
+  isTop10: false,
   logoGradient: GRADIENTS[0],
   description: '',
   keyHighlights: '',
+  discountTiers: [],
 });
 
 function fundamentalsFromShare(share: Share) {
@@ -128,13 +132,15 @@ function shareToForm(share: Share): FormState {
     logoUrl: share.logoUrl || '',
     changePositive: share.changePositive,
     isFeatured: !!share.isFeatured,
+    isTop10: !!share.isTop10,
     logoGradient: share.logoGradient,
     description: share.description || '',
     keyHighlights: (share.keyHighlights || []).join('\n'),
+    discountTiers: share.discountTiers || [],
   };
 }
 
-function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boolean }> = {}) {
+function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boolean, isTop10: boolean }> = {}) {
   return {
     id: share.id,
     name: share.name,
@@ -156,12 +162,14 @@ function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boole
     ...fundamentalsFromShare(share),
     changePositive: share.changePositive,
     isFeatured: overrides.isFeatured ?? !!share.isFeatured,
+    isTop10: overrides.isTop10 ?? !!share.isTop10,
     logoInitials: share.logoInitials,
     logoGradient: share.logoGradient,
     logoUrl: share.logoUrl || '',
     keyHighlights: share.keyHighlights || [],
     priceHistory: share.priceHistory,
     chartLabels: share.chartLabels,
+    discountTiers: share.discountTiers || [],
   };
 }
 
@@ -296,6 +304,14 @@ export default function AdminSharePricesPanel() {
     invalidate();
   };
 
+  const toggleTop10Mutation = useMutation({
+    mutationFn: (share: Share) => saveShare(shareToSavePayload(share, { isTop10: !share.isTop10 })),
+    onSuccess: () => {
+      invalidate();
+    },
+    onError: () => showToast('Failed to update Top 10 status', 'error'),
+  });
+
   const saveMutation = useMutation({
     mutationFn: () => {
       const basePrice = parseFloat(form.basePrice);
@@ -343,12 +359,14 @@ export default function AdminSharePricesPanel() {
         faceValue: form.faceValue.trim(),
         changePositive: form.changePositive,
         isFeatured: form.isFeatured,
+        isTop10: form.isTop10,
         logoInitials,
         logoGradient: form.logoGradient,
         logoUrl: form.logoUrl || '',
         keyHighlights: highlights,
         priceHistory,
         chartLabels: defaultChartLabels(),
+        discountTiers: form.discountTiers,
       });
     },
     onSuccess: () => {
@@ -381,6 +399,31 @@ export default function AdminSharePricesPanel() {
 
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
+  const handleExport = () => {
+    const headers = ['Name', 'Ticker', 'Sector', 'Sell Price', 'Listing Price', 'Min Qty', 'Valuation', 'Status', 'Homepage Featured', 'Top 10'];
+    const rows = filteredShares.map((s) => [
+      `"${s.name.replace(/"/g, '""')}"`,
+      `"${s.ticker.replace(/"/g, '""')}"`,
+      `"${s.sector.replace(/"/g, '""')}"`,
+      s.price,
+      s.listingPrice || '',
+      s.minQty,
+      `"${(s.valuation || '').replace(/"/g, '""')}"`,
+      `"${(s.inventoryStatus || '').replace(/"/g, '""')}"`,
+      s.isFeatured ? 'Yes' : 'No',
+      s.isTop10 ? 'Yes' : 'No'
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `gounlisted_price_list_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <>
       <AdminSectionHeader
@@ -388,7 +431,15 @@ export default function AdminSharePricesPanel() {
         title="Stocks & Listings"
         subtitle="Star a stock for Market Activity. Set Listing Price (₹) for Pre-IPO vs listing comparison on homepage."
         badge={`${shares.length} active`}
-        action={<button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Stock</button>}
+        action={
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={handleExport}>
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: '0.25rem' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Export CSV
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Stock</button>
+          </div>
+        }
       />
 
       <div className="stock-list-toolbar">
@@ -456,11 +507,21 @@ export default function AdminSharePricesPanel() {
               >
                 {s.isFeatured ? '★' : '☆'}
               </button>
+              <button
+                type="button"
+                onClick={() => toggleTop10Mutation.mutate(s)}
+                className={`stock-star-btn${s.isTop10 ? ' stock-star-btn--on' : ''}`}
+                title={s.isTop10 ? 'Remove from Top 10' : 'Mark as Top 10'}
+                aria-label={s.isTop10 ? 'Remove from Top 10' : 'Add to Top 10'}
+              >
+                {s.isTop10 ? '🏆' : '🏆'}
+              </button>
               <CompanyLogo share={s} className="price-logo" />
               <button type="button" className="price-row-info price-row-info--clickable" onClick={() => openEdit(s)}>
                 <div className="price-company-name">
                   {s.name}
                   {s.isFeatured && <span className="stock-type-badge stock-type-badge--custom">★ HOMEPAGE</span>}
+                  {s.isTop10 && <span className="stock-type-badge stock-type-badge--custom" style={{ background: '#f59e0b', color: '#fff' }}>🏆 TOP 10</span>}
                   <span className={`stock-type-badge ${s.isBuiltin === false ? 'stock-type-badge--custom' : 'stock-type-badge--base'}`}>
                     {s.listingType || (s.isBuiltin === false ? 'CUSTOM' : 'BASE')}
                   </span>

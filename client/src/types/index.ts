@@ -43,6 +43,8 @@ export interface Share {
   bookValue?: string;
   faceValue?: string;
   isFeatured?: boolean;
+  isTop10?: boolean;
+  discountTiers?: { minQty: number; price: number }[];
   lastUpdated?: string | null;
   isBuiltin?: boolean;
   _isCustom?: boolean;

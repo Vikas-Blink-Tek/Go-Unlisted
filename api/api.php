@@ -223,6 +223,8 @@ function autoMigrateSchema($conn) {
         'fundamentals' => 'TEXT',
         'listing_price' => 'DECIMAL(12,2) DEFAULT NULL',
         'qty_on_hand' => 'INT NOT NULL DEFAULT 0',
+        'is_top10' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        'discount_tiers' => 'TEXT',
     ];
     foreach ($shareCols as $col => $def) {
         $res = $conn->query("SHOW COLUMNS FROM shares LIKE '$col'");
@@ -1906,8 +1908,10 @@ switch ($action) {
             $existingOrder = $stmtCheck->get_result()->fetch_assoc();
         }
 
-        // Admin status update only — never wipe UTR
-        if ($existingOrder) {
+        // Full update for manual orders by admin
+        $fullUpdate = !empty($data['_fullUpdate']) && $isAdmin;
+
+        if ($existingOrder && !$fullUpdate) {
             if ($isAdmin && !orderBelongsToEmployee($conn, $existingOrder)) {
                 http_response_code(403);
                 sendResponse(["error" => "You can only update orders assigned to your employee code"]);
@@ -2018,13 +2022,28 @@ switch ($action) {
         }
 
         // Server-side price from catalog when available (online checkout — manual keeps entered price)
-        $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty FROM shares WHERE share_id = ? AND is_active = 1");
+        $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty, discount_tiers FROM shares WHERE share_id = ? AND is_active = 1");
         $priceStmt->bind_param("s", $share_id);
         $priceStmt->execute();
         $priceRow = $priceStmt->get_result()->fetch_assoc();
         if ($priceRow) {
             if (!$isManualAdmin) {
                 $price_per_share = (float) $priceRow['base_price'];
+                $tiersJson = $priceRow['discount_tiers'] ?? '[]';
+                if (!empty($tiersJson)) {
+                    $tiers = json_decode($tiersJson, true);
+                    if (is_array($tiers) && !empty($tiers)) {
+                        usort($tiers, function ($a, $b) {
+                            return (int)($b['minQty'] ?? 0) - (int)($a['minQty'] ?? 0);
+                        });
+                        foreach ($tiers as $tier) {
+                            if ($quantity >= (int)($tier['minQty'] ?? 0)) {
+                                $price_per_share = (float)($tier['price'] ?? $price_per_share);
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             if ($share_name === '') {
                 $share_name = $priceRow['name'];
@@ -2143,31 +2162,56 @@ switch ($action) {
         // Lock purchase time in IST at buy moment (not MySQL server TZ quirks)
         $purchasedAt = date('Y-m-d H:i:s');
 
-        $stmt = $conn->prepare(
-            "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, created_at, custom_charges_json)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        $stmt->bind_param(
-            "ssssssssdidsssssss",
-            $order_id,
-            $user_id,
-            $buyer_name,
-            $buyer_email,
-            $buyer_phone,
-            $share_id,
-            $share_name,
-            $share_ticker,
-            $price_per_share,
-            $quantity,
-            $total_amount,
-            $method,
-            $transaction_id,
-            $status,
-            $order_source,
-            $employee_code,
-            $purchasedAt,
-            $custom_charges_json
-        );
+        if (isset($fullUpdate) && $fullUpdate && $existingOrder) {
+            $stmt = $conn->prepare(
+                "UPDATE orders SET buyer_name=?, buyer_email=?, buyer_phone=?, share_id=?, share_name=?, share_ticker=?, price_per_share=?, quantity=?, total_amount=?, method=?, transaction_id=?, status=?, order_source=?, employee_code=?, custom_charges_json=? WHERE order_id=?"
+            );
+            $stmt->bind_param(
+                "ssssssdidsssssss",
+                $buyer_name,
+                $buyer_email,
+                $buyer_phone,
+                $share_id,
+                $share_name,
+                $share_ticker,
+                $price_per_share,
+                $quantity,
+                $total_amount,
+                $method,
+                $transaction_id,
+                $status,
+                $order_source,
+                $employee_code,
+                $custom_charges_json,
+                $order_id
+            );
+        } else {
+            $stmt = $conn->prepare(
+                "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, created_at, custom_charges_json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $stmt->bind_param(
+                "ssssssssdidsssssss",
+                $order_id,
+                $user_id,
+                $buyer_name,
+                $buyer_email,
+                $buyer_phone,
+                $share_id,
+                $share_name,
+                $share_ticker,
+                $price_per_share,
+                $quantity,
+                $total_amount,
+                $method,
+                $transaction_id,
+                $status,
+                $order_source,
+                $employee_code,
+                $purchasedAt,
+                $custom_charges_json
+            );
+        }
         if (!$stmt->execute()) {
             error_log('saveOrder INSERT failed: ' . $stmt->error);
             http_response_code(500);
@@ -2376,6 +2420,10 @@ switch ($action) {
         $risk_notes = '';
         $lock_in_months = 0;
         $is_featured = !empty($data['isFeatured']) ? 1 : 0;
+        $is_top10 = !empty($data['isTop10']) ? 1 : 0;
+        $discount_tiers = isset($data['discountTiers']) && is_array($data['discountTiers']) 
+            ? json_encode($data['discountTiers']) 
+            : '[]';
         $highlights = $data['keyHighlights'] ?? [];
         if (is_string($highlights)) {
             $highlights = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $highlights))));
@@ -2431,15 +2479,15 @@ switch ($action) {
         // Core row without nullable decimals (buy_price / listing_price set below)
         if ($existing) {
             $stmt = $conn->prepare(
-                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, logo_url=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, inventory_status=?, isin=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_active=1 WHERE share_id=?"
+                "UPDATE shares SET name=?, ticker=?, sector=?, sector_color=?, base_price=?, min_qty=?, description=?, founded=?, revenue=?, valuation=?, growth=?, change_positive=?, logo_initials=?, logo_gradient=?, logo_url=?, price_history=?, chart_labels=?, listing_type=?, ipo_timeline=?, inventory_status=?, isin=?, key_highlights=?, risk_notes=?, lock_in_months=?, is_featured=?, is_top10=?, discount_tiers=?, is_active=1 WHERE share_id=?"
             );
             if (!$stmt) {
                 sendResponse(['error' => 'Failed to prepare share update'], 500);
                 break;
             }
-            // ssss d i s i sss i sss ss ss ssss i i s  => 26 params
+            // ssss d i s i sss i sss ss ss ssss i i i s s => 28 params
             $stmt->bind_param(
-                'ssssdisisssisssssssssssiis',
+                'ssssdisisssisssssssssssiiiss',
                 $name,
                 $ticker,
                 $sector,
@@ -2465,20 +2513,22 @@ switch ($action) {
                 $risk_notes,
                 $lock_in_months,
                 $is_featured,
+                $is_top10,
+                $discount_tiers,
                 $share_id
             );
         } else {
             $stmt = $conn->prepare(
-                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, logo_url, price_history, chart_labels, listing_type, ipo_timeline, inventory_status, isin, key_highlights, risk_notes, lock_in_months, is_featured, is_builtin, is_active)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
+                "INSERT INTO shares (share_id, name, ticker, sector, sector_color, base_price, min_qty, description, founded, revenue, valuation, growth, change_positive, logo_initials, logo_gradient, logo_url, price_history, chart_labels, listing_type, ipo_timeline, inventory_status, isin, key_highlights, risk_notes, lock_in_months, is_featured, is_top10, discount_tiers, is_builtin, is_active)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)"
             );
             if (!$stmt) {
                 sendResponse(['error' => 'Failed to prepare share insert'], 500);
                 break;
             }
-            // sssss d i s i sss i sss ss ss ssss i i  => 26 params
+            // sssss d i s i sss i sss ss ss ssss i i i s => 28 params
             $stmt->bind_param(
-                'sssssdisisssisssssssssssii',
+                'sssssdisisssisssssssssssiiis',
                 $share_id,
                 $name,
                 $ticker,
@@ -2504,7 +2554,9 @@ switch ($action) {
                 $key_highlights,
                 $risk_notes,
                 $lock_in_months,
-                $is_featured
+                $is_featured,
+                $is_top10,
+                $discount_tiers
             );
         }
 

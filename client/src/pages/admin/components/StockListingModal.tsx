@@ -50,9 +50,11 @@ export type StockFormState = {
   logoUrl: string;
   changePositive: boolean;
   isFeatured: boolean;
+  isTop10: boolean;
   logoGradient: string;
   description: string;
   keyHighlights: string;
+  discountTiers: { minQty: number; price: number }[];
 };
 
 interface Props {
@@ -318,6 +320,82 @@ export default function StockListingModal({
                   onChange={(e) => set({ isFeatured: e.target.checked })}
                 />
               </label>
+
+              <label className="slm-toggle-row">
+                <div>
+                  <strong>🏆 Top 10 Share</strong>
+                  <span>Show at the top of the Shares page</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="slm-toggle"
+                  checked={form.isTop10}
+                  onChange={(e) => set({ isTop10: e.target.checked })}
+                />
+              </label>
+              <div className="slm-card slm-card--highlight" style={{ marginTop: '1.5rem' }}>
+                <div className="slm-card-title">Bulk Discounts</div>
+                <div style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--muted)' }}>
+                  Set discounted prices for buyers purchasing large quantities.
+                </div>
+                
+                {form.discountTiers.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Min Quantity</div>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Rate / Share (₹)</div>
+                    <div></div>
+                  </div>
+                )}
+                
+                {form.discountTiers.map((tier, idx) => (
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input
+                      type="number"
+                      className="slm-input"
+                      value={tier.minQty || ''}
+                      placeholder="e.g. 300"
+                      onChange={(e) => {
+                        const newTiers = [...form.discountTiers];
+                        newTiers[idx].minQty = parseInt(e.target.value) || 0;
+                        set({ discountTiers: newTiers });
+                      }}
+                    />
+                    <input
+                      type="number"
+                      className="slm-input"
+                      value={tier.price || ''}
+                      placeholder="e.g. 275"
+                      onChange={(e) => {
+                        const newTiers = [...form.discountTiers];
+                        newTiers[idx].price = parseFloat(e.target.value) || 0;
+                        set({ discountTiers: newTiers });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ padding: '0 0.5rem', color: 'var(--red)', border: '1px solid var(--border)' }}
+                      onClick={() => {
+                        const newTiers = [...form.discountTiers];
+                        newTiers.splice(idx, 1);
+                        set({ discountTiers: newTiers });
+                      }}
+                      title="Remove tier"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ marginTop: '0.5rem' }}
+                  onClick={() => set({ discountTiers: [...form.discountTiers, { minQty: 0, price: 0 }] })}
+                >
+                  + Add Discount Tier
+                </button>
+              </div>
             </>
           )}
 

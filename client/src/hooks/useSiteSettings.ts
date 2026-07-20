@@ -11,7 +11,7 @@ const DEFAULTS: Record<string, string> = {
   ...SITE_BANK_DEFAULTS,
   disclaimer: SITE_DISCLAIMER_DEFAULT,
   enable_invoice_charges: '1',
-  invoice_custom_charges: '[]',
+  invoice_custom_charges: '[{"name":"Platform Fee","type":"percentage","value":1}]',
 };
 
 export function useSiteSettings() {
