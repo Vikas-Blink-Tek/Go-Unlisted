@@ -98,7 +98,16 @@ export default function DashboardPage() {
   }
 
   const myOrders = (ordersQuery.data || []).filter((o) => orderMatchesUser(o, user));
-  const totalInvested = myOrders.reduce((sum, o) => sum + (o.totalPaid || o.total || 0), 0);
+
+  // Only confirmed/completed orders count as actual holdings
+  const isHolding = (status: string) => {
+    const s = status.toLowerCase();
+    return s.includes('confirm') || s.includes('verif') || s.includes('complete') || s.includes('transfer');
+  };
+  const holdings = myOrders.filter((o) => isHolding(o.status));
+  const pendingOrders = myOrders.filter((o) => !isHolding(o.status));
+
+  const totalInvested = holdings.reduce((sum, o) => sum + (o.totalPaid || o.total || 0), 0);
   const kycLabel =
     user.kycStatus === 'Rejected' && user.kycRejectReason
       ? `Rejected — ${user.kycRejectReason}`
@@ -170,7 +179,8 @@ export default function DashboardPage() {
           <div className="portfolio-summary">
             {[
               { label: 'Total Invested', value: formatCurrency(totalInvested) },
-              { label: 'Orders', value: String(myOrders.length) },
+              { label: 'Holdings', value: String(holdings.length) },
+              { label: 'Pending Orders', value: String(pendingOrders.length) },
               { label: 'KYC Status', value: kycLabel, isKyc: true },
             ].map((s) => (
               <div key={s.label} className="stat-card">
@@ -198,86 +208,153 @@ export default function DashboardPage() {
             </div>
           ) : (
             <>
-              <div className="orders-table-wrap dashboard-orders-table">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Order ID</th>
-                      <th>Company</th>
-                      <th>Qty</th>
-                      <th>Total</th>
-                      <th>UTR</th>
-                      <th>Payment</th>
-                      <th>Status</th>
-                      <th>Date / Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myOrders.map((o) => (
-                      <tr key={o.orderId}>
-                        <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{o.orderId}</td>
-                        <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
-                        <td>{o.qty}</td>
-                        <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                        <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.transactionId || ''}>{o.transactionId || '—'}</td>
-                        <td>{o.method || o.paymentMethod || '—'}</td>
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem' }}>
-                            <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
-                              {getOrderStatusLabel(o.status)}
-                            </span>
-                            {canViewInvoice(o.status) && (
+              {/* ===== MY HOLDINGS (Confirmed / Completed only) ===== */}
+              <h3 style={{ margin: '1.5rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>📈 My Holdings</h3>
+              {holdings.length === 0 ? (
+                <div className="empty-state glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
+                  <p style={{ color: 'var(--muted)', margin: 0 }}>No confirmed holdings yet. Your shares will appear here once payment is verified and transfer is complete.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="orders-table-wrap dashboard-orders-table">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Order ID</th>
+                          <th>Company</th>
+                          <th>Qty</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                          <th>Date / Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {holdings.map((o) => (
+                          <tr key={o.orderId}>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{o.orderId}</td>
+                            <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
+                            <td>{o.qty}</td>
+                            <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem' }}>
+                                <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
+                                  {getOrderStatusLabel(o.status)}
+                                </span>
+                                {canViewInvoice(o.status) && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
+                                    onClick={() => handleViewInvoice(o.orderId)}
+                                    disabled={loadingInvoice === o.orderId}
+                                  >
+                                    {loadingInvoice === o.orderId ? '...' : 'View Invoice'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{formatDateTime(getOrderDate(o))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="dashboard-orders-cards">
+                    {holdings.map((o) => (
+                      <div key={o.orderId} className="order-card dashboard-order-card">
+                        <div className="order-card-top">
+                          <strong>{o.companyName || o.shareName}</strong>
+                          <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
+                            {getOrderStatusLabel(o.status)}
+                          </span>
+                        </div>
+                        <div className="dashboard-order-meta">
+                          <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
+                          <div><span>Qty</span><strong>{o.qty}</strong></div>
+                          <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
+                          <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
+                          {canViewInvoice(o.status) && (
+                            <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
                               <button
                                 type="button"
                                 className="btn btn-outline btn-sm"
-                                style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', height: 'auto' }}
                                 onClick={() => handleViewInvoice(o.orderId)}
                                 disabled={loadingInvoice === o.orderId}
                               >
-                                {loadingInvoice === o.orderId ? '...' : 'View Invoice'}
+                                {loadingInvoice === o.orderId ? 'Loading...' : 'View Invoice'}
                               </button>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{formatDateTime(getOrderDate(o))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="dashboard-orders-cards">
-                {myOrders.map((o) => (
-                  <div key={o.orderId} className="order-card dashboard-order-card">
-                    <div className="order-card-top">
-                      <strong>{o.companyName || o.shareName}</strong>
-                      <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
-                        {getOrderStatusLabel(o.status)}
-                      </span>
-                    </div>
-                    <div className="dashboard-order-meta">
-                      <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
-                      <div><span>Qty</span><strong>{o.qty}</strong></div>
-                      <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
-                      <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
-                      <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
-                      <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
-                      {canViewInvoice(o.status) && (
-                        <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline btn-sm"
-                            onClick={() => handleViewInvoice(o.orderId)}
-                            disabled={loadingInvoice === o.orderId}
-                          >
-                            {loadingInvoice === o.orderId ? 'Loading...' : 'View Invoice'}
-                          </button>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
+
+              {/* ===== ORDER HISTORY (Pending / Rejected / Cancelled) ===== */}
+              {pendingOrders.length > 0 && (
+                <>
+                  <h3 style={{ margin: '2rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>🕐 Pending Orders</h3>
+                  <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 1rem' }}>These orders are awaiting payment verification. Shares will be transferred to your demat after confirmation.</p>
+                  <div className="orders-table-wrap dashboard-orders-table">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Order ID</th>
+                          <th>Company</th>
+                          <th>Qty</th>
+                          <th>Total</th>
+                          <th>UTR</th>
+                          <th>Payment</th>
+                          <th>Status</th>
+                          <th>Date / Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingOrders.map((o) => (
+                          <tr key={o.orderId}>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{o.orderId}</td>
+                            <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
+                            <td>{o.qty}</td>
+                            <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.transactionId || ''}>{o.transactionId || '—'}</td>
+                            <td>{o.method || o.paymentMethod || '—'}</td>
+                            <td>
+                              <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
+                                {getOrderStatusLabel(o.status)}
+                              </span>
+                            </td>
+                            <td style={{ color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{formatDateTime(getOrderDate(o))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="dashboard-orders-cards">
+                    {pendingOrders.map((o) => (
+                      <div key={o.orderId} className="order-card dashboard-order-card">
+                        <div className="order-card-top">
+                          <strong>{o.companyName || o.shareName}</strong>
+                          <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
+                            {getOrderStatusLabel(o.status)}
+                          </span>
+                        </div>
+                        <div className="dashboard-order-meta">
+                          <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
+                          <div><span>Qty</span><strong>{o.qty}</strong></div>
+                          <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
+                          <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
+                          <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
+                          <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

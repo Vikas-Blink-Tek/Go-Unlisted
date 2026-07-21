@@ -43,7 +43,8 @@ export default function CheckoutPage() {
 
   const share = shareId ? getShareById(shareId) : null;
   const [step, setStep] = useState(1);
-  const [qty, setQty] = useState(share?.minQty || 1);
+  const [qty, setQty] = useState<number | ''>(share?.minQty || 1);
+  const safeQty = typeof qty === 'number' && !isNaN(qty) ? qty : 0;
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
   const [utr, setUtr] = useState('');
   const [customerUpi, setCustomerUpi] = useState('');
@@ -59,14 +60,14 @@ export default function CheckoutPage() {
     if (share.discountTiers && share.discountTiers.length > 0) {
       const sortedTiers = [...share.discountTiers].sort((a, b) => b.minQty - a.minQty);
       for (const tier of sortedTiers) {
-        if (qty >= tier.minQty) {
+        if (safeQty >= tier.minQty) {
           price = tier.price;
           break;
         }
       }
     }
     return price;
-  }, [share, qty]);
+  }, [share, safeQty]);
 
   useEffect(() => {
     if (share?.minQty) setQty(share.minQty);
@@ -130,12 +131,12 @@ export default function CheckoutPage() {
 
 
 
-  const originalSubtotal = share.price * qty;
-  const subtotal = activePrice * qty;
+  const originalSubtotal = share.price * safeQty;
+  const subtotal = activePrice * safeQty;
   const offerBenefit = originalSubtotal - subtotal;
   
-  const total = calcOrderTotal(activePrice, qty, settings);
-  const chargesBreakdown = calcOrderChargesBreakdown(activePrice, qty, settings);
+  const total = calcOrderTotal(activePrice, safeQty, settings);
+  const chargesBreakdown = calcOrderChargesBreakdown(activePrice, safeQty, settings);
 
   const selectPaymentMode = async (mode: PaymentMode) => {
     if (!user) {
@@ -152,7 +153,7 @@ export default function CheckoutPage() {
         buyerName,
         buyerEmail,
         buyerPhone,
-        qty,
+        qty: safeQty,
         pricePerShare: activePrice,
         totalAmount: total,
         paymentMode: PAYMENT_MODES.find((m) => m.id === mode)?.label || mode,
@@ -163,7 +164,7 @@ export default function CheckoutPage() {
   };
 
   const goToPayment = () => {
-    if (qty < share.minQty) {
+    if (safeQty < share.minQty) {
       showToast(`Minimum ${share.minQty} shares required`, 'warning');
       return;
     }
@@ -198,7 +199,7 @@ export default function CheckoutPage() {
         buyerEmail,
         buyerPhone,
         pricePerShare: share.price,
-        qty,
+        qty: safeQty,
         method: methodLabel,
         status: 'Pending Verification',
         transactionId: utrClean,
@@ -382,7 +383,15 @@ export default function CheckoutPage() {
                 min={share.minQty}
                 value={qty}
                 placeholder="Enter quantity"
-                onChange={(e) => setQty(Math.max(share.minQty, +e.target.value || share.minQty))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setQty(val === '' ? '' : parseInt(val, 10));
+                }}
+                onBlur={() => {
+                  if (typeof qty !== 'number' || isNaN(qty) || qty < share.minQty) {
+                    setQty(share.minQty);
+                  }
+                }}
               />
               <div className="order-min-notice">Minimum purchase quantity is {share.minQty} shares.</div>
               {isShareOnRequest(share.inventoryStatus) && (
@@ -410,7 +419,7 @@ export default function CheckoutPage() {
 
             <div className="order-breakdown-box" style={{ background: 'var(--bg)', borderRadius: '8px', padding: '1rem', marginTop: '1.5rem', border: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                <span style={{ color: 'var(--muted)' }}>Shares Value ({qty} × {formatCurrency(activePrice)})</span>
+                <span style={{ color: 'var(--muted)' }}>Shares Value ({safeQty} × {formatCurrency(activePrice)})</span>
                 <span style={{ fontWeight: 500 }}>{formatCurrency(subtotal)}</span>
               </div>
               {offerBenefit > 0 && (
