@@ -60,7 +60,11 @@ export interface User {
   referralCode?: string;
   kycPan?: string;
   kycDemat?: string;
+  /** Path to uploaded CMR / demat proof (e.g. uploads/kyc/xxx.jpg) */
+  kycDematProof?: string;
   bankAccount?: string;
+  /** Buyer's bank name (HDFC, SBI, etc.) */
+  bankName?: string;
   ifsc?: string;
   kycRejectReason?: string;
   createdAt?: string;

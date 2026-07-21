@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { updateKyc } from '../api/auth';
+import { updateKyc, uploadKycDematProof } from '../api/auth';
 import { getOrders } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -11,7 +11,11 @@ import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
 import { getInvoiceByOrder, type Invoice } from '../api/invoices';
 import InvoicePrintView from './admin/components/InvoicePrintView';
-function orderMatchesUser(
+import KycDetailsCard from '../components/kyc/KycDetailsCard';
+
+function validateIfsc(ifsc: string) {
+  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
+}function orderMatchesUser(
   o: { buyerEmail?: string; buyerPhone?: string },
   user: { email: string; phone?: string },
 ): boolean {
@@ -33,10 +37,14 @@ export default function DashboardPage() {
   const [kycForm, setKycForm] = useState({
     pan: user?.kycPan || '',
     demat: user?.kycDemat || '',
+    bankName: user?.bankName || '',
     bankAccount: user?.bankAccount || '',
     ifsc: user?.ifsc || '',
+    dematProof: user?.kycDematProof || '',
   });
   const [kycError, setKycError] = useState('');
+  const [proofUploading, setProofUploading] = useState(false);
+  const [kycSubmitting, setKycSubmitting] = useState(false);
 
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState<string | null>(null);
@@ -77,8 +85,10 @@ export default function DashboardPage() {
       setKycForm({
         pan: user.kycPan || '',
         demat: user.kycDemat || '',
+        bankName: user.bankName || '',
         bankAccount: user.bankAccount || '',
         ifsc: user.ifsc || '',
+        dematProof: user.kycDematProof || '',
       });
     }
   }, [user]);
@@ -123,21 +133,43 @@ export default function DashboardPage() {
       setKycError('Demat account must be 16 digits');
       return;
     }
+    if (kycForm.bankName.trim().length < 2) {
+      setKycError('Enter your bank name (e.g. HDFC Bank, SBI)');
+      return;
+    }
+    const accountDigits = kycForm.bankAccount.replace(/\D/g, '');
+    if (accountDigits.length < 9 || accountDigits.length > 18) {
+      setKycError('Enter a valid bank account number (9–18 digits)');
+      return;
+    }
+    if (!validateIfsc(kycForm.ifsc)) {
+      setKycError('Invalid IFSC (e.g. SBIN0001234)');
+      return;
+    }
+    if (!kycForm.dematProof) {
+      setKycError('Upload CMR / demat proof before submitting');
+      return;
+    }
+    setKycSubmitting(true);
     try {
-      const res = await updateKyc(
-        kycForm.pan.toUpperCase(),
-        kycForm.demat,
-        kycForm.bankAccount,
-        kycForm.ifsc.toUpperCase(),
-      );
+      const res = await updateKyc({
+        pan: kycForm.pan.toUpperCase(),
+        demat: kycForm.demat.replace(/\D/g, ''),
+        bankAccount: accountDigits,
+        bankName: kycForm.bankName.trim(),
+        ifsc: kycForm.ifsc.toUpperCase(),
+        kycDematProof: kycForm.dematProof,
+      });
       if (res.success) {
         setUser({
           ...user,
           kycStatus: res.kycStatus || 'Under Review',
           kycRejectReason: undefined,
           kycPan: kycForm.pan.toUpperCase(),
-          kycDemat: kycForm.demat,
-          bankAccount: kycForm.bankAccount,
+          kycDemat: kycForm.demat.replace(/\D/g, ''),
+          kycDematProof: kycForm.dematProof,
+          bankName: kycForm.bankName.trim(),
+          bankAccount: accountDigits,
           ifsc: kycForm.ifsc.toUpperCase(),
         });
         showToast('KYC submitted for review', 'success');
@@ -145,6 +177,23 @@ export default function DashboardPage() {
       }
     } catch (err) {
       setKycError(err instanceof Error ? err.message : 'KYC submission failed');
+    } finally {
+      setKycSubmitting(false);
+    }
+  };
+
+  const handleProofUpload = async (file: File | null) => {
+    if (!file) return;
+    setProofUploading(true);
+    setKycError('');
+    try {
+      const res = await uploadKycDematProof(file);
+      setKycForm((prev) => ({ ...prev, dematProof: res.url }));
+      showToast('Demat proof uploaded', 'success');
+    } catch (err) {
+      setKycError(err instanceof Error ? err.message : 'Proof upload failed');
+    } finally {
+      setProofUploading(false);
     }
   };
 
@@ -212,7 +261,7 @@ export default function DashboardPage() {
               <h3 style={{ margin: '1.5rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>📈 My Holdings</h3>
               {holdings.length === 0 ? (
                 <div className="empty-state glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
-                  <p style={{ color: 'var(--muted)', margin: 0 }}>No confirmed holdings yet. Your shares will appear here once payment is verified and transfer is complete.</p>
+                  <p style={{ color: 'var(--muted)', margin: 0 }}>No holdings yet. After you confirm payment at checkout, shares appear here while demat transfer is processed.</p>
                 </div>
               ) : (
                 <>
@@ -297,7 +346,7 @@ export default function DashboardPage() {
               {pendingOrders.length > 0 && (
                 <>
                   <h3 style={{ margin: '2rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>🕐 Pending Orders</h3>
-                  <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 1rem' }}>These orders are awaiting payment verification. Shares will be transferred to your demat after confirmation.</p>
+                  <p style={{ color: 'var(--muted)', fontSize: '0.85rem', margin: '0 0 1rem' }}>Orders that need attention (rejected / cancelled) or are still waiting on ops.</p>
                   <div className="orders-table-wrap dashboard-orders-table">
                     <table className="data-table">
                       <thead>
@@ -306,7 +355,6 @@ export default function DashboardPage() {
                           <th>Company</th>
                           <th>Qty</th>
                           <th>Total</th>
-                          <th>UTR</th>
                           <th>Payment</th>
                           <th>Status</th>
                           <th>Date / Time</th>
@@ -319,7 +367,6 @@ export default function DashboardPage() {
                             <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
                             <td>{o.qty}</td>
                             <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                            <td style={{ fontFamily: 'monospace', fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={o.transactionId || ''}>{o.transactionId || '—'}</td>
                             <td>{o.method || o.paymentMethod || '—'}</td>
                             <td>
                               <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
@@ -346,7 +393,6 @@ export default function DashboardPage() {
                           <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
                           <div><span>Qty</span><strong>{o.qty}</strong></div>
                           <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
-                          <div><span>UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.transactionId || '—'}</strong></div>
                           <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
                           <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                         </div>
@@ -371,19 +417,9 @@ export default function DashboardPage() {
           </div>
 
           {user.kycStatus === 'Verified' ? (
-            <div className="kyc-form text-center">
-              <p>Your KYC is verified. You can invest freely.</p>
-            </div>
+            <KycDetailsCard user={user} mode="verified" />
           ) : user.kycStatus === 'Under Review' ? (
-            <div className="kyc-form">
-              <h3 style={{ color: 'var(--white)', marginBottom: '1rem' }}>Submitted Profile Details</h3>
-              <div style={{ display: 'grid', gap: '0.75rem' }}>
-                <p><span style={{ color: 'var(--text-dim)' }}>PAN:</span> <strong>{user.kycPan || kycForm.pan}</strong></p>
-                <p><span style={{ color: 'var(--text-dim)' }}>Demat:</span> <strong>{user.kycDemat ? `****${user.kycDemat.slice(-4)}` : '—'}</strong></p>
-                <p><span style={{ color: 'var(--text-dim)' }}>Bank Account:</span> <strong>{user.bankAccount ? `****${user.bankAccount.slice(-4)}` : '—'}</strong></p>
-                <p><span style={{ color: 'var(--text-dim)' }}>IFSC:</span> <strong>{user.ifsc || '—'}</strong></p>
-              </div>
-            </div>
+            <KycDetailsCard user={user} mode="review" />
           ) : (
             <form className="kyc-form" onSubmit={submitKyc} autoComplete="off" style={{ position: 'relative' }}>
               <AutofillBlocker />
@@ -393,24 +429,106 @@ export default function DashboardPage() {
                 </div>
               )}
               {kycError && <div className="form-error show">{kycError}</div>}
+
+              <p className="kyc-form-intro">
+                Fill PAN, demat, bank details, and upload your CMR / Client Master Report (or demat screenshot). Bank account and demat must belong to the same person.
+              </p>
+
               <div className="form-group">
-                <label>PAN Number</label>
-                <input className="form-input" placeholder="ABCDE1234F" value={kycForm.pan} onChange={(e) => setKycForm({ ...kycForm, pan: e.target.value.toUpperCase() })} {...blockTextInput({ name: 'kyc-pan' })} />
+                <label>PAN Number *</label>
+                <input
+                  className="form-input"
+                  placeholder="ABCDE1234F"
+                  maxLength={10}
+                  required
+                  value={kycForm.pan}
+                  onChange={(e) => setKycForm({ ...kycForm, pan: e.target.value.toUpperCase() })}
+                  {...blockTextInput({ name: 'kyc-pan' })}
+                />
               </div>
+
               <div className="form-group">
-                <label>Demat Account (16 digits)</label>
-                <input className="form-input" placeholder="1234567890123456" value={kycForm.demat} onChange={(e) => setKycForm({ ...kycForm, demat: e.target.value })} {...blockTextInput({ name: 'kyc-demat' })} />
+                <label>Demat Account (16 digits) *</label>
+                <input
+                  className="form-input"
+                  placeholder="1234567890123456"
+                  maxLength={16}
+                  required
+                  value={kycForm.demat}
+                  onChange={(e) => setKycForm({ ...kycForm, demat: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                  {...blockTextInput({ name: 'kyc-demat' })}
+                />
               </div>
+
               <div className="form-group">
-                <label>Bank Account Number</label>
-                <input className="form-input" value={kycForm.bankAccount} onChange={(e) => setKycForm({ ...kycForm, bankAccount: e.target.value })} {...blockTextInput({ name: 'kyc-bank' })} />
+                <label>CMR / Demat proof *</label>
+                <p className="kyc-field-hint">Upload Client Master Report (CMR/CML) or demat account screenshot from your broker. JPG, PNG, WEBP or PDF — max 5MB.</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+                  className="form-input kyc-file-input"
+                  disabled={proofUploading || kycSubmitting}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] || null;
+                    void handleProofUpload(f);
+                    e.target.value = '';
+                  }}
+                />
+                {proofUploading && <p className="kyc-upload-status">Uploading…</p>}
+                {kycForm.dematProof && !proofUploading && (
+                  <div className="kyc-proof-uploaded">
+                    <span>Proof uploaded</span>
+                    <a href={`/${kycForm.dematProof}`} target="_blank" rel="noopener noreferrer">Preview</a>
+                    {/\.(jpe?g|png|webp)$/i.test(kycForm.dematProof) && (
+                      <img src={`/${kycForm.dematProof}`} alt="Demat proof preview" className="kyc-proof-thumb" />
+                    )}
+                  </div>
+                )}
               </div>
+
               <div className="form-group">
-                <label>IFSC Code</label>
-                <input className="form-input" placeholder="SBIN0001234" value={kycForm.ifsc} onChange={(e) => setKycForm({ ...kycForm, ifsc: e.target.value.toUpperCase() })} {...blockTextInput({ name: 'kyc-ifsc' })} />
+                <label>Bank Name *</label>
+                <input
+                  className="form-input"
+                  placeholder="e.g. HDFC Bank, State Bank of India"
+                  required
+                  value={kycForm.bankName}
+                  onChange={(e) => setKycForm({ ...kycForm, bankName: e.target.value })}
+                  {...blockTextInput({ name: 'kyc-bank-name' })}
+                />
               </div>
-              <button type="submit" className="btn btn-primary btn-lg">
-                {user.kycStatus === 'Rejected' ? 'Resubmit KYC' : 'Submit KYC for Review'}
+
+              <div className="form-group">
+                <label>Bank Account Number *</label>
+                <input
+                  className="form-input"
+                  placeholder="Account number linked to demat"
+                  required
+                  value={kycForm.bankAccount}
+                  onChange={(e) => setKycForm({ ...kycForm, bankAccount: e.target.value.replace(/\D/g, '').slice(0, 18) })}
+                  {...blockTextInput({ name: 'kyc-bank' })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>IFSC Code *</label>
+                <input
+                  className="form-input"
+                  placeholder="SBIN0001234"
+                  maxLength={11}
+                  required
+                  value={kycForm.ifsc}
+                  onChange={(e) => setKycForm({ ...kycForm, ifsc: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11) })}
+                  {...blockTextInput({ name: 'kyc-ifsc' })}
+                />
+              </div>
+
+              <button type="submit" className="btn btn-primary btn-lg" disabled={proofUploading || kycSubmitting}>
+                {kycSubmitting
+                  ? 'Submitting…'
+                  : user.kycStatus === 'Rejected'
+                    ? 'Resubmit KYC'
+                    : 'Submit KYC for Review'}
               </button>
             </form>
           )}

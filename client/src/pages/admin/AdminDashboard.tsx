@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getOrders, updateOrderStatus } from '../../api/orders';
-import { getUsers, mapApiUser } from '../../api/admin';
+import { getOrders, updateOrderStatus, transferOrder } from '../../api/orders';
+import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
 import { useAdminPanel } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
-import { isPendingOrder } from '../../utils/orderStatus';
+import { isPendingOrder, ORDER_STATUS } from '../../utils/orderStatus';
 import { blockAutofillOnFocus, blockTextInput } from '../../utils/autofill';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
 import {
@@ -59,6 +59,12 @@ export default function AdminDashboard() {
     queryFn: getInitiatedCheckouts,
     enabled: can('initiated'),
   });
+
+  const employeesQuery = useQuery({
+    queryKey: ['admin-employees'],
+    queryFn: getEmployees,
+    enabled: isMaster,
+  });
   const settingsQuery = useQuery({
     queryKey: ['admin-settings'],
     queryFn: getSettings,
@@ -96,7 +102,22 @@ export default function AdminDashboard() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
-  const complete = (id: string) => statusMutation.mutate({ orderId: id, status: 'Completed' });
+  const transferMutation = useMutation({
+    mutationFn: ({ orderId, employeeCode }: { orderId: string; employeeCode: string }) => transferOrder(orderId, employeeCode),
+    onSuccess: () => {
+      showToast('Order assigned to employee', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const complete = (id: string) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.COMPLETED });
+  const undoComplete = (id: string) => {
+    if (confirm('Undo Completed? Order goes back to Pending Share Transfer.')) {
+      statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING });
+    }
+  };
 
   const saveSiteSettings = async () => {
     try {
@@ -136,7 +157,7 @@ export default function AdminDashboard() {
   const previewAddress = settingsVal('address') || SITE_CONTACT_DEFAULTS.address;
   const previewEmail = settingsVal('email') || SITE_CONTACT_DEFAULTS.email;
 
-  const invoiceChargesEnabled = settingsVal('enable_invoice_charges') !== '0';
+  const invoiceChargesEnabled = settingsVal('enable_invoice_charges') === '1';
   const customChargesStr = settingsVal('invoice_custom_charges');
   const customCharges: { name: string; type?: 'percentage' | 'flat'; value?: number; price?: number }[] = (() => {
     try {
@@ -262,9 +283,12 @@ export default function AdminDashboard() {
             orders={orders}
             users={users}
             showActions={can('pending')}
-            onVerify={(id) => statusMutation.mutate({ orderId: id, status: 'Confirmed' })}
-            onReject={(id) => statusMutation.mutate({ orderId: id, status: 'Rejected' })}
+            employees={employeesQuery.data || []}
+            onTransferOrder={isMaster ? (orderId, employeeCode) => transferMutation.mutateAsync({ orderId, employeeCode }) : undefined}
+            onVerify={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING })}
+            onReject={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.REJECTED })}
             onComplete={can('pending') ? complete : undefined}
+            onUndoComplete={can('pending') ? undoComplete : undefined}
           />
         </>
       )}
@@ -400,7 +424,8 @@ export default function AdminDashboard() {
                 Enable Extra Charges on Invoices
               </label>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', marginBottom: '1.5rem' }}>
-                If turned off, users will only see the share subtotal on their invoices (no platform fee, stamp duty, or custom charges).
+                When off, checkout and new orders show only share value (price × qty) — no platform fee or custom charges.
+                When on, only the custom charges listed below are added.
               </p>
               <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Custom Charges</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>

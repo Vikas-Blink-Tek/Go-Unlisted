@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Order, User } from '../../../types';
 import { formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, parseDbDateTime, getOrderDate } from '../../../utils/format';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
-import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete, canUndoOrderComplete } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
 import OrderDetailDrawer from './OrderDetailDrawer';
@@ -16,10 +16,13 @@ type Props = {
   onVerify?: (orderId: string) => void;
   onReject?: (orderId: string) => void;
   onComplete?: (orderId: string) => void;
+  onUndoComplete?: (orderId: string) => void;
   limit?: number;
+  employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
+  onTransferOrder?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
 };
 
-export default function AdminOrdersSection({ orders, users, showActions, verifyMode, onVerify, onReject, onComplete, limit }: Props) {
+export default function AdminOrdersSection({ orders, users, showActions, verifyMode, onVerify, onReject, onComplete, onUndoComplete, limit, employees, onTransferOrder }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(verifyMode ? 'pending' : 'all');
   const [codeFilter, setCodeFilter] = useState('all');
@@ -43,7 +46,8 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
     return orders.filter((o) => {
       if (codeFilter !== 'all' && displayUserCode(o.employeeCode) !== codeFilter) return false;
       if (activeStatusFilter === 'pending' && !isPendingOrder(o.status)) return false;
-      if (activeStatusFilter === 'confirmed' && !o.status.toLowerCase().includes('confirm')) return false;
+      if (activeStatusFilter === 'transfer' && !/transfer|confirm|verif/i.test(o.status)) return false;
+      if (activeStatusFilter === 'confirmed' && !/confirm|verif|transfer/i.test(o.status)) return false;
       if (activeStatusFilter === 'completed' && !o.status.toLowerCase().includes('complete')) return false;
       if (activeStatusFilter === 'rejected' && !/reject|cancel|refund/i.test(o.status)) return false;
       if (dateFrom && getOrderDate(o)) {
@@ -70,12 +74,14 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
   }, [orders, search, statusFilter, codeFilter, dateFrom, dateTo, verifyMode]);
 
   const display = limit ? filtered.slice(0, limit) : filtered;
-  const showActionCol = showActions || !!onComplete;
+  const showActionCol = showActions || !!onComplete || !!onUndoComplete;
   const canUpdateStatus = (o: Order) =>
-    (showActions && isPendingOrder(o.status)) || (!!onComplete && canMarkOrderComplete(o.status));
+    (showActions && isPendingOrder(o.status))
+    || (!!onComplete && canMarkOrderComplete(o.status))
+    || (!!onUndoComplete && canUndoOrderComplete(o.status));
 
   const handleVerify = (id: string) => {
-    if (confirm('Verify payment and confirm this order?')) {
+    if (confirm('Verify payment? Order moves to Pending Share Transfer.')) {
       onVerify?.(id);
       setSelected(null);
     }
@@ -93,6 +99,11 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
       onComplete?.(id);
       setSelected(null);
     }
+  };
+
+  const handleUndoComplete = (id: string) => {
+    onUndoComplete?.(id);
+    setSelected(null);
   };
 
   return (
@@ -115,7 +126,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         <select className="report-filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending verification</option>
-          <option value="confirmed">Payment verified</option>
+          <option value="transfer">Share transfer</option>
           <option value="completed">Complete</option>
           <option value="rejected">Rejected / cancelled</option>
         </select>
@@ -155,7 +166,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                 <th>Price / Share</th>
                 <th>Qty</th>
                 <th>Amount</th>
-                <th>UTR / Txn ID</th>
+                <th>Payment Ref</th>
                 <th>Status</th>
                 {showActionCol && <th>Actions</th>}
               </tr>
@@ -184,8 +195,8 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                   <td className="admin-orders-col-qty">{o.qty}</td>
                   <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
                   <td className="admin-orders-col-utr">
-                    <code className="admin-utr-code" title="Payment reference from buyer">
-                      {o.transactionId || o.utr || '—'}
+                    <code className="admin-utr-code" title="Bank UTR (manual) or self-confirmed online">
+                      {o.transactionId || o.utr || (o.orderSource === 'Online' || !o.orderSource ? 'Self-confirmed' : '—')}
                     </code>
                   </td>
                   <td className="admin-orders-col-status">
@@ -204,6 +215,11 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                       {onComplete && canMarkOrderComplete(o.status) && (
                         <button type="button" className="btn btn-primary btn-sm" onClick={() => handleComplete(o.orderId)}>
                           Complete
+                        </button>
+                      )}
+                      {onUndoComplete && canUndoOrderComplete(o.status) && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleUndoComplete(o.orderId)}>
+                          Undo
                         </button>
                       )}
                       {verifyMode && !canUpdateStatus(o) && (
@@ -225,6 +241,9 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         onVerify={showActions ? handleVerify : undefined}
         onReject={showActions ? handleReject : undefined}
         onComplete={onComplete ? handleComplete : undefined}
+        onUndoComplete={onUndoComplete ? handleUndoComplete : undefined}
+        employees={employees}
+        onTransfer={onTransferOrder}
       />
     </>
   );

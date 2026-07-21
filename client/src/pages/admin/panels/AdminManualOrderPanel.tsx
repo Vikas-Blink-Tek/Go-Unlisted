@@ -83,7 +83,7 @@ export default function AdminManualOrderPanel() {
       qty,
       method: form.method,
       transactionId: utrClean || undefined,
-      status: 'Confirmed',
+      status: 'Pending Verification',
       orderSource: form.source,
       _fullUpdate: !!editId,
     });
@@ -109,7 +109,7 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader
         compact
         title="Manual Order Entry"
-        subtitle="Record phone, WhatsApp, or walk-in deals. Orders are created as confirmed."
+        subtitle="Record phone / WhatsApp deals. New orders go to Verify Payments, then share transfer."
       />
 
       <div className="report-filter-box">
@@ -162,10 +162,10 @@ export default function AdminManualOrderPanel() {
               </select>
             </div>
             <div className="report-filter-group">
-              <label className="report-filter-label">UTR / Reference No.</label>
+              <label className="report-filter-label">Bank UTR / Reference (optional)</label>
               <input
                 className="report-filter-input"
-                placeholder="Bank UTR or payment reference (optional for cash)"
+                placeholder="Only if you have bank UTR — not buyer UPI ID"
                 value={form.utr}
                 onChange={(e) => setForm({ ...form, utr: e.target.value.toUpperCase() })}
                 {...blockTextInput({ name: 'manual-order-utr' })}
@@ -188,7 +188,7 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader compact title="Recent Manual Orders" badge={`${manualOrders.length} orders`} />
       <div className="price-table-wrap">
         <table className="data-table">
-          <thead><tr><th>Order ID</th><th>Client</th><th>Share</th><th>Qty</th><th>Total</th><th>UTR / Ref</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Order ID</th><th>Client</th><th>Share</th><th>Qty</th><th>Total</th><th>Payment Ref</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {manualOrders.slice(0, 20).map((o) => (
               <tr key={o.orderId}>

@@ -3,7 +3,7 @@ import { getOrders, updateOrderStatus } from '../../../api/orders';
 import { useToast } from '../../../context/ToastContext';
 import { formatCurrency, formatDateTime, getOrderDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
-import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, canMarkOrderComplete, ORDER_STATUS } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
 export default function AdminCancelRefundPanel() {
@@ -14,7 +14,7 @@ export default function AdminCancelRefundPanel() {
   const settlement = orders.filter((o) => {
     const s = o.status.toLowerCase();
     if (/cancel|reject|refund|complete/.test(s)) return false;
-    return s.includes('confirm') || s.includes('transfer');
+    return s.includes('confirm') || s.includes('transfer') || s.includes('verif');
   });
 
   const mutate = useMutation({
@@ -29,8 +29,7 @@ export default function AdminCancelRefundPanel() {
 
   const markCompleted = (id: string) => {
     const note = window.prompt('Transfer completed — optional ops note (e.g. NSDL ref):') ?? '';
-    if (note === null) return;
-    mutate.mutate({ id, status: 'Completed', opsNote: note.trim() || undefined });
+    mutate.mutate({ id, status: ORDER_STATUS.COMPLETED, opsNote: note.trim() || undefined });
   };
 
   return (
@@ -59,9 +58,6 @@ export default function AdminCancelRefundPanel() {
               <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)' }}>No orders awaiting settlement</td></tr>
             )}
             {settlement.map((o) => {
-              const s = o.status.toLowerCase();
-              const isConfirmed = s.includes('confirm') && !s.includes('transfer');
-              const isTransferring = s.includes('transfer');
               return (
                 <tr key={o.orderId}>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
@@ -79,7 +75,7 @@ export default function AdminCancelRefundPanel() {
                     </span>
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
-                    {(isConfirmed || isTransferring) && (
+                    {canMarkOrderComplete(o.status) && (
                       <button type="button" className="btn btn-primary btn-sm" onClick={() => markCompleted(o.orderId)}>
                         Complete
                       </button>
@@ -88,14 +84,14 @@ export default function AdminCancelRefundPanel() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       style={{ color: '#ef4444' }}
-                      onClick={() => confirm('Cancel this order?') && mutate.mutate({ id: o.orderId, status: 'Cancelled' })}
+                      onClick={() => confirm('Cancel this order?') && mutate.mutate({ id: o.orderId, status: ORDER_STATUS.CANCELLED })}
                     >
                       Cancel
                     </button>
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      onClick={() => confirm('Mark as refunded?') && mutate.mutate({ id: o.orderId, status: 'Refunded' })}
+                      onClick={() => confirm('Mark as refunded?') && mutate.mutate({ id: o.orderId, status: ORDER_STATUS.REFUNDED })}
                     >
                       Refund
                     </button>

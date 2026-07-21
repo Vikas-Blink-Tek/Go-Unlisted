@@ -15,6 +15,7 @@ type Props = {
 type KycForm = {
   kycPan: string;
   kycDemat: string;
+  bankName: string;
   bankAccount: string;
   ifsc: string;
   rejectReason: string;
@@ -25,6 +26,7 @@ function userToForm(u: User): KycForm {
   return {
     kycPan: u.kycPan || '',
     kycDemat: u.kycDemat || '',
+    bankName: u.bankName || '',
     bankAccount: u.bankAccount || '',
     ifsc: u.ifsc || '',
     rejectReason: u.kycRejectReason || '',
@@ -41,6 +43,7 @@ export default function AdminUsersPanel({ users }: Props) {
   const [form, setForm] = useState<KycForm>({
     kycPan: '',
     kycDemat: '',
+    bankName: '',
     bankAccount: '',
     ifsc: '',
     rejectReason: '',
@@ -79,8 +82,10 @@ export default function AdminUsersPanel({ users }: Props) {
         kycRejectReason: payload.kycRejectReason || '',
         kycPan: f.kycPan.trim().toUpperCase(),
         kycDemat: f.kycDemat.trim(),
+        bankName: f.bankName.trim(),
         bankAccount: f.bankAccount.trim(),
         ifsc: f.ifsc.trim().toUpperCase(),
+        kycDematProof: payload.user.kycDematProof || '',
         referralCode: f.referralCode.trim().toUpperCase(),
       });
     },
@@ -314,6 +319,28 @@ export default function AdminUsersPanel({ users }: Props) {
                 onChange={(e) => setField({ kycDemat: e.target.value.replace(/\D/g, '').slice(0, 16) })}
                 placeholder="1234567890123456"
                 maxLength={16}
+              />
+            </div>
+            {detail.kycDematProof && (
+              <div className="form-group">
+                <label className="form-label">CMR / Demat proof</label>
+                <div className="kyc-admin-proof">
+                  <a href={`/${detail.kycDematProof.replace(/^\//, '')}`} target="_blank" rel="noopener noreferrer">
+                    Open proof
+                  </a>
+                  {!/\.pdf$/i.test(detail.kycDematProof) && (
+                    <img src={`/${detail.kycDematProof.replace(/^\//, '')}`} alt="Demat proof" />
+                  )}
+                </div>
+              </div>
+            )}
+            <div className="form-group">
+              <label className="form-label">Bank name</label>
+              <input
+                className="form-input"
+                value={form.bankName}
+                onChange={(e) => setField({ bankName: e.target.value })}
+                placeholder="HDFC Bank"
               />
             </div>
             <div className="form-group">

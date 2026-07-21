@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { getOrders, updateOrderStatus } from '../../../api/orders';
-import { getUsers, mapApiUser } from '../../../api/admin';
+import { getOrders, updateOrderStatus, transferOrder } from '../../../api/orders';
+import { getEmployees, getUsers, mapApiUser } from '../../../api/admin';
 import { useToast } from '../../../context/ToastContext';
+import { useAdminPanel } from '../../../context/AdminPanelContext';
 import { formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, getOrderDate } from '../../../utils/format';
-import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, ORDER_STATUS } from '../../../utils/orderStatus';
 import { displayUserCode } from '../../../utils/userCode';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import AdminSectionHeader from '../components/AdminSectionHeader';
@@ -33,11 +34,18 @@ export default function AdminVerifyPaymentsPanel() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Order | null>(null);
 
+  const { isMaster, can } = useAdminPanel();
+
   const ordersQuery = useQuery({
     queryKey: ['admin-orders'],
     queryFn: getOrders,
   });
   const usersQuery = useQuery({ queryKey: ['admin-users'], queryFn: async () => (await getUsers()).map(mapApiUser) });
+  const employeesQuery = useQuery({
+    queryKey: ['admin-employees'],
+    queryFn: getEmployees,
+    enabled: isMaster && can('view-all-orders'),
+  });
 
   const orders = ordersQuery.data || [];
   const users = usersQuery.data || [];
@@ -52,7 +60,12 @@ export default function AdminVerifyPaymentsPanel() {
   const statusMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
     onSuccess: (_, { status }) => {
-      showToast(status === 'Confirmed' ? 'Payment verified' : 'Payment rejected', 'success');
+      showToast(
+        status === ORDER_STATUS.TRANSFER_PENDING
+          ? 'Payment verified — pending share transfer'
+          : 'Payment rejected',
+        'success',
+      );
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
       setSelected(null);
@@ -60,15 +73,25 @@ export default function AdminVerifyPaymentsPanel() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
+  const transferMutation = useMutation({
+    mutationFn: ({ orderId, employeeCode }: { orderId: string; employeeCode: string }) => transferOrder(orderId, employeeCode),
+    onSuccess: () => {
+      showToast('Order assigned to employee', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
   const verify = (id: string) => {
-    if (confirm('Verify this payment against bank credit and confirm the order?')) {
-      statusMutation.mutate({ orderId: id, status: 'Confirmed' });
+    if (confirm('Verify this payment against bank credit? Order will move to Pending Share Transfer.')) {
+      statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING });
     }
   };
 
   const reject = (id: string) => {
     if (confirm('Reject this payment? Buyer will need to contact support.')) {
-      statusMutation.mutate({ orderId: id, status: 'Rejected' });
+      statusMutation.mutate({ orderId: id, status: ORDER_STATUS.REJECTED });
     }
   };
 
@@ -77,7 +100,7 @@ export default function AdminVerifyPaymentsPanel() {
       <AdminSectionHeader
         compact
         title="Verify Payments"
-        subtitle="Search UTR from bank SMS, mobile, or name — then Verify or Reject"
+        subtitle="Manual / Offline only — match bank credit (amount + buyer + time), then Verify → Share Transfer"
         badge={`${pendingOrders.length} pending`}
       />
 
@@ -86,10 +109,10 @@ export default function AdminVerifyPaymentsPanel() {
           type="search"
           inputMode="search"
           className="report-filter-input stock-list-search"
-          placeholder="Search UTR, mobile, name, email, order ID..."
+          placeholder="Search mobile, name, email, order ID, payment ref..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search payments by UTR, mobile, name or order ID"
+          aria-label="Search payments by mobile, name or order ID"
           autoFocus
         />
         {search.trim() && (
@@ -106,7 +129,7 @@ export default function AdminVerifyPaymentsPanel() {
 
       {!searching && (
         <p className="verify-payments-hint" style={{ margin: '0 0 1rem' }}>
-          Showing your pending payments (your referral code only). Search UTR / mobile to find your orders, then Verify or Reject.
+          Online checkout orders skip this queue (buyer self-confirms payment). Only manual / Offline deals appear here for Verify or Reject.
         </p>
       )}
 
@@ -134,8 +157,8 @@ export default function AdminVerifyPaymentsPanel() {
           <strong>{searching ? 'No orders match your search' : 'No pending payments'}</strong>
           <p style={{ margin: '0.5rem 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
             {searching
-              ? 'Try UTR, 10-digit mobile (with or without 91), name, or order ID. Only your referral orders appear here.'
-              : 'Buyers who signed up with your code and submitted UTR appear here.'}
+              ? 'Try 10-digit mobile, name, order ID, or payment reference. Only your referral orders appear here.'
+              : 'Manual deals awaiting bank match appear here. Online orders go straight to Share Transfer.'}
           </p>
         </div>
       )}
@@ -145,7 +168,7 @@ export default function AdminVerifyPaymentsPanel() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>UTR / Txn ID</th>
+                <th>Payment Ref</th>
                 <th>Buyer</th>
                 <th>Share</th>
                 <th>Amount</th>
@@ -199,7 +222,13 @@ export default function AdminVerifyPaymentsPanel() {
                         </>
                       ) : (
                         <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
-                          {/reject/i.test(o.status) ? 'Rejected' : /confirm/i.test(o.status) ? 'Verified' : o.status}
+                          {/reject/i.test(o.status)
+                            ? 'Rejected'
+                            : /transfer/i.test(o.status)
+                              ? 'Share Transfer'
+                              : /confirm|verif/i.test(o.status)
+                                ? 'Verified'
+                                : o.status}
                         </span>
                       )}
                     </td>
@@ -217,6 +246,12 @@ export default function AdminVerifyPaymentsPanel() {
         onClose={() => setSelected(null)}
         onVerify={selected && isPendingOrder(selected.status) ? verify : undefined}
         onReject={selected && isPendingOrder(selected.status) ? reject : undefined}
+        employees={employeesQuery.data || []}
+        onTransfer={
+          isMaster && selected && isPendingOrder(selected.status)
+            ? (orderId, employeeCode) => transferMutation.mutateAsync({ orderId, employeeCode })
+            : undefined
+        }
       />
     </div>
   );

@@ -143,6 +143,14 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE users ADD COLUMN kyc_reject_reason VARCHAR(255) DEFAULT NULL AFTER kyc_status");
     }
+    $res = $conn->query("SHOW COLUMNS FROM users LIKE 'bank_name'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN bank_name VARCHAR(100) DEFAULT NULL AFTER bank_account");
+    }
+    $res = $conn->query("SHOW COLUMNS FROM users LIKE 'kyc_demat_proof'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN kyc_demat_proof VARCHAR(255) DEFAULT NULL AFTER kyc_demat");
+    }
 
     $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'ops_note'");
     if ($res && $res->num_rows === 0) {
@@ -386,6 +394,8 @@ function sanitizeArticleHtml($html) {
 const PUBLIC_SETTINGS_KEYS = [
     'email', 'mobile', 'whatsapp', 'address', 'disclaimer',
     'bank_name', 'bank_ac_name', 'bank_ac_no', 'bank_ifsc', 'bank_upi', 'bank_branch', 'bank_address',
+    // Needed on public checkout so fee toggle + charge lines match admin Site Settings
+    'enable_invoice_charges', 'invoice_custom_charges',
 ];
 
 /** Fallback company contact when settings row is missing (Admin → Site Settings overrides). */
@@ -628,7 +638,9 @@ function mapUserRow(array $row): array {
         'kycRejectReason' => $row['kyc_reject_reason'] ?? '',
         'kycPan' => $row['kyc_pan'],
         'kycDemat' => $row['kyc_demat'],
+        'kycDematProof' => $row['kyc_demat_proof'] ?? '',
         'bankAccount' => $row['bank_account'],
+        'bankName' => $row['bank_name'] ?? '',
         'ifsc' => $row['ifsc'],
         'referralCode' => normalizeUserCode((string) ($row['referral_code'] ?? '')),
     ];
@@ -696,6 +708,90 @@ function mapInitiatedCheckoutRow(array $row): array {
     ];
 }
 
+/** Payment accepted / transfer in progress / done — invoice + inventory apply. */
+function orderStatusIsPaid(string $status): bool {
+    $s = strtolower(trim($status));
+    return strpos($s, 'confirm') !== false
+        || strpos($s, 'verif') !== false
+        || strpos($s, 'transfer') !== false
+        || strpos($s, 'complete') !== false;
+}
+
+/** Platform fee + custom charges — matches invoice snapshot logic. */
+function computeOrderChargeTotals(float $subtotal, mysqli $conn): array {
+    $total_amount = $subtotal;
+    $custom_charges_json = null;
+    $setStmt = $conn->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('enable_invoice_charges', 'invoice_custom_charges')");
+    $settings = [];
+    if ($setStmt) {
+        while ($sRow = $setStmt->fetch_assoc()) {
+            $settings[$sRow['setting_key']] = $sRow['setting_value'];
+        }
+    }
+    $enableCharges = ($settings['enable_invoice_charges'] ?? '0') === '1';
+    if ($enableCharges) {
+        $chargesStr = $settings['invoice_custom_charges'] ?? '[]';
+        $charges = json_decode($chargesStr, true);
+        if (is_array($charges) && !empty($charges)) {
+            $snapshot = [];
+            foreach ($charges as $c) {
+                $cType = $c['type'] ?? 'flat';
+                $cVal = (float) ($c['value'] ?? $c['price'] ?? 0);
+                $cName = $c['name'] ?? 'Charge';
+                $amt = 0.0;
+                if ($cType === 'percentage') {
+                    $amt = round($subtotal * ($cVal / 100), 2);
+                } else {
+                    $amt = round($cVal, 2);
+                }
+                $total_amount += $amt;
+                $snapshot[] = [
+                    'name' => $cName,
+                    'type' => $cType,
+                    'value' => $cVal,
+                    'amount' => $amt,
+                ];
+            }
+            $custom_charges_json = json_encode($snapshot);
+        }
+    }
+    return [
+        'total' => round($total_amount, 2),
+        'custom_charges_json' => $custom_charges_json,
+    ];
+}
+
+function employeeCodeExists(mysqli $conn, string $code): bool {
+    $code = strtoupper(trim($code));
+    if ($code === '' || $code === 'GU00') {
+        return true;
+    }
+    $stmt = $conn->prepare('SELECT id FROM employees WHERE UPPER(employee_id) = ? LIMIT 1');
+    $stmt->bind_param('s', $code);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
+}
+
+function resolveOrderEmployeeCode(mysqli $conn, array $data, ?array $existingOrder, bool $isAdmin, bool $isUser, string $user_id): string {
+    $assigned = strtoupper(trim((string) ($data['assignEmployeeCode'] ?? $data['employeeCode'] ?? '')));
+    if ($isAdmin && isMasterAdminSession()) {
+        if ($assigned !== '') {
+            return sanitizeStoredUserCode($assigned);
+        }
+        if ($existingOrder) {
+            return sanitizeStoredUserCode((string) ($existingOrder['employee_code'] ?? ''));
+        }
+        return '';
+    }
+    if ($isAdmin && !isMasterAdminSession()) {
+        return sanitizeStoredUserCode(currentEmployeeCode($conn));
+    }
+    if ($isUser) {
+        return sanitizeStoredUserCode(lookupEmployeeCodeForUser($conn, $user_id));
+    }
+    return '';
+}
+
 /** Block privilege escalation via manipulated order status (Burp Suite). */
 function requireOrderStatusChange(string $newStatus): void {
     requireAdmin();
@@ -704,12 +800,17 @@ function requireOrderStatusChange(string $newStatus): void {
         requireAnyPermission(['pending', 'orders', 'cancel-refund', 'manual-order']);
         return;
     }
-    // Verify Payments: confirm or reject payment against bank UTR
+    // Verify Payments: confirm/reject, or move to share-transfer / complete / undo-complete
     if (strpos($s, 'confirm') !== false || strpos($s, 'verif') !== false || strpos($s, 'reject') !== false) {
         requirePermission('pending');
         return;
     }
     if (strpos($s, 'complete') !== false || strpos($s, 'transfer') !== false) {
+        requirePermission('pending');
+        return;
+    }
+    // Undo Completed → Pending Verification is rare; allow with pending
+    if (strpos($s, 'pending') !== false) {
         requirePermission('pending');
         return;
     }
@@ -1149,7 +1250,7 @@ switch ($action) {
         $userRow = resolveUserByLoginId($conn, $loginId);
         if ($userRow) {
             $uid = $userRow['id'];
-            $stmt = $conn->prepare("SELECT id, password, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE id = ? LIMIT 1");
+            $stmt = $conn->prepare("SELECT id, password, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc FROM users WHERE id = ? LIMIT 1");
             $stmt->bind_param('s', $uid);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -1200,7 +1301,7 @@ switch ($action) {
             ]);
         } else if (isset($_SESSION['user_id'])) {
             $uid = $_SESSION['user_id'];
-            $stmt = $conn->prepare('SELECT id, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc FROM users WHERE id = ?');
+            $stmt = $conn->prepare('SELECT id, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc FROM users WHERE id = ?');
             $stmt->bind_param('s', $uid);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -1554,10 +1655,10 @@ switch ($action) {
     case 'getUsers':
         requirePermission('users');
         if (isMasterAdminSession() || adminCan('view-all-kyc')) {
-            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users ORDER BY created_at DESC");
+            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users ORDER BY created_at DESC");
         } else {
             $code = currentEmployeeCode($conn);
-            $stmt = $conn->prepare("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, bank_account, ifsc, created_at FROM users WHERE UPPER(referral_code) = ? ORDER BY created_at DESC");
+            $stmt = $conn->prepare("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users WHERE UPPER(referral_code) = ? ORDER BY created_at DESC");
             $stmt->bind_param('s', $code);
             $stmt->execute();
             $res = $stmt->get_result();
@@ -1624,7 +1725,26 @@ switch ($action) {
         $kyc_pan = htmlspecialchars($data['kycPan'] ?? '');
         $kyc_demat = htmlspecialchars($data['kycDemat'] ?? '');
         $bank_account = htmlspecialchars($data['bankAccount'] ?? $data['bank_account'] ?? '');
+        $bank_name = htmlspecialchars(trim((string) ($data['bankName'] ?? $data['bank_name'] ?? '')));
         $ifsc = htmlspecialchars(strtoupper($data['ifsc'] ?? $data['ifscCode'] ?? ''));
+
+        // Preserve demat proof / bank name when admin edits without resending them
+        $kyc_demat_proof = trim((string) ($data['kycDematProof'] ?? $data['kyc_demat_proof'] ?? ''));
+        if ($kyc_demat_proof !== '' && !preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $kyc_demat_proof)) {
+            $kyc_demat_proof = '';
+        }
+        if ($exists) {
+            $prev = $conn->prepare('SELECT kyc_demat_proof, bank_name FROM users WHERE id = ? LIMIT 1');
+            $prev->bind_param('s', $id);
+            $prev->execute();
+            $prevRow = $prev->get_result()->fetch_assoc() ?: [];
+            if ($kyc_demat_proof === '' && !empty($prevRow['kyc_demat_proof'])) {
+                $kyc_demat_proof = (string) $prevRow['kyc_demat_proof'];
+            }
+            if ($bank_name === '' && array_key_exists('bankName', $data) === false && array_key_exists('bank_name', $data) === false) {
+                $bank_name = htmlspecialchars(trim((string) ($prevRow['bank_name'] ?? '')));
+            }
+        }
 
         // Validate Employee Code if it was changed
         $referral_code = strtoupper(trim($referral_code));
@@ -1672,11 +1792,11 @@ switch ($action) {
         if ($exists) {
             if (!empty($data['password'])) {
                 $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("UPDATE users SET name=?, phone=?, email=?, role=?, referral_code=?, kyc_status=?, kyc_reject_reason=?, kyc_pan=?, kyc_demat=?, bank_account=?, ifsc=?, password=? WHERE id=?");
-                $stmt->bind_param("sssssssssssss", $name, $phone, $email, $role, $referral_code, $kyc_status, $kyc_reject_reason, $kyc_pan, $kyc_demat, $bank_account, $ifsc, $hashed, $id);
+                $stmt = $conn->prepare("UPDATE users SET name=?, phone=?, email=?, role=?, referral_code=?, kyc_status=?, kyc_reject_reason=?, kyc_pan=?, kyc_demat=?, kyc_demat_proof=?, bank_account=?, bank_name=?, ifsc=?, password=? WHERE id=?");
+                $stmt->bind_param("sssssssssssssss", $name, $phone, $email, $role, $referral_code, $kyc_status, $kyc_reject_reason, $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc, $hashed, $id);
             } else {
-                $stmt = $conn->prepare("UPDATE users SET name=?, phone=?, email=?, role=?, referral_code=?, kyc_status=?, kyc_reject_reason=?, kyc_pan=?, kyc_demat=?, bank_account=?, ifsc=? WHERE id=?");
-                $stmt->bind_param("ssssssssssss", $name, $phone, $email, $role, $referral_code, $kyc_status, $kyc_reject_reason, $kyc_pan, $kyc_demat, $bank_account, $ifsc, $id);
+                $stmt = $conn->prepare("UPDATE users SET name=?, phone=?, email=?, role=?, referral_code=?, kyc_status=?, kyc_reject_reason=?, kyc_pan=?, kyc_demat=?, kyc_demat_proof=?, bank_account=?, bank_name=?, ifsc=? WHERE id=?");
+                $stmt->bind_param("ssssssssssssss", $name, $phone, $email, $role, $referral_code, $kyc_status, $kyc_reject_reason, $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc, $id);
             }
             $stmt->execute();
         } else {
@@ -1694,8 +1814,8 @@ switch ($action) {
                 sendResponse(['error' => 'An account with this email or phone already exists. Try logging in instead.']);
                 break;
             }
-            $stmt = $conn->prepare("INSERT INTO users (id, name, phone, email, password, role, referral_code, kyc_status, kyc_pan, kyc_demat, bank_account, ifsc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssssssssss", $id, $name, $phone, $email, $hashed, $role, $referral_code, $kyc_status, $kyc_pan, $kyc_demat, $bank_account, $ifsc);
+            $stmt = $conn->prepare("INSERT INTO users (id, name, phone, email, password, role, referral_code, kyc_status, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssssssssssssss", $id, $name, $phone, $email, $hashed, $role, $referral_code, $kyc_status, $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc);
             $stmt->execute();
 
             session_regenerate_id(true);
@@ -1736,24 +1856,169 @@ switch ($action) {
     // -----------------------------------------
     case 'updateKyc':
         requireAuth();
+        validateCsrfToken();
         $data = getPostData();
         $user_id = $_SESSION['user_id'] ?? null;
         if (!$user_id) {
             http_response_code(403);
             sendResponse(["error" => "Only logged-in users can update their KYC"]);
+            break;
         }
 
-        $kyc_pan = htmlspecialchars($data['pan'] ?? '');
-        $kyc_demat = htmlspecialchars($data['demat'] ?? '');
-        $bank_account = htmlspecialchars($data['bankAccount'] ?? $data['bank'] ?? '');
-        $ifsc = htmlspecialchars(strtoupper($data['ifsc'] ?? ''));
+        // Block edits while already verified
+        $cur = $conn->prepare('SELECT kyc_status, kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
+        $cur->bind_param('s', $user_id);
+        $cur->execute();
+        $curRow = $cur->get_result()->fetch_assoc();
+        if ($curRow && strcasecmp(trim((string) $curRow['kyc_status']), 'Verified') === 0) {
+            http_response_code(403);
+            sendResponse(['error' => 'KYC is already verified. Contact support to change details.']);
+            break;
+        }
+
+        $kyc_pan = strtoupper(trim((string) ($data['pan'] ?? '')));
+        $kyc_demat = preg_replace('/\D/', '', (string) ($data['demat'] ?? ''));
+        $bank_account = preg_replace('/\s+/', '', trim((string) ($data['bankAccount'] ?? $data['bank'] ?? '')));
+        $bank_name = trim((string) ($data['bankName'] ?? $data['bank_name'] ?? ''));
+        $ifsc = strtoupper(trim((string) ($data['ifsc'] ?? '')));
+        $kyc_demat_proof = trim((string) ($data['kycDematProof'] ?? $data['dematProof'] ?? ''));
+        if ($kyc_demat_proof === '' && !empty($curRow['kyc_demat_proof'])) {
+            $kyc_demat_proof = (string) $curRow['kyc_demat_proof'];
+        }
+
+        if (!preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $kyc_pan)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid PAN format (e.g. ABCDE1234F)']);
+            break;
+        }
+        if (!preg_match('/^\d{16}$/', $kyc_demat)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Demat account must be exactly 16 digits']);
+            break;
+        }
+        if (strlen($bank_name) < 2 || strlen($bank_name) > 100) {
+            http_response_code(400);
+            sendResponse(['error' => 'Bank name is required']);
+            break;
+        }
+        if (!preg_match('/^\d{9,18}$/', $bank_account)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Enter a valid bank account number (9–18 digits)']);
+            break;
+        }
+        if (!preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid IFSC code']);
+            break;
+        }
+        if ($kyc_demat_proof === '' || !preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $kyc_demat_proof)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Upload CMR / demat proof (image or PDF) before submitting']);
+            break;
+        }
+        $proofPath = __DIR__ . '/../' . $kyc_demat_proof;
+        if (!is_file($proofPath)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Demat proof file not found. Please upload again.']);
+            break;
+        }
+
+        $kyc_pan = htmlspecialchars($kyc_pan);
+        $kyc_demat = htmlspecialchars($kyc_demat);
+        $bank_account = htmlspecialchars($bank_account);
+        $bank_name = htmlspecialchars($bank_name);
+        $ifsc = htmlspecialchars($ifsc);
         $kyc_status = 'Under Review';
 
-        $stmt = $conn->prepare("UPDATE users SET kyc_pan=?, kyc_demat=?, bank_account=?, ifsc=?, kyc_status=?, kyc_reject_reason=NULL WHERE id=?");
-        $stmt->bind_param("ssssss", $kyc_pan, $kyc_demat, $bank_account, $ifsc, $kyc_status, $user_id);
+        $stmt = $conn->prepare("UPDATE users SET kyc_pan=?, kyc_demat=?, kyc_demat_proof=?, bank_account=?, bank_name=?, ifsc=?, kyc_status=?, kyc_reject_reason=NULL WHERE id=?");
+        $stmt->bind_param("ssssssss", $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc, $kyc_status, $user_id);
         $stmt->execute();
 
+        logAudit($conn, 'User KYC Submit', $user_id, ['pan' => $kyc_pan]);
         sendResponse(["success" => true, "kycStatus" => $kyc_status]);
+        break;
+
+    case 'uploadKycDematProof':
+        requireAuth();
+        validateCsrfToken();
+        $user_id = $_SESSION['user_id'] ?? null;
+        if (!$user_id) {
+            http_response_code(403);
+            sendResponse(['error' => 'Login required to upload demat proof']);
+            break;
+        }
+        if (!isset($_FILES['proof'])) {
+            http_response_code(400);
+            sendResponse(['error' => 'No file received. Try again.']);
+            break;
+        }
+        $fileErr = (int) ($_FILES['proof']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($fileErr !== UPLOAD_ERR_OK) {
+            $uploadErrors = [
+                UPLOAD_ERR_INI_SIZE => 'File exceeds server limit',
+                UPLOAD_ERR_FORM_SIZE => 'File too large',
+                UPLOAD_ERR_PARTIAL => 'Upload incomplete — try again',
+                UPLOAD_ERR_NO_FILE => 'No file selected',
+            ];
+            http_response_code(400);
+            sendResponse(['error' => $uploadErrors[$fileErr] ?? "Upload error code $fileErr"]);
+            break;
+        }
+        $tmpName = $_FILES['proof']['tmp_name'];
+        $fileSize = (int) $_FILES['proof']['size'];
+        if ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+            http_response_code(400);
+            sendResponse(['error' => 'File must be under 5MB']);
+            break;
+        }
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+        $allowedMimes = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+        ];
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $info = @getimagesize($tmpName);
+            if (is_array($info) && !empty($info['mime']) && isset($allowedMimes[$info['mime']])) {
+                $mime = $info['mime'];
+            }
+        }
+        if (!isset($allowedMimes[$mime])) {
+            http_response_code(400);
+            sendResponse(['error' => 'Use JPG, PNG, WEBP, or PDF only']);
+            break;
+        }
+        $uploadDir = __DIR__ . '/../uploads/kyc/';
+        if (!is_dir($uploadDir)) {
+            if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                http_response_code(500);
+                sendResponse(['error' => 'Could not create upload folder. Create public_html/uploads/kyc on the server.']);
+                break;
+            }
+        }
+        if (!is_writable($uploadDir)) {
+            http_response_code(500);
+            sendResponse(['error' => 'Upload folder is not writable. Set permissions on uploads/kyc.']);
+            break;
+        }
+        $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $user_id) ?: 'user';
+        $filename = 'kyc_' . $safeUser . '_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
+        $target = $uploadDir . $filename;
+        if (!move_uploaded_file($tmpName, $target)) {
+            http_response_code(500);
+            sendResponse(['error' => 'Failed to save file']);
+            break;
+        }
+        @chmod($target, 0644);
+        $url = 'uploads/kyc/' . $filename;
+        logAudit($conn, 'Upload KYC Demat Proof', $user_id, ['file' => $filename]);
+        sendResponse(['success' => true, 'url' => $url]);
         break;
 
     case 'getAccountContacts':
@@ -1902,6 +2167,60 @@ switch ($action) {
         sendResponse($data);
         break;
 
+    case 'transferOrder':
+        requireAdmin();
+        if (!isMasterAdminSession() && !adminCan('view-all-orders')) {
+            http_response_code(403);
+            sendResponse(['error' => 'Only master admin can reassign orders to employees']);
+            break;
+        }
+        $data = getPostData();
+        $order_id = strtoupper(trim($data['orderId'] ?? ''));
+        $employee_code = strtoupper(trim($data['employeeCode'] ?? $data['assignEmployeeCode'] ?? ''));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid order ID']);
+            break;
+        }
+        if ($employee_code === '') {
+            http_response_code(400);
+            sendResponse(['error' => 'Employee code is required']);
+            break;
+        }
+        if (!employeeCodeExists($conn, $employee_code)) {
+            http_response_code(400);
+            sendResponse(['error' => "Employee code $employee_code does not exist"]);
+            break;
+        }
+        $stmtCheck = $conn->prepare('SELECT order_id, employee_code, status FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck->bind_param('s', $order_id);
+        $stmtCheck->execute();
+        $orderRow = $stmtCheck->get_result()->fetch_assoc();
+        if (!$orderRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'Order not found']);
+            break;
+        }
+        $employee_code = sanitizeStoredUserCode($employee_code);
+        $upd = $conn->prepare('UPDATE orders SET employee_code = ? WHERE order_id = ?');
+        $upd->bind_param('ss', $employee_code, $order_id);
+        if (!$upd->execute()) {
+            http_response_code(500);
+            sendResponse(['error' => 'Could not transfer order']);
+            break;
+        }
+        logAudit($conn, 'Transfer Order', $_SESSION['admin_id'], [
+            'orderId' => $order_id,
+            'from' => $orderRow['employee_code'] ?? '',
+            'to' => $employee_code,
+        ]);
+        sendResponse([
+            'success' => true,
+            'orderId' => $order_id,
+            'employeeCode' => normalizeUserCode($employee_code),
+        ]);
+        break;
+
     case 'saveOrder':
         $data = getPostData();
         $order_id = strtoupper(trim($data['orderId'] ?? ''));
@@ -1923,6 +2242,14 @@ switch ($action) {
 
         // Full update for manual orders by admin
         $fullUpdate = !empty($data['_fullUpdate']) && $isAdmin;
+
+        if ($existingOrder && $fullUpdate) {
+            if (!orderBelongsToEmployee($conn, $existingOrder)) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only update orders assigned to your employee code']);
+                break;
+            }
+        }
 
         if ($existingOrder && !$fullUpdate) {
             if ($isAdmin && !orderBelongsToEmployee($conn, $existingOrder)) {
@@ -1956,15 +2283,12 @@ switch ($action) {
                 'status' => $status,
                 'utr' => $transaction_id,
             ]);
-            $statusLower = strtolower($status);
-            if (strpos($statusLower, 'confirm') !== false || strpos($statusLower, 'verif') !== false || strpos($statusLower, 'complete') !== false) {
+            if (orderStatusIsPaid($status)) {
                 createInvoiceFromOrder($conn, $order_id);
-                
-                // Only decrement inventory if the previous status was not already confirmed/verified/completed
-                $oldStatusLower = strtolower($existingOrder['status']);
-                $wasAlreadyConfirmed = strpos($oldStatusLower, 'confirm') !== false || strpos($oldStatusLower, 'verif') !== false || strpos($oldStatusLower, 'complete') !== false;
-                
-                if (!$wasAlreadyConfirmed) {
+
+                // Decrement inventory once when payment first becomes accepted
+                $wasAlreadyPaid = orderStatusIsPaid((string) ($existingOrder['status'] ?? ''));
+                if (!$wasAlreadyPaid) {
                     $ord = $conn->prepare('SELECT share_id, quantity FROM orders WHERE order_id = ? LIMIT 1');
                     $ord->bind_param('s', $order_id);
                     $ord->execute();
@@ -1999,10 +2323,33 @@ switch ($action) {
         $method = trim($data['method'] ?? $data['paymentMethod'] ?? 'Online');
         $order_source = trim($data['orderSource'] ?? $data['source'] ?? 'Online');
         $transaction_id = strtoupper(preg_replace('/\s+/', '', trim($data['transactionId'] ?? $data['utr'] ?? '')));
-        $isManualAdmin = $isAdmin && !$isUser && ($order_source === 'Offline' || strtolower(trim($data['status'] ?? '')) === 'confirmed');
-        $status = $isManualAdmin
-            ? trim($data['status'] ?? 'Confirmed')
-            : 'Pending Verification';
+        // Offline/manual = phone/WhatsApp deals — need payment verify. Online checkout = self-confirm pay → share transfer queue.
+        $isManualAdmin = $isAdmin && !$isUser && (
+            strcasecmp($order_source, 'Offline') === 0
+            || strcasecmp($order_source, 'Manual') === 0
+        );
+        if ($isManualAdmin) {
+            // New manual orders need payment verify; edits keep existing status
+            if (!empty($fullUpdate) && $existingOrder) {
+                $status = trim((string) ($existingOrder['status'] ?? 'Pending Verification'));
+            } else {
+                $status = 'Pending Verification';
+            }
+        } else {
+            $status = 'Transfer Pending';
+            // Online buyers must not type UTR/UPI IDs — ops match bank credit by amount + buyer + time
+            $transaction_id = '';
+            $paymentConfirmed = $data['paymentConfirmed'] ?? false;
+            $confirmedOk = $paymentConfirmed === true
+                || $paymentConfirmed === 1
+                || $paymentConfirmed === '1'
+                || $paymentConfirmed === 'true';
+            if (!$confirmedOk) {
+                http_response_code(400);
+                sendResponse(['error' => 'Please confirm that you have completed the payment']);
+                break;
+            }
+        }
 
         if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
             $buyer_name = $buyer_email !== '' ? explode('@', $buyer_email)[0] : ($buyer_phone !== '' ? 'Buyer ' . substr($buyer_phone, -4) : 'Buyer');
@@ -2022,16 +2369,13 @@ switch ($action) {
             sendResponse(["error" => "Invalid share or quantity"]);
             break;
         }
-        if ($transaction_id !== '') {
-            if (strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+        if ($isManualAdmin) {
+            // Optional reference for ops (bank UTR). Online never collects this.
+            if ($transaction_id !== '' && (strlen($transaction_id) < 6 || strlen($transaction_id) > 30)) {
                 http_response_code(400);
-                sendResponse(["error" => "Enter a valid UTR / transaction ID (6–30 characters)"]);
+                sendResponse(["error" => "Payment reference must be 6–30 characters"]);
                 break;
             }
-        } elseif (!$isManualAdmin) {
-            http_response_code(400);
-            sendResponse(["error" => "Enter a valid UTR / transaction ID (6–30 characters)"]);
-            break;
         }
 
         // Server-side price from catalog when available (online checkout — manual keeps entered price)
@@ -2076,58 +2420,54 @@ switch ($action) {
             break;
         }
 
-        // Block duplicate UTR (same payment submitted twice)
-        if ($transaction_id !== '') {
+        // Block duplicate payment reference (manual UTR only)
+        if ($isManualAdmin && $transaction_id !== '') {
             $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
             $dupUtr->bind_param("s", $transaction_id);
             $dupUtr->execute();
             if ($dupUtr->get_result()->num_rows > 0) {
                 http_response_code(409);
-                sendResponse(["error" => "This UTR is already registered. Contact support if you need help."]);
+                sendResponse(["error" => "This payment reference is already registered. Contact support if you need help."]);
+                break;
+            }
+        }
+
+        // Online security: login + KYC already required below; also rate-limit spam "I've paid" claims
+        if (!$isManualAdmin && $isUser) {
+            $uid = (string) $_SESSION['user_id'];
+            $hourStmt = $conn->prepare(
+                "SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
+            );
+            $hourStmt->bind_param('s', $uid);
+            $hourStmt->execute();
+            $hourCount = (int) (($hourStmt->get_result()->fetch_assoc()['c'] ?? 0));
+            if ($hourCount >= 5) {
+                http_response_code(429);
+                sendResponse(['error' => 'Too many orders in a short time. Please wait and try again, or contact support.']);
+                break;
+            }
+            $recentStmt = $conn->prepare(
+                "SELECT order_id FROM orders
+                 WHERE user_id = ? AND share_id = ?
+                   AND created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                   AND status NOT LIKE '%Cancel%'
+                   AND status NOT LIKE '%Reject%'
+                   AND status NOT LIKE '%Refund%'
+                 LIMIT 1"
+            );
+            $recentStmt->bind_param('ss', $uid, $share_id);
+            $recentStmt->execute();
+            if ($recentStmt->get_result()->num_rows > 0) {
+                http_response_code(409);
+                sendResponse(['error' => 'You already placed an order for this share just now. Check Portfolio, or wait a few minutes.']);
                 break;
             }
         }
 
         $subtotal = $price_per_share * $quantity;
-        $total_amount = $subtotal;
-        $custom_charges_json = null;
-
-        // Calculate dynamic custom charges from settings
-        $setStmt = $conn->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('enable_invoice_charges', 'invoice_custom_charges')");
-        $settings = [];
-        if ($setStmt) {
-            while ($sRow = $setStmt->fetch_assoc()) {
-                $settings[$sRow['setting_key']] = $sRow['setting_value'];
-            }
-        }
-        
-        $enableCharges = ($settings['enable_invoice_charges'] ?? '1') !== '0';
-        if ($enableCharges) {
-            $chargesStr = $settings['invoice_custom_charges'] ?? '[{"name":"Platform Fee","type":"percentage","value":1}]';
-            $charges = json_decode($chargesStr, true);
-            if (is_array($charges) && !empty($charges)) {
-                $snapshot = [];
-                foreach ($charges as $c) {
-                    $cType = $c['type'] ?? 'flat';
-                    $cVal = (float)($c['value'] ?? $c['price'] ?? 0);
-                    $cName = $c['name'] ?? 'Charge';
-                    $amt = 0.0;
-                    if ($cType === 'percentage') {
-                        $amt = round($subtotal * ($cVal / 100), 2);
-                    } else {
-                        $amt = round($cVal, 2);
-                    }
-                    $total_amount += $amt;
-                    $snapshot[] = [
-                        'name' => $cName,
-                        'type' => $cType,
-                        'value' => $cVal,
-                        'amount' => $amt
-                    ];
-                }
-                $custom_charges_json = json_encode($snapshot);
-            }
-        }
+        $chargeTotals = computeOrderChargeTotals($subtotal, $conn);
+        $total_amount = $chargeTotals['total'];
+        $custom_charges_json = $chargeTotals['custom_charges_json'];
 
         // Online checkout requires a logged-in user and KYC verification
         if ($isUser) {
@@ -2160,13 +2500,14 @@ switch ($action) {
         $transaction_id = htmlspecialchars($transaction_id);
         $order_source = htmlspecialchars($order_source);
 
-        $employee_code = '';
-        if ($isAdmin && !isMasterAdminSession()) {
-            $employee_code = currentEmployeeCode($conn);
-        } elseif ($isUser) {
-            $employee_code = lookupEmployeeCodeForUser($conn, $user_id);
+        $assignedCode = strtoupper(trim((string) ($data['assignEmployeeCode'] ?? $data['employeeCode'] ?? '')));
+        if ($isAdmin && isMasterAdminSession() && $assignedCode !== '' && !employeeCodeExists($conn, $assignedCode)) {
+            http_response_code(400);
+            sendResponse(['error' => "Invalid employee code: $assignedCode"]);
+            break;
         }
-        $employee_code = sanitizeStoredUserCode($employee_code);
+
+        $employee_code = resolveOrderEmployeeCode($conn, $data, $existingOrder, $isAdmin, $isUser, $user_id ?? '');
 
         if ($order_id === '') {
             $order_id = allocateNextOrderId($conn);
@@ -2232,8 +2573,11 @@ switch ($action) {
             break;
         }
 
-        if ($isManualAdmin && (stripos($status, 'confirm') !== false || stripos($status, 'verif') !== false)) {
+        if (orderStatusIsPaid($status)) {
             createInvoiceFromOrder($conn, $order_id);
+            $dec = $conn->prepare('UPDATE shares SET qty_on_hand = GREATEST(0, qty_on_hand - ?) WHERE share_id = ?');
+            $dec->bind_param('is', $quantity, $share_id);
+            $dec->execute();
         }
 
         sendResponse([
@@ -2354,14 +2698,21 @@ switch ($action) {
         }
         $user_id = 'admin:' . $_SESSION['admin_id'];
         $method = $row['payment_mode'] ?: 'Offline';
-        $status = 'Confirmed';
+        $status = 'Pending Verification';
         $employee_code = strtoupper(trim((string) ($row['employee_code'] ?? '')));
         if ($employee_code === '' && !isMasterAdminSession()) {
             $employee_code = currentEmployeeCode($conn);
         }
+
+        // Recalculate charges from server-side settings to keep totals + invoice snapshot consistent
+        $subtotal = (float) ($row['price_per_share'] ?? 0) * (int) ($row['qty'] ?? 0);
+        $chargeTotals = computeOrderChargeTotals($subtotal, $conn);
+        $total_amount = $chargeTotals['total'];
+        $custom_charges_json = $chargeTotals['custom_charges_json'];
+
         $purchasedAt = date('Y-m-d H:i:s');
-        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?, ?)");
-        $ins->bind_param("ssssssssdidssss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $row['total_amount'], $method, $status, $employee_code, $purchasedAt);
+        $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code, created_at, custom_charges_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?, ?, ?)");
+        $ins->bind_param("ssssssssdidsssss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $total_amount, $method, $status, $employee_code, $purchasedAt, $custom_charges_json);
         $ins->execute();
         $del = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");
         $del->bind_param("s", $session_id);

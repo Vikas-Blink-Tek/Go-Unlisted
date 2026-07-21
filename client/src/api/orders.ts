@@ -18,3 +18,10 @@ export function saveOrder(order: Record<string, unknown>) {
 export function updateOrderStatus(orderId: string, status: string, opsNote?: string) {
   return apiRequest<{ success: boolean }>('saveOrder', 'POST', { orderId, status, opsNote });
 }
+
+export function transferOrder(orderId: string, employeeCode: string) {
+  return apiRequest<{ success: boolean; orderId: string; employeeCode?: string }>('transferOrder', 'POST', {
+    orderId,
+    employeeCode,
+  });
+}

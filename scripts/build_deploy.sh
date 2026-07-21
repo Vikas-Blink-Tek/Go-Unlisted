@@ -34,8 +34,10 @@ rm -f "$DEPLOY/api/db_config.local.php" "$DEPLOY/api/deploy.config.php"
 
 # Uploads directory security
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true
-mkdir -p "$DEPLOY/uploads/shares"
+mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc"
 cp "$ROOT/uploads/shares/.htaccess" "$DEPLOY/uploads/shares/" 2>/dev/null || true
+cp "$ROOT/uploads/kyc/.htaccess" "$DEPLOY/uploads/kyc/" 2>/dev/null || true
+touch "$DEPLOY/uploads/kyc/.gitkeep"
 
 # Never ship logs or install locks
 rm -f "$DEPLOY/api/php_errors.log" "$DEPLOY/api/.installed"

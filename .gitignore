@@ -23,6 +23,11 @@ Thumbs.db
 uploads/shares/*
 !uploads/shares/.htaccess
 
+# KYC demat / CMR proofs
+uploads/kyc/*
+!uploads/kyc/.htaccess
+!uploads/kyc/.gitkeep
+
 # Logs & temp
 api/php_errors.log
 *.log
