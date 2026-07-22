@@ -49,6 +49,34 @@ export function adminDeleteArticle(id: number) {
   return apiRequest<{ success: boolean }>('adminDeleteArticle', 'POST', { id });
 }
 
+export async function adminUploadArticleImage(file: File) {
+  if (!file.type.match(/^image\/(jpeg|png|webp)$/i) && !/\.(jpe?g|png|webp)$/i.test(file.name)) {
+    throw new Error('Use JPG, PNG or WEBP only');
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Image too large (max 5MB)');
+  }
+  const form = new FormData();
+  form.append('image', file);
+  const token = await ensureCsrfToken();
+  const res = await fetch('/api/api.php?action=adminUploadImage', {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers: { 'X-CSRF-Token': token },
+  });
+  let data: { success?: boolean; url?: string; error?: string } = {};
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(res.ok ? 'Invalid server response' : `Upload failed (HTTP ${res.status})`);
+  }
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || 'Image upload failed');
+  }
+  return data as { success: boolean; url: string };
+}
+
 export function getMailStatus() {
   return apiRequest<{ smtp_configured: boolean; smtp_host?: string | null; mail_from: string; config_file?: boolean }>(
     'getMailStatus',

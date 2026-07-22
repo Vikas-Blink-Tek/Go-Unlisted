@@ -11,11 +11,19 @@ npm run build
 
 echo "Preparing deploy package..."
 rm -rf "$DEPLOY"
-mkdir -p "$DEPLOY/api" "$DEPLOY/uploads" "$DEPLOY/scripts"
+# Match Hostinger public_html layout exactly
+mkdir -p "$DEPLOY/api" "$DEPLOY/assets" "$DEPLOY/client" "$DEPLOY/scripts" "$DEPLOY/uploads"
 
 # React frontend (dist already includes public/ assets)
 cp -r "$ROOT/client/dist/"* "$DEPLOY/"
 cp "$ROOT/deploy/public_html.htaccess" "$DEPLOY/.htaccess"
+
+# Root helpers (same files already on public_html)
+cp "$ROOT/schema.sql" "$DEPLOY/schema.sql"
+cp "$ROOT/setup.php" "$DEPLOY/setup.php"
+# Keep empty client/ + scripts/ folders so extract matches File Manager layout
+touch "$DEPLOY/client/.gitkeep"
+touch "$DEPLOY/scripts/.gitkeep"
 
 # Backend
 cp "$ROOT/api/"*.php "$DEPLOY/api/"
@@ -23,7 +31,7 @@ cp "$ROOT/api/.htaccess" "$DEPLOY/api/"
 # Bake DB + SMTP credentials when deploy.config.php exists (required for OTP emails on Hostinger)
 if [ -f "$ROOT/api/deploy.config.php" ]; then
   php "$ROOT/scripts/render_deploy_configs.php" "$DEPLOY/api"
-  echo "  ✓ db_config.php + mail_config.php baked from deploy.config.php"
+  echo "  ✓ db_config.php + mail_config.php baked from deploy.config.php (live credentials)"
 else
   cp "$ROOT/api/db_config.example.php" "$DEPLOY/api/db_config.example.php"
   cp "$ROOT/api/mail_config.example.php" "$DEPLOY/api/mail_config.example.php"
@@ -34,10 +42,11 @@ rm -f "$DEPLOY/api/db_config.local.php" "$DEPLOY/api/deploy.config.php"
 
 # Uploads directory security
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true
-mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc"
+mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc" "$DEPLOY/uploads/articles"
 cp "$ROOT/uploads/shares/.htaccess" "$DEPLOY/uploads/shares/" 2>/dev/null || true
 cp "$ROOT/uploads/kyc/.htaccess" "$DEPLOY/uploads/kyc/" 2>/dev/null || true
-touch "$DEPLOY/uploads/kyc/.gitkeep"
+cp "$ROOT/uploads/articles/.htaccess" "$DEPLOY/uploads/articles/" 2>/dev/null || true
+touch "$DEPLOY/uploads/kyc/.gitkeep" "$DEPLOY/uploads/articles/.gitkeep"
 
 # Never ship logs or install locks
 rm -f "$DEPLOY/api/php_errors.log" "$DEPLOY/api/.installed"

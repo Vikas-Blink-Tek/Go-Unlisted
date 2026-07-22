@@ -48,6 +48,7 @@ export default function CheckoutPage() {
   const safeQty = typeof qty === 'number' && !isNaN(qty) ? qty : 0;
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
   const [paidConfirmed, setPaidConfirmed] = useState(false);
+  const [utr, setUtr] = useState('');
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState('');
   const [showTiersModal, setShowTiersModal] = useState(false);
@@ -222,6 +223,7 @@ export default function CheckoutPage() {
     }
     setPaymentMode(null);
     setPaidConfirmed(false);
+    setUtr('');
     setStep(2);
   };
 
@@ -236,6 +238,11 @@ export default function CheckoutPage() {
     }
     if (!paidConfirmed) {
       showToast('Confirm that you have completed the payment', 'warning');
+      return;
+    }
+    const utrClean = utr.trim().replace(/\s+/g, '').toUpperCase();
+    if (utrClean.length < 6 || utrClean.length > 30) {
+      showToast('Enter your UTR / UPI reference (6–30 characters) from the payment app', 'warning');
       return;
     }
     setPaying(true);
@@ -253,12 +260,13 @@ export default function CheckoutPage() {
         qty: safeQty,
         method: methodLabel,
         orderSource: 'Online',
+        transactionId: utrClean,
         paymentConfirmed: true,
       });
       setOrderId(res.orderId || '');
       try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
       setStep(3);
-      showToast('Payment confirmed — shares added to your portfolio.', 'success');
+      showToast('Payment submitted — shares added to your portfolio.', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Order failed', 'error');
     } finally {
@@ -336,13 +344,32 @@ export default function CheckoutPage() {
           </div>
         )}
 
+        <div className="form-group" style={{ marginTop: '1.25rem' }}>
+          <label className="form-label" htmlFor="checkout-utr">
+            UTR / UPI reference *
+          </label>
+          <input
+            id="checkout-utr"
+            className="form-input"
+            value={utr}
+            onChange={(e) => setUtr(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+            placeholder="Paste UTR from GPay / PhonePe / bank SMS"
+            maxLength={30}
+            autoComplete="off"
+            inputMode="text"
+          />
+          <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>
+            Temporary until Razorpay is live — open your UPI / bank app after paying and copy the UTR / reference number.
+          </p>
+        </div>
+
         <label
           className="pay-confirm-check"
           style={{
             display: 'flex',
             gap: 10,
             alignItems: 'flex-start',
-            marginTop: '1.25rem',
+            marginTop: '1rem',
             padding: '0.85rem 1rem',
             borderRadius: 10,
             border: '1px solid var(--border, #e5e7eb)',
@@ -358,17 +385,27 @@ export default function CheckoutPage() {
             style={{ marginTop: 3 }}
           />
           <span style={{ fontSize: '0.9rem', lineHeight: 1.45 }}>
-            I have paid <strong>{formatCurrency(total)}</strong> from my UPI / bank app (after tapping Pay above).
+            I have paid <strong>{formatCurrency(total)}</strong> and entered the correct UTR above.
             Shares will appear in my portfolio.
           </span>
         </label>
 
         <div className="pay-actions">
-          <button type="button" className="btn btn-ghost" onClick={() => setPaymentMode(null)}>← Change method</button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setPaymentMode(null);
+              setPaidConfirmed(false);
+              setUtr('');
+            }}
+          >
+            ← Change method
+          </button>
           <button
             type="button"
             className="btn btn-primary btn-full"
-            disabled={paying || !paidConfirmed}
+            disabled={paying || !paidConfirmed || utr.trim().length < 6}
             onClick={handleConfirmPayment}
           >
             {paying ? 'Confirming…' : 'Confirm payment & place order'}
@@ -545,10 +582,11 @@ export default function CheckoutPage() {
                 <div className="confirm-row"><span className="lbl">Quantity</span><span className="val">{qty} shares</span></div>
                 <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
                 <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
+                <div className="confirm-row"><span className="lbl">UTR</span><span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span></div>
                 <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--green)' }}>In portfolio · share transfer pending</span></div>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
-                No UTR needed. Open Portfolio anytime to track this order.
+                We verify your UTR against bank credit. Open Portfolio anytime to track this order.
               </p>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>

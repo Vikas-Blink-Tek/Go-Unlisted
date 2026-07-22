@@ -12,7 +12,7 @@ import { clearAdminPortal, portalFromAuth, readAdminPortal, storeAdminPortal } f
 import { adminNavIcon } from './adminNavIcons';
 
 function AdminShell() {
-  const { activePanel, setActivePanel, isMaster, allowedPanels } = useAdminPanel();
+  const { activePanel, setActivePanel, isMaster, allowedPanels, adminName, employeeCode } = useAdminPanel();
   const navigate = useNavigate();
   const current = allowedPanels.find((p) => p.id === activePanel);
   const groups = [...new Set(allowedPanels.map((p) => p.group))];
@@ -81,7 +81,17 @@ function AdminShell() {
             {current?.hint && <p className="admin-topbar-hint">{current.hint}</p>}
           </div>
           <div className="admin-topbar-right">
-            <span className={isMaster ? 'admin-badge' : 'emp-badge'}>{isMaster ? 'Master Admin' : 'Employee'}</span>
+            {isMaster ? (
+              <span className="admin-badge">Master Admin</span>
+            ) : (
+              <div className="admin-user-chip" title={employeeCode ? `${adminName || 'Employee'} · ${employeeCode}` : (adminName || 'Employee')}>
+                <div className="admin-user-chip-text">
+                  <span className="admin-user-chip-name">{adminName || 'Employee'}</span>
+                  {employeeCode && <span className="admin-user-chip-code">{employeeCode}</span>}
+                </div>
+                <span className="emp-badge">Employee</span>
+              </div>
+            )}
           </div>
         </header>
         <div className="admin-page-content">
@@ -121,8 +131,15 @@ export default function AdminLayout() {
             id: res.id,
             isMaster: !!res.isMaster,
             permissions: res.permissions || [],
+            name: res.name || '',
+            employeeCode: res.employeeCode || res.employeeId || '',
           };
-          sessionStorage.setItem('gu_admin', JSON.stringify({ id: auth.id, isMaster: auth.isMaster }));
+          sessionStorage.setItem('gu_admin', JSON.stringify({
+            id: auth.id,
+            isMaster: auth.isMaster,
+            name: auth.name,
+            employeeCode: auth.employeeCode,
+          }));
           storeAdminPortal(portalFromAuth(auth.isMaster, res.portal));
           setVerifiedAuth(auth);
           setAuthState('ok');

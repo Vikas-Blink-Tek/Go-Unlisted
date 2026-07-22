@@ -1,17 +1,35 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { saveOrder, getOrders } from '../../../api/orders';
+import { getUsers, mapApiUser } from '../../../api/admin';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
-import { calcOrderTotal, formatCurrency } from '../../../utils/format';
+import { calcOrderTotal, formatCurrency, formatIndianPhoneDisplay, formatPersonName } from '../../../utils/format';
 import { useSiteSettings } from '../../../hooks/useSiteSettings';
 import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 import AutofillBlocker from '../../../components/forms/AutofillBlocker';
 import { blockTelInput, blockTextInput } from '../../../utils/autofill';
-import type { Order } from '../../../types';
+import type { Order, User } from '../../../types';
 
-const empty = { orderId: '', name: '', phone: '', shareId: '', qty: '', price: '', method: 'NEFT', utr: '', source: 'Offline' };
+const empty = {
+  userId: '',
+  orderId: '',
+  name: '',
+  phone: '',
+  email: '',
+  shareId: '',
+  qty: '',
+  price: '',
+  method: 'NEFT',
+  utr: '',
+  source: 'Offline',
+};
+
+function normalizePhone(phone: string) {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
 
 export default function AdminManualOrderPanel() {
   const { showToast } = useToast();
@@ -20,12 +38,32 @@ export default function AdminManualOrderPanel() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState<string | null>(null);
+  const [clientSearch, setClientSearch] = useState('');
+
+  const usersQuery = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: async () => (await getUsers()).map(mapApiUser),
+  });
+  const signupUsers = usersQuery.data || [];
+
+  const filteredUsers = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    const qDigits = clientSearch.replace(/\D/g, '');
+    const list = [...signupUsers].sort((a, b) => a.name.localeCompare(b.name));
+    if (!q && !qDigits) return list;
+    return list.filter((u) => {
+      const hay = `${u.name} ${u.phone} ${u.email} ${u.referralCode || ''}`.toLowerCase();
+      if (q && hay.includes(q)) return true;
+      if (qDigits.length >= 3 && normalizePhone(u.phone).includes(qDigits)) return true;
+      return false;
+    });
+  }, [signupUsers, clientSearch]);
 
   const handleQtyChange = (val: string) => {
     const qty = parseInt(val, 10) || 0;
     const share = shares.find((s) => s.id === form.shareId);
     let newPrice = form.price;
-    
+
     if (share) {
       let price = share.price;
       if (share.discountTiers && share.discountTiers.length > 0) {
@@ -39,7 +77,7 @@ export default function AdminManualOrderPanel() {
       }
       newPrice = String(price);
     }
-    
+
     setForm({ ...form, qty: val, price: newPrice });
   };
 
@@ -53,9 +91,25 @@ export default function AdminManualOrderPanel() {
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       setForm(empty);
       setEditId(null);
+      setClientSearch('');
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
+
+  const selectUser = (user: User | null) => {
+    if (!user) {
+      setForm({ ...form, userId: '', name: '', phone: '', email: '' });
+      return;
+    }
+    setForm({
+      ...form,
+      userId: user.id,
+      name: user.name,
+      phone: normalizePhone(user.phone),
+      email: user.email || '',
+    });
+    setClientSearch('');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,17 +127,18 @@ export default function AdminManualOrderPanel() {
     }
     saveMut.mutate({
       ...(editId ? { orderId: editId } : {}),
+      ...(form.userId ? { userId: form.userId } : {}),
       shareId: share.id,
       shareName: share.name,
       shareTicker: share.ticker,
       buyerName: form.name.trim(),
       buyerPhone: form.phone,
-      buyerEmail: '',
+      buyerEmail: form.email.trim(),
       pricePerShare: price,
       qty,
       method: form.method,
       transactionId: utrClean || undefined,
-      status: 'Pending Verification',
+      status: 'Transfer Pending',
       orderSource: form.source,
       _fullUpdate: !!editId,
     });
@@ -91,10 +146,15 @@ export default function AdminManualOrderPanel() {
 
   const loadEdit = (o: Order) => {
     setEditId(o.orderId);
+    const linked = o.userId && !o.userId.startsWith('admin:')
+      ? signupUsers.find((u) => u.id === o.userId)
+      : undefined;
     setForm({
+      userId: linked?.id || (o.userId && !o.userId.startsWith('admin:') ? o.userId : ''),
       orderId: o.orderId,
       name: o.buyerName,
-      phone: o.buyerPhone || '',
+      phone: normalizePhone(o.buyerPhone || ''),
+      email: o.buyerEmail || linked?.email || '',
       shareId: o.shareId,
       qty: String(o.qty),
       price: String(o.pricePerShare),
@@ -102,6 +162,7 @@ export default function AdminManualOrderPanel() {
       utr: o.transactionId || o.utr || '',
       source: o.orderSource || 'Offline',
     });
+    setClientSearch('');
   };
 
   return (
@@ -109,7 +170,7 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader
         compact
         title="Manual Order Entry"
-        subtitle="Record phone / WhatsApp deals. New orders go to Verify Payments, then share transfer."
+        subtitle="Record phone / WhatsApp deals. Status starts at Share Transfer — client portfolio shows only after you mark Complete."
       />
 
       <div className="report-filter-box">
@@ -117,13 +178,71 @@ export default function AdminManualOrderPanel() {
         <form onSubmit={handleSubmit} autoComplete="off" style={{ position: 'relative' }}>
           <AutofillBlocker />
           <div className="report-filter-grid">
+            <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
+              <label className="report-filter-label">Select signup user</label>
+              <select
+                className="report-filter-input"
+                value={form.userId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) {
+                    selectUser(null);
+                    return;
+                  }
+                  const user = signupUsers.find((u) => u.id === id) || null;
+                  selectUser(user);
+                }}
+              >
+                <option value="">— Type below to search, or choose a registered client —</option>
+                {filteredUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {formatPersonName(u.name)} · {formatIndianPhoneDisplay(u.phone)}
+                    {u.referralCode ? ` · ${u.referralCode}` : ''}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="report-filter-input"
+                style={{ marginTop: '0.45rem' }}
+                placeholder="Search signup users by name or mobile…"
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                {...blockTextInput({ name: 'manual-order-user-search' })}
+              />
+              {usersQuery.isLoading && (
+                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>Loading signup users…</p>
+              )}
+              {!usersQuery.isLoading && signupUsers.length === 0 && (
+                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
+                  No signup users yet. You can still type name &amp; mobile manually below.
+                </p>
+              )}
+              {form.userId && (
+                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
+                  Linked to signup account — shares appear in their portfolio only after you mark the order Complete.
+                </p>
+              )}
+            </div>
             <div className="report-filter-group">
               <label className="report-filter-label">Client Name *</label>
-              <input className="report-filter-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} {...blockTextInput({ name: 'manual-order-name' })} />
+              <input
+                className="report-filter-input"
+                required
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value, userId: form.userId })}
+                {...blockTextInput({ name: 'manual-order-name' })}
+              />
             </div>
             <div className="report-filter-group">
               <label className="report-filter-label">Mobile *</label>
-              <input className="report-filter-input" required maxLength={10} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} {...blockTelInput({ name: 'manual-order-phone' })} />
+              <input
+                className="report-filter-input"
+                required
+                maxLength={10}
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                {...blockTelInput({ name: 'manual-order-phone' })}
+              />
             </div>
             <div className="report-filter-group">
               <label className="report-filter-label">Scrip *</label>
@@ -180,7 +299,19 @@ export default function AdminManualOrderPanel() {
           )}
           <div className="report-filter-actions">
             <button type="submit" className="btn btn-primary" disabled={saveMut.isPending}>{editId ? 'Update Order' : 'Create Order'}</button>
-            {editId && <button type="button" className="btn btn-ghost" onClick={() => { setEditId(null); setForm(empty); }}>Cancel Edit</button>}
+            {editId && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setEditId(null);
+                  setForm(empty);
+                  setClientSearch('');
+                }}
+              >
+                Cancel Edit
+              </button>
+            )}
           </div>
         </form>
       </div>
@@ -193,7 +324,12 @@ export default function AdminManualOrderPanel() {
             {manualOrders.slice(0, 20).map((o) => (
               <tr key={o.orderId}>
                 <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
-                <td>{o.buyerName}</td>
+                <td>
+                  <div>{formatPersonName(o.buyerName)}</div>
+                  {o.buyerPhone && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{formatIndianPhoneDisplay(o.buyerPhone)}</div>
+                  )}
+                </td>
                 <td>{o.companyName || o.shareName}</td>
                 <td>{o.qty}</td>
                 <td>{formatCurrency(o.totalPaid || 0)}</td>

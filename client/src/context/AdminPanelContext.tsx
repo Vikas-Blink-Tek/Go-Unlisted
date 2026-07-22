@@ -45,6 +45,8 @@ export interface VerifiedAdminAuth {
   id: string;
   isMaster: boolean;
   permissions: string[];
+  name?: string;
+  employeeCode?: string;
 }
 
 export const EMPLOYEE_PERMISSION_OPTIONS: { id: AdminPanelId; label: string; group: string }[] = [
@@ -103,6 +105,8 @@ export function panelsForRole(isMaster: boolean, permissions: string[] = []) {
 interface AdminPanelContextValue {
   isMaster: boolean;
   adminId: string;
+  adminName: string;
+  employeeCode: string;
   permissions: string[];
   allowedPanels: AdminPanelDef[];
   activePanel: AdminPanelId;
@@ -170,6 +174,8 @@ export function AdminPanelProvider({
       value={{
         isMaster,
         adminId: verifiedAuth.id,
+        adminName: (verifiedAuth.name || '').trim(),
+        employeeCode: (verifiedAuth.employeeCode || '').trim().toUpperCase(),
         permissions,
         allowedPanels,
         activePanel,

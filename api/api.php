@@ -264,6 +264,32 @@ function autoMigrateSchema($conn) {
         UNIQUE KEY uniq_order_invoice (order_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
+    $conn->query("CREATE TABLE IF NOT EXISTS articles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        slug VARCHAR(255) NOT NULL,
+        content LONGTEXT NOT NULL,
+        image_url VARCHAR(255) DEFAULT NULL,
+        category VARCHAR(100) DEFAULT '',
+        tags VARCHAR(255) DEFAULT '',
+        author VARCHAR(100) DEFAULT 'GoUnlisted Team',
+        status ENUM('draft','published') DEFAULT 'published',
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY slug (slug)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $articleCols = [
+        'category' => "VARCHAR(100) DEFAULT '' AFTER image_url",
+        'tags' => "VARCHAR(255) DEFAULT '' AFTER category",
+    ];
+    foreach ($articleCols as $col => $def) {
+        $res = $conn->query("SHOW COLUMNS FROM articles LIKE '$col'");
+        if ($res && $res->num_rows === 0) {
+            $conn->query("ALTER TABLE articles ADD COLUMN $col $def");
+        }
+    }
+
     seedDefaultSharesIfEmpty($conn);
 }
 autoMigrateSchema($conn);
@@ -383,12 +409,143 @@ function seedDemoUserIfEmpty(mysqli $conn): void {
 }
 
 function sanitizeArticleHtml($html) {
-    $html = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
-    $html = preg_replace('/<iframe\b[^>]*>.*?<\/iframe>/is', '', $html);
-    $html = preg_replace('/\s+on\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $html);
-    $html = preg_replace('/javascript\s*:/i', '', $html);
-    $allowed = '<p><br><strong><em><b><i><ul><ol><li><h1><h2><h3><h4><h5><h6><a><img><blockquote><code><pre><span><div><table><thead><tbody><tr><th><td>';
-    return strip_tags($html, $allowed);
+    $html = (string) $html;
+    $html = preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html) ?? '';
+    $html = preg_replace('/<iframe\b[^>]*>.*?<\/iframe>/is', '', $html) ?? '';
+    $html = preg_replace('/javascript\s*:/i', '', $html) ?? '';
+
+    if (!class_exists('DOMDocument')) {
+        $allowed = '<p><br><strong><em><b><i><u><ul><ol><li><h1><h2><h3><h4><h5><h6><a><img><blockquote><code><pre><span><div><table><thead><tbody><tr><th><td>';
+        return strip_tags($html, $allowed);
+    }
+
+    $allowedTags = [
+        'p' => true, 'br' => true, 'strong' => true, 'em' => true, 'b' => true, 'i' => true, 'u' => true,
+        'ul' => true, 'ol' => true, 'li' => true,
+        'h1' => true, 'h2' => true, 'h3' => true, 'h4' => true, 'h5' => true, 'h6' => true,
+        'a' => true, 'img' => true, 'blockquote' => true, 'code' => true, 'pre' => true,
+        'span' => true, 'div' => true, 'table' => true, 'thead' => true, 'tbody' => true,
+        'tr' => true, 'th' => true, 'td' => true,
+    ];
+
+    $prev = libxml_use_internal_errors(true);
+    $doc = new DOMDocument('1.0', 'UTF-8');
+    $wrapped = '<?xml encoding="UTF-8"><div id="gu-root">' . $html . '</div>';
+    if (!@$doc->loadHTML($wrapped, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD)) {
+        libxml_clear_errors();
+        libxml_use_internal_errors($prev);
+        $allowed = '<' . implode('><', array_keys($allowedTags)) . '>';
+        return strip_tags($html, $allowed);
+    }
+
+    $xpath = new DOMXPath($doc);
+    // Remove / unwrap disallowed tags first (snapshot list)
+    $all = [];
+    foreach ($xpath->query('//*') as $node) {
+        if ($node instanceof DOMElement) {
+            $all[] = $node;
+        }
+    }
+    foreach (array_reverse($all) as $node) {
+        $tag = strtolower($node->tagName);
+        if ($tag === 'div' && $node->getAttribute('id') === 'gu-root') {
+            continue;
+        }
+        if (!isset($allowedTags[$tag])) {
+            $parent = $node->parentNode;
+            if ($parent) {
+                while ($node->firstChild) {
+                    $parent->insertBefore($node->firstChild, $node);
+                }
+                $parent->removeChild($node);
+            }
+        }
+    }
+
+    foreach ($xpath->query('//*') as $node) {
+        if (!($node instanceof DOMElement)) {
+            continue;
+        }
+        $tag = strtolower($node->tagName);
+        if ($tag === 'div' && $node->getAttribute('id') === 'gu-root') {
+            continue;
+        }
+        if (!isset($allowedTags[$tag])) {
+            continue;
+        }
+
+        $keep = [];
+        if ($tag === 'a') {
+            $href = trim((string) $node->getAttribute('href'));
+            if ($href !== '' && !preg_match('/^\s*javascript:/i', $href)) {
+                $keep['href'] = $href;
+            }
+        }
+        if ($tag === 'img') {
+            $src = trim((string) $node->getAttribute('src'));
+            if ($src !== '' && (preg_match('#^https?://#i', $src) || preg_match('#^uploads/#', $src))) {
+                $keep['src'] = $src;
+            }
+            $alt = trim((string) $node->getAttribute('alt'));
+            if ($alt !== '') {
+                $keep['alt'] = mb_substr($alt, 0, 200);
+            }
+        }
+        $style = (string) $node->getAttribute('style');
+        if (preg_match('/text-align\s*:\s*(left|right|center|justify)\s*;?/i', $style, $m)) {
+            $keep['style'] = 'text-align: ' . strtolower($m[1]) . ';';
+        }
+
+        $attrNames = [];
+        if ($node->hasAttributes()) {
+            foreach ($node->attributes as $attr) {
+                $attrNames[] = $attr->name;
+            }
+        }
+        foreach ($attrNames as $name) {
+            $node->removeAttribute($name);
+        }
+        foreach ($keep as $k => $v) {
+            $node->setAttribute($k, $v);
+        }
+    }
+
+    $root = null;
+    foreach ($xpath->query('//*[@id="gu-root"]') as $candidate) {
+        if ($candidate instanceof DOMElement) {
+            $root = $candidate;
+            break;
+        }
+    }
+    $out = '';
+    if ($root) {
+        foreach ($root->childNodes as $child) {
+            $out .= $doc->saveHTML($child);
+        }
+    }
+    libxml_clear_errors();
+    libxml_use_internal_errors($prev);
+    return $out;
+}
+
+function normalizeArticleTags($raw): string {
+    $parts = preg_split('/[,;]+/', (string) $raw) ?: [];
+    $clean = [];
+    foreach ($parts as $p) {
+        $t = trim(preg_replace('/\s+/', ' ', $p) ?? '');
+        $t = mb_substr($t, 0, 40);
+        if ($t === '') {
+            continue;
+        }
+        $key = mb_strtolower($t);
+        if (!isset($clean[$key])) {
+            $clean[$key] = $t;
+        }
+        if (count($clean) >= 12) {
+            break;
+        }
+    }
+    return implode(', ', array_values($clean));
 }
 
 const PUBLIC_SETTINGS_KEYS = [
@@ -451,7 +608,7 @@ function refreshAdminSession(mysqli $conn): bool {
         return false;
     }
     $adminId = (string) $_SESSION['admin_id'];
-    $stmt = $conn->prepare('SELECT is_master, permissions, employee_id FROM employees WHERE id = ? LIMIT 1');
+    $stmt = $conn->prepare('SELECT name, is_master, permissions, employee_id FROM employees WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return false;
     }
@@ -459,7 +616,7 @@ function refreshAdminSession(mysqli $conn): bool {
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) {
-        unset($_SESSION['admin_id'], $_SESSION['is_master'], $_SESSION['admin_permissions'], $_SESSION['employee_id'], $_SESSION['admin_portal']);
+        unset($_SESSION['admin_id'], $_SESSION['is_master'], $_SESSION['admin_permissions'], $_SESSION['employee_id'], $_SESSION['admin_portal'], $_SESSION['admin_name']);
         return false;
     }
     $isMaster = (int) ($row['is_master'] ?? 0) === 1;
@@ -475,6 +632,7 @@ function refreshAdminSession(mysqli $conn): bool {
         ? ['*']
         : parseEmployeePermissions($row['permissions'] ?? '');
     $_SESSION['employee_id'] = strtoupper(trim((string) ($row['employee_id'] ?? '')));
+    $_SESSION['admin_name'] = trim((string) ($row['name'] ?? ''));
     $_SESSION['admin_portal'] = $isMaster ? 'master' : 'staff';
     return true;
 }
@@ -1222,6 +1380,7 @@ switch ($action) {
                 $_SESSION['is_master'] = $isMasterRow ? 1 : 0;
                 $_SESSION['admin_portal'] = $portal;
                 $_SESSION['employee_id'] = $row['employee_id'] ?? '';
+                $_SESSION['admin_name'] = trim((string) ($row['name'] ?? ''));
                 $perms = $isMasterRow
                     ? ['*']
                     : parseEmployeePermissions($row['permissions'] ?? '');
@@ -1234,6 +1393,7 @@ switch ($action) {
                     "portal" => $portal,
                     "name" => $row['name'],
                     "employeeId" => $row['employee_id'] ?? '',
+                    "employeeCode" => $row['employee_id'] ?? '',
                     "permissions" => $perms,
                 ]);
             }
@@ -1295,6 +1455,8 @@ switch ($action) {
                 "id" => $_SESSION['admin_id'],
                 "isMaster" => !empty($_SESSION['is_master']),
                 "portal" => $portal,
+                "name" => $_SESSION['admin_name'] ?? '',
+                "employeeId" => $_SESSION['employee_id'] ?? '',
                 "employeeCode" => $_SESSION['employee_id'] ?? '',
                 "permissions" => $perms,
                 "csrfToken" => ensureCsrfToken(),
@@ -1653,7 +1815,7 @@ switch ($action) {
     // USERS (Admin Only or Self)
     // -----------------------------------------
     case 'getUsers':
-        requirePermission('users');
+        requireAnyPermission(['users', 'signups', 'manual-order']);
         if (isMasterAdminSession() || adminCan('view-all-kyc')) {
             $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users ORDER BY created_at DESC");
         } else {
@@ -2221,6 +2383,62 @@ switch ($action) {
         ]);
         break;
 
+    case 'adminDeleteOrder':
+        requireAdmin();
+        if (!isMasterAdminSession()) {
+            http_response_code(403);
+            sendResponse(['error' => 'Only master admin can permanently delete an order']);
+            break;
+        }
+        $data = getPostData();
+        $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid order ID']);
+            break;
+        }
+        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, total_amount, status, user_id FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck->bind_param('s', $order_id);
+        $stmtCheck->execute();
+        $orderRow = $stmtCheck->get_result()->fetch_assoc();
+        if (!$orderRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'Order not found']);
+            break;
+        }
+        $conn->begin_transaction();
+        try {
+            $delInv = $conn->prepare('DELETE FROM invoices WHERE order_id = ?');
+            $delInv->bind_param('s', $order_id);
+            $delInv->execute();
+            $invDeleted = $delInv->affected_rows;
+            $delOrd = $conn->prepare('DELETE FROM orders WHERE order_id = ? LIMIT 1');
+            $delOrd->bind_param('s', $order_id);
+            $delOrd->execute();
+            $ordDeleted = $delOrd->affected_rows;
+            $conn->commit();
+        } catch (Throwable $e) {
+            $conn->rollback();
+            http_response_code(500);
+            sendResponse(['error' => 'Could not delete order']);
+            break;
+        }
+        logAudit($conn, 'Delete Order', $_SESSION['admin_id'], [
+            'orderId' => $order_id,
+            'buyerName' => $orderRow['buyer_name'] ?? '',
+            'shareName' => $orderRow['share_name'] ?? '',
+            'totalAmount' => $orderRow['total_amount'] ?? '',
+            'status' => $orderRow['status'] ?? '',
+            'invoicesDeleted' => $invDeleted,
+        ]);
+        sendResponse([
+            'success' => true,
+            'orderId' => $order_id,
+            'deleted' => $ordDeleted > 0,
+            'invoicesDeleted' => $invDeleted,
+        ]);
+        break;
+
     case 'saveOrder':
         $data = getPostData();
         $order_id = strtoupper(trim($data['orderId'] ?? ''));
@@ -2329,16 +2547,15 @@ switch ($action) {
             || strcasecmp($order_source, 'Manual') === 0
         );
         if ($isManualAdmin) {
-            // New manual orders need payment verify; edits keep existing status
+            // Manual / Offline: payment already taken offline — skip Verify queue, go to share transfer
             if (!empty($fullUpdate) && $existingOrder) {
-                $status = trim((string) ($existingOrder['status'] ?? 'Pending Verification'));
+                $status = trim((string) ($existingOrder['status'] ?? 'Transfer Pending'));
             } else {
-                $status = 'Pending Verification';
+                $status = 'Transfer Pending';
             }
         } else {
             $status = 'Transfer Pending';
-            // Online buyers must not type UTR/UPI IDs — ops match bank credit by amount + buyer + time
-            $transaction_id = '';
+            // Until Razorpay is live: collect buyer UTR + checkbox confirm
             $paymentConfirmed = $data['paymentConfirmed'] ?? false;
             $confirmedOk = $paymentConfirmed === true
                 || $paymentConfirmed === 1
@@ -2347,6 +2564,11 @@ switch ($action) {
             if (!$confirmedOk) {
                 http_response_code(400);
                 sendResponse(['error' => 'Please confirm that you have completed the payment']);
+                break;
+            }
+            if ($transaction_id === '' || strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+                http_response_code(400);
+                sendResponse(['error' => 'Enter your UTR / UPI reference from the payment app (6–30 characters)']);
                 break;
             }
         }
@@ -2369,13 +2591,10 @@ switch ($action) {
             sendResponse(["error" => "Invalid share or quantity"]);
             break;
         }
-        if ($isManualAdmin) {
-            // Optional reference for ops (bank UTR). Online never collects this.
-            if ($transaction_id !== '' && (strlen($transaction_id) < 6 || strlen($transaction_id) > 30)) {
-                http_response_code(400);
-                sendResponse(["error" => "Payment reference must be 6–30 characters"]);
-                break;
-            }
+        if ($transaction_id !== '' && (strlen($transaction_id) < 6 || strlen($transaction_id) > 30)) {
+            http_response_code(400);
+            sendResponse(["error" => "Payment reference must be 6–30 characters"]);
+            break;
         }
 
         // Server-side price from catalog when available (online checkout — manual keeps entered price)
@@ -2420,8 +2639,8 @@ switch ($action) {
             break;
         }
 
-        // Block duplicate payment reference (manual UTR only)
-        if ($isManualAdmin && $transaction_id !== '') {
+        // Block duplicate payment reference (UTR)
+        if ($transaction_id !== '') {
             $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
             $dupUtr->bind_param("s", $transaction_id);
             $dupUtr->execute();
@@ -2483,7 +2702,42 @@ switch ($action) {
             }
         } elseif ($isAdmin) {
             requirePermission('manual-order');
+            $linkedUserId = trim((string) ($data['userId'] ?? $data['linkedUserId'] ?? ''));
             $user_id = 'admin:' . $_SESSION['admin_id'];
+            if ($linkedUserId !== '' && !str_starts_with($linkedUserId, 'admin:')) {
+                $uStmt = $conn->prepare('SELECT id, name, phone, email, referral_code FROM users WHERE id = ? LIMIT 1');
+                $uStmt->bind_param('s', $linkedUserId);
+                $uStmt->execute();
+                $linkedUser = $uStmt->get_result()->fetch_assoc();
+                if (!$linkedUser) {
+                    http_response_code(400);
+                    sendResponse(['error' => 'Selected signup user not found']);
+                    break;
+                }
+                if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
+                    $code = currentEmployeeCode($conn);
+                    $ref = strtoupper(trim((string) ($linkedUser['referral_code'] ?? '')));
+                    if ($code === '' || $ref !== $code) {
+                        http_response_code(403);
+                        sendResponse(['error' => 'You can only create manual orders for users signed up with your employee code']);
+                        break;
+                    }
+                }
+                $user_id = (string) $linkedUser['id'];
+                // Prefer profile name/phone/email when admin selected a signup user
+                if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
+                    $buyer_name = trim((string) ($linkedUser['name'] ?? $buyer_name));
+                }
+                if ($buyer_phone === '') {
+                    $buyer_phone = preg_replace('/\D/', '', (string) ($linkedUser['phone'] ?? ''));
+                    if (strlen($buyer_phone) > 10) {
+                        $buyer_phone = substr($buyer_phone, -10);
+                    }
+                }
+                if ($buyer_email === '' && !empty($linkedUser['email'])) {
+                    $buyer_email = strtolower(trim((string) $linkedUser['email']));
+                }
+            }
         } else {
             http_response_code(401);
             sendResponse(["error" => "Login or sign up is required to place an order"]);
@@ -3248,7 +3502,7 @@ switch ($action) {
     // ARTICLES & BLOGS
     // -----------------------------------------
     case 'getArticles':
-        $res = $conn->query("SELECT id, title, slug, image_url, author, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC");
+        $res = $conn->query("SELECT id, title, slug, image_url, category, tags, author, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC");
         $articles = [];
         while($row = $res->fetch_assoc()) { 
             $articles[] = $row; 
@@ -3272,7 +3526,7 @@ switch ($action) {
 
     case 'adminGetArticles':
         requirePermission('articles');
-        $res = $conn->query("SELECT id, title, slug, image_url, author, status, created_at FROM articles ORDER BY created_at DESC");
+        $res = $conn->query("SELECT id, title, slug, image_url, category, tags, author, status, created_at FROM articles ORDER BY created_at DESC");
         $articles = [];
         while($row = $res->fetch_assoc()) { 
             $articles[] = $row; 
@@ -3307,25 +3561,36 @@ switch ($action) {
         $title = htmlspecialchars($data['title'] ?? '', ENT_QUOTES, 'UTF-8');
         $slug = preg_replace('/[^a-z0-9-]/', '', strtolower($data['slug'] ?? ''));
         $content = sanitizeArticleHtml($data['content'] ?? '');
-        $image_url = filter_var($data['image_url'] ?? '', FILTER_VALIDATE_URL) ? $data['image_url'] : '';
+        $rawImage = trim((string) ($data['image_url'] ?? ''));
+        $image_url = '';
+        if ($rawImage !== '') {
+            if (filter_var($rawImage, FILTER_VALIDATE_URL)) {
+                $image_url = $rawImage;
+            } elseif (preg_match('#^uploads/(articles/)?[a-zA-Z0-9._-]+$#', ltrim($rawImage, '/'))) {
+                $image_url = ltrim($rawImage, '/');
+            }
+        }
+        $category = trim(htmlspecialchars((string) ($data['category'] ?? ''), ENT_QUOTES, 'UTF-8'));
+        $category = mb_substr($category, 0, 100);
+        $tags = normalizeArticleTags($data['tags'] ?? '');
         $status = $data['status'] ?? 'published';
         $author = 'GoUnlisted Team';
         
-        if (empty($title) || empty($slug) || empty($content)) {
+        if (empty($title) || empty($slug) || trim(strip_tags($content)) === '') {
             http_response_code(400);
             sendResponse(["error" => "Title, slug and content are required"]);
             break;
         }
 
         if ($id) {
-            $stmt = $conn->prepare("UPDATE articles SET title=?, slug=?, content=?, image_url=?, status=? WHERE id=?");
-            $stmt->bind_param("sssssi", $title, $slug, $content, $image_url, $status, $id);
+            $stmt = $conn->prepare("UPDATE articles SET title=?, slug=?, content=?, image_url=?, category=?, tags=?, status=? WHERE id=?");
+            $stmt->bind_param("sssssssi", $title, $slug, $content, $image_url, $category, $tags, $status, $id);
             $stmt->execute();
             logAudit($conn, 'Update Article', $_SESSION['admin_id'], ['id' => $id, 'title' => $title]);
             sendResponse(["success" => true, "id" => $id]);
         } else {
-            $stmt = $conn->prepare("INSERT INTO articles (title, slug, content, image_url, author, status) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ssssss", $title, $slug, $content, $image_url, $author, $status);
+            $stmt = $conn->prepare("INSERT INTO articles (title, slug, content, image_url, category, tags, author, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("ssssssss", $title, $slug, $content, $image_url, $category, $tags, $author, $status);
             $stmt->execute();
             $newId = $conn->insert_id;
             logAudit($conn, 'Create Article', $_SESSION['admin_id'], ['id' => $newId, 'title' => $title]);
@@ -3351,50 +3616,64 @@ switch ($action) {
 
     case 'adminUploadImage':
         requirePermission('articles');
-        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-            $tmpName = $_FILES['image']['tmp_name'];
-            $fileSize = $_FILES['image']['size'];
-            
-            if ($fileSize > 5 * 1024 * 1024) {
-                http_response_code(400);
-                sendResponse(["error" => "File too large (max 5MB)"]);
-                break;
-            }
-            
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = finfo_file($finfo, $tmpName);
-            finfo_close($finfo);
-            
-            $allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-            if (!in_array($mime, $allowedMimes)) {
-                http_response_code(400);
-                sendResponse(["error" => "Invalid file type. Only JPG, PNG and WEBP allowed."]);
-                break;
-            }
-            
-            $ext = 'jpg';
-            if ($mime === 'image/png') $ext = 'png';
-            if ($mime === 'image/webp') $ext = 'webp';
-            
-            $uploadDir = '../uploads/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-            
-            $filename = 'article_' . time() . '_' . random_int(1000, 9999) . '.' . $ext;
-            $target = $uploadDir . $filename;
-            
-            if (move_uploaded_file($tmpName, $target)) {
-                logAudit($conn, 'Upload Article Image', $_SESSION['admin_id'], ['file' => $filename]);
-                sendResponse(["success" => true, "url" => "uploads/" . $filename]);
-            } else {
-                http_response_code(500);
-                sendResponse(["error" => "Failed to save file"]);
-            }
-        } else {
+        validateCsrfToken();
+        if (!isset($_FILES['image']) || (int) ($_FILES['image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             http_response_code(400);
             sendResponse(["error" => "No file uploaded or upload error"]);
+            break;
         }
+        $tmpName = $_FILES['image']['tmp_name'];
+        $fileSize = (int) $_FILES['image']['size'];
+
+        if ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+            http_response_code(400);
+            sendResponse(["error" => "File too large (max 5MB)"]);
+            break;
+        }
+
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $info = @getimagesize($tmpName);
+            $mime = is_array($info) ? ($info['mime'] ?? '') : '';
+        }
+
+        $allowedMimes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($allowedMimes[$mime])) {
+            http_response_code(400);
+            sendResponse(["error" => "Invalid file type. Only JPG, PNG and WEBP allowed."]);
+            break;
+        }
+
+        $uploadDir = __DIR__ . '/../uploads/articles/';
+        if (!is_dir($uploadDir)) {
+            if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                http_response_code(500);
+                sendResponse(["error" => "Could not create upload folder. Create public_html/uploads/articles on the server."]);
+                break;
+            }
+        }
+        if (!is_writable($uploadDir)) {
+            http_response_code(500);
+            sendResponse(["error" => "Upload folder is not writable. Set permissions on uploads/articles."]);
+            break;
+        }
+
+        $filename = 'article_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
+        $target = $uploadDir . $filename;
+        if (!move_uploaded_file($tmpName, $target)) {
+            http_response_code(500);
+            sendResponse(["error" => "Failed to save file"]);
+            break;
+        }
+        @chmod($target, 0644);
+        $url = 'uploads/articles/' . $filename;
+        logAudit($conn, 'Upload Article Image', $_SESSION['admin_id'], ['file' => $filename]);
+        sendResponse(["success" => true, "url" => $url]);
         break;
 
     default:

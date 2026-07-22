@@ -28,6 +28,11 @@ uploads/kyc/*
 !uploads/kyc/.htaccess
 !uploads/kyc/.gitkeep
 
+# Article cover images
+uploads/articles/*
+!uploads/articles/.htaccess
+!uploads/articles/.gitkeep
+
 # Logs & temp
 api/php_errors.log
 *.log

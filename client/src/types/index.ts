@@ -75,6 +75,7 @@ export interface Order {
   buyerName: string;
   buyerEmail: string;
   buyerPhone?: string;
+  userId?: string;
   shareId: string;
   companyName?: string;
   shareName?: string;
@@ -105,6 +106,8 @@ export interface Article {
   slug: string;
   content?: string;
   image_url?: string;
+  category?: string;
+  tags?: string;
   author?: string;
   status?: string;
   created_at?: string;

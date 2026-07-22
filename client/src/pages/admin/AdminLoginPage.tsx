@@ -38,8 +38,14 @@ function persistAdminSession(
   id: string,
   isMaster: boolean,
   portal: AdminPortal,
+  extra?: { name?: string; employeeCode?: string },
 ) {
-  sessionStorage.setItem('gu_admin', JSON.stringify({ id, isMaster }));
+  sessionStorage.setItem('gu_admin', JSON.stringify({
+    id,
+    isMaster,
+    name: extra?.name || '',
+    employeeCode: extra?.employeeCode || '',
+  }));
   storeAdminPortal(portal);
 }
 
@@ -85,7 +91,10 @@ export default function AdminLoginPage({ portal }: Props) {
           const isMaster = !!res.isMaster;
           const sessionPortal = portalFromAuth(isMaster, res.portal);
           const perms = normalizeAdminPermissions(isMaster, res.permissions);
-          persistAdminSession(res.id!, isMaster, sessionPortal);
+          persistAdminSession(res.id!, isMaster, sessionPortal, {
+            name: res.name || '',
+            employeeCode: res.employeeCode || res.employeeId || '',
+          });
           const panel = resolveAdminPanel(returnPanel, isMaster, perms);
           navigate(adminPanelPath(panel, isMaster, perms), { replace: true });
         }
@@ -102,9 +111,19 @@ export default function AdminLoginPage({ portal }: Props) {
         const isMaster = !!res.isMaster;
         const sessionPortal = portalFromAuth(isMaster, res.portal ?? portal);
         const perms = normalizeAdminPermissions(isMaster, res.permissions);
-        persistAdminSession(res.id!, isMaster, sessionPortal);
+        persistAdminSession(res.id!, isMaster, sessionPortal, {
+          name: res.name || '',
+          employeeCode: res.employeeId || '',
+        });
         const auth = await checkAuth();
         if (auth.csrfToken) setCsrfToken(auth.csrfToken);
+        // Prefer fresh checkAuth identity if present
+        if (auth.authenticated && auth.type === 'admin') {
+          persistAdminSession(res.id!, isMaster, sessionPortal, {
+            name: auth.name || res.name || '',
+            employeeCode: auth.employeeCode || auth.employeeId || res.employeeId || '',
+          });
+        }
         showToast(copy.toast, 'success');
         const panel = resolveAdminPanel(returnPanel, isMaster, perms);
         navigate(adminPanelPath(panel, isMaster, perms));

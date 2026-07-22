@@ -118,6 +118,8 @@ CREATE TABLE `articles` (
   `slug` varchar(255) NOT NULL,
   `content` longtext NOT NULL,
   `image_url` varchar(255) DEFAULT NULL,
+  `category` varchar(100) DEFAULT '',
+  `tags` varchar(255) DEFAULT '',
   `author` varchar(100) DEFAULT 'GoUnlisted Team',
   `status` enum('draft','published') DEFAULT 'published',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),

@@ -15,6 +15,8 @@ export function loginAdmin(email: string, password: string, portal: 'master' | '
     id?: string;
     isMaster?: boolean;
     portal?: 'master' | 'staff';
+    name?: string;
+    employeeId?: string;
     permissions?: string[];
     error?: string;
   }>('loginAdmin', 'POST', { email, password, portal });
@@ -31,6 +33,9 @@ export function checkAuth() {
     id?: string;
     isMaster?: boolean;
     portal?: 'master' | 'staff';
+    name?: string;
+    employeeId?: string;
+    employeeCode?: string;
     permissions?: string[];
     user?: User;
     csrfToken?: string;

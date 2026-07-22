@@ -15,16 +15,49 @@ import KycDetailsCard from '../components/kyc/KycDetailsCard';
 
 function validateIfsc(ifsc: string) {
   return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
-}function orderMatchesUser(
-  o: { buyerEmail?: string; buyerPhone?: string },
-  user: { email: string; phone?: string },
+}
+
+function isOfflineManualOrder(o: { orderSource?: string; method?: string }) {
+  return /offline|manual/i.test(o.orderSource || '') || /offline/i.test(o.method || '');
+}
+
+function orderMatchesUser(
+  o: { buyerEmail?: string; buyerPhone?: string; userId?: string },
+  user: { id: string; email: string; phone?: string },
 ): boolean {
+  if (o.userId && user.id && o.userId === user.id) return true;
   const emailMatch = o.buyerEmail && user.email && o.buyerEmail.toLowerCase() === user.email.toLowerCase();
   const phoneMatch =
     o.buyerPhone &&
     user.phone &&
     o.buyerPhone.replace(/\D/g, '').slice(-10) === user.phone.replace(/\D/g, '').slice(-10);
   return Boolean(emailMatch || phoneMatch);
+}
+
+/** Holdings: completed shares. Online Transfer Pending also shows. Manual/Offline waits until Complete. */
+function isPortfolioHolding(o: { status: string; orderSource?: string; method?: string }) {
+  const s = o.status.toLowerCase();
+  if (/cancel|reject|refund/.test(s)) return false;
+  if (s.includes('complete')) return true;
+  // "Pending Verification" must never count (contains "verif")
+  if (s.includes('pending') && s.includes('verif')) return false;
+  if (s.includes('pending') && !s.includes('transfer')) return false;
+  if (s.includes('transfer')) {
+    // Manual / Offline: hide until ops marks Complete
+    return !isOfflineManualOrder(o);
+  }
+  // Legacy Confirmed / Verified
+  if (s.includes('confirm') || s.includes('verif')) return true;
+  return false;
+}
+
+/** In-progress rows under portfolio (online payment review etc.). Hide manual transfer queue. */
+function isPortfolioPendingVisible(o: { status: string; orderSource?: string; method?: string }) {
+  if (isPortfolioHolding(o)) return false;
+  if (isOfflineManualOrder(o)) return false;
+  const s = o.status.toLowerCase();
+  if (/cancel|reject|refund|complete/.test(s)) return false;
+  return true;
 }
 
 export default function DashboardPage() {
@@ -108,14 +141,9 @@ export default function DashboardPage() {
   }
 
   const myOrders = (ordersQuery.data || []).filter((o) => orderMatchesUser(o, user));
-
-  // Only confirmed/completed orders count as actual holdings
-  const isHolding = (status: string) => {
-    const s = status.toLowerCase();
-    return s.includes('confirm') || s.includes('verif') || s.includes('complete') || s.includes('transfer');
-  };
-  const holdings = myOrders.filter((o) => isHolding(o.status));
-  const pendingOrders = myOrders.filter((o) => !isHolding(o.status));
+  const holdings = myOrders.filter((o) => isPortfolioHolding(o));
+  const pendingOrders = myOrders.filter((o) => isPortfolioPendingVisible(o));
+  const portfolioVisible = holdings.length + pendingOrders.length > 0;
 
   const totalInvested = holdings.reduce((sum, o) => sum + (o.totalPaid || o.total || 0), 0);
   const kycLabel =
@@ -250,7 +278,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {myOrders.length === 0 ? (
+          {!portfolioVisible ? (
             <div className="empty-state glass-card" style={{ padding: '3rem', textAlign: 'center' }}>
               <p style={{ marginBottom: '1.5rem', color: 'var(--muted)' }}>No investments yet. Start building your pre-IPO portfolio.</p>
               <Link to="/shares" className="btn btn-primary">Explore Shares</Link>

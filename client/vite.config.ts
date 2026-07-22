@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
-  const apiTarget = env.GU_API_TARGET || 'http://127.0.0.1:8080';
+  // process.env wins so `GU_API_TARGET=http://127.0.0.1:8080 npm run dev` can override .env.local
+  const apiTarget = process.env.GU_API_TARGET || env.GU_API_TARGET || 'http://127.0.0.1:8080';
   const isLiveApi = apiTarget.startsWith('https://');
 
   return {

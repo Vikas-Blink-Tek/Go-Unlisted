@@ -288,6 +288,41 @@
       gap: 1rem;
     }
 
+    .admin-user-chip {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      min-width: 0;
+    }
+
+    .admin-user-chip-text {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.1rem;
+      min-width: 0;
+      text-align: right;
+    }
+
+    .admin-user-chip-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text, #0f172a);
+      line-height: 1.2;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .admin-user-chip-code {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #4fa3d4;
+      font-variant-numeric: tabular-nums;
+    }
+
     .admin-badge {
       background: rgba(122,193,66,0.12);
       border: 1px solid rgba(122,193,66,0.25);

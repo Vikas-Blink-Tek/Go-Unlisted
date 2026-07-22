@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { getArticle } from '../api/content';
 import { formatDate } from '../utils/format';
 import { sanitizeHtml } from '../utils/sanitize';
+import { mediaUrl } from '../utils/mediaUrl';
 
 export default function ArticleDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -48,7 +49,7 @@ export default function ArticleDetailPage() {
       >
         {article.image_url && (
           <motion.img
-            src={article.image_url}
+            src={mediaUrl(article.image_url)}
             alt={article.title}
             className="article-hero-img"
             initial={{ opacity: 0, scale: 1.02 }}
@@ -59,9 +60,21 @@ export default function ArticleDetailPage() {
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.5rem, 4vw, 2rem)', color: 'var(--white)', marginBottom: '0.75rem', lineHeight: 1.3 }}>
             {article.title}
           </h1>
-          <p className="article-meta" style={{ marginBottom: '2rem' }}>
+          <p className="article-meta" style={{ marginBottom: '0.75rem' }}>
             By {article.author} · {formatDate(article.created_at)}
           </p>
+          {(article.category || article.tags) && (
+            <div className="article-meta-chips">
+              {article.category && <span className="article-chip">{article.category}</span>}
+              {(article.tags || '')
+                .split(',')
+                .map((t) => t.trim())
+                .filter(Boolean)
+                .map((tag) => (
+                  <span key={tag} className="article-chip article-chip-tag">{tag}</span>
+                ))}
+            </div>
+          )}
           <div className="article-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(article.content || '') }} />
         </div>
       </motion.article>
