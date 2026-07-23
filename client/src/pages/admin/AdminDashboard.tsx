@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getOrders, updateOrderStatus, transferOrder } from '../../api/orders';
+import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal } from '../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
@@ -289,6 +289,19 @@ export default function AdminDashboard() {
             onReject={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.REJECTED })}
             onComplete={can('pending') ? complete : undefined}
             onUndoComplete={can('pending') ? undoComplete : undefined}
+            onSavePaymentRef={(orderId, transactionId) => {
+              const order = orders.find((o) => o.orderId === orderId);
+              return updateOrderPaymentRef(orderId, transactionId, order?.status || ORDER_STATUS.PENDING_VERIFICATION).then(() => {
+                showToast('Payment reference saved', 'success');
+                queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+              });
+            }}
+            onAdjustTotal={isMaster ? (orderId, totalAmount) => {
+              return adjustOrderTotal(orderId, totalAmount).then(() => {
+                showToast('Order amount updated', 'success');
+                queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+              });
+            } : undefined}
           />
         </>
       )}

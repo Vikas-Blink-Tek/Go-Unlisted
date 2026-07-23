@@ -266,7 +266,7 @@ export default function CheckoutPage() {
       setOrderId(res.orderId || '');
       try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
       setStep(3);
-      showToast('Payment submitted — shares added to your portfolio.', 'success');
+      showToast('Order submitted — we will verify your UTR and then add shares to your portfolio.', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Order failed', 'error');
     } finally {
@@ -359,7 +359,7 @@ export default function CheckoutPage() {
             inputMode="text"
           />
           <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-            Temporary until Razorpay is live — open your UPI / bank app after paying and copy the UTR / reference number.
+            Temporary until Razorpay is live — after paying, copy the UTR / reference from your UPI or bank app. Order is placed only with a valid UTR.
           </p>
         </div>
 
@@ -572,7 +572,7 @@ export default function CheckoutPage() {
               <div className="confirm-icon" style={{ color: 'var(--green)' }}>✓</div>
               <h2 className="confirm-title">Order Received!</h2>
               <p className="confirm-subtitle">
-                Payment confirmed. Your shares are in Portfolio — demat transfer usually completes in 2–3 business days.
+                We have your UTR. Our team will verify the payment — after approval, shares appear in your portfolio as confirmed.
               </p>
               <div className="confirm-order-id">
                 Order ID <span>{orderId}</span>
@@ -583,10 +583,10 @@ export default function CheckoutPage() {
                 <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
                 <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
                 <div className="confirm-row"><span className="lbl">UTR</span><span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span></div>
-                <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--green)' }}>In portfolio · share transfer pending</span></div>
+                <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--gold, #b45309)' }}>Payment under review</span></div>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
-                We verify your UTR against bank credit. Open Portfolio anytime to track this order.
+                Track status in Dashboard. Shares show in Portfolio only after admin verifies your UTR.
               </p>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>

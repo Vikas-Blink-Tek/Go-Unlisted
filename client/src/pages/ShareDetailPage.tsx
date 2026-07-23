@@ -3,7 +3,8 @@ import { useState } from 'react';
 import PriceChart from '../components/shares/PriceChart';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import { useShares } from '../hooks/useShares';
-import { formatCurrency } from '../utils/format';
+import { useSiteSettings } from '../hooks/useSiteSettings';
+import { calcOrderTotal, formatCurrency, invoiceChargesEnabled } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
@@ -12,6 +13,7 @@ import type { ChartPeriod } from '../types';
 export default function ShareDetailPage() {
   const { shareId } = useParams<{ shareId: string }>();
   const { getShareById } = useShares();
+  const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -138,7 +140,9 @@ export default function ShareDetailPage() {
           <div>
             <h3>Ready to invest in {share.name}?</h3>
             <p>
-              Min. {share.minQty} shares · {formatCurrency(share.price * share.minQty)} + 1% platform fee
+              Min. {share.minQty} shares ·{' '}
+              {formatCurrency(calcOrderTotal(share.price, share.minQty, settings))}
+              {invoiceChargesEnabled(settings) ? ' (incl. extra charges)' : ''}
               {onRequest && ' · Delivery timeline on request'}
             </p>
           </div>

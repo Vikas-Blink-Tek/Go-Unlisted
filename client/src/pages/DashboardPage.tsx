@@ -17,10 +17,6 @@ function validateIfsc(ifsc: string) {
   return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
 }
 
-function isOfflineManualOrder(o: { orderSource?: string; method?: string }) {
-  return /offline|manual/i.test(o.orderSource || '') || /offline/i.test(o.method || '');
-}
-
 function orderMatchesUser(
   o: { buyerEmail?: string; buyerPhone?: string; userId?: string },
   user: { id: string; email: string; phone?: string },
@@ -34,30 +30,28 @@ function orderMatchesUser(
   return Boolean(emailMatch || phoneMatch);
 }
 
-/** Holdings: completed shares. Online Transfer Pending also shows. Manual/Offline waits until Complete. */
+/** Holdings: only after admin verifies payment (Transfer Pending / Confirmed / Completed). */
 function isPortfolioHolding(o: { status: string; orderSource?: string; method?: string }) {
   const s = o.status.toLowerCase();
   if (/cancel|reject|refund/.test(s)) return false;
   if (s.includes('complete')) return true;
-  // "Pending Verification" must never count (contains "verif")
+  // Waiting for admin — never a holding
   if (s.includes('pending') && s.includes('verif')) return false;
   if (s.includes('pending') && !s.includes('transfer')) return false;
-  if (s.includes('transfer')) {
-    // Manual / Offline: hide until ops marks Complete
-    return !isOfflineManualOrder(o);
-  }
-  // Legacy Confirmed / Verified
-  if (s.includes('confirm') || s.includes('verif')) return true;
+  // After admin Verify → Transfer Pending / Confirmed counts as confirmed holding
+  if (s.includes('transfer') || s.includes('confirm') || s.includes('verif')) return true;
   return false;
 }
 
-/** In-progress rows under portfolio (online payment review etc.). Hide manual transfer queue. */
+/** Show online orders awaiting admin UTR verification under “pending”. */
 function isPortfolioPendingVisible(o: { status: string; orderSource?: string; method?: string }) {
   if (isPortfolioHolding(o)) return false;
-  if (isOfflineManualOrder(o)) return false;
   const s = o.status.toLowerCase();
   if (/cancel|reject|refund|complete/.test(s)) return false;
-  return true;
+  // Pending Verification (UTR submitted, admin not yet approved)
+  if (s.includes('pending') && s.includes('verif')) return true;
+  if (s.includes('pending') && !s.includes('transfer')) return true;
+  return false;
 }
 
 export default function DashboardPage() {
@@ -289,7 +283,7 @@ export default function DashboardPage() {
               <h3 style={{ margin: '1.5rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>📈 My Holdings</h3>
               {holdings.length === 0 ? (
                 <div className="empty-state glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
-                  <p style={{ color: 'var(--muted)', margin: 0 }}>No holdings yet. After you confirm payment at checkout, shares appear here while demat transfer is processed.</p>
+                  <p style={{ color: 'var(--muted)', margin: 0 }}>No confirmed holdings yet. After you pay and submit UTR, admin verifies payment — then shares appear here as confirmed.</p>
                 </div>
               ) : (
                 <>

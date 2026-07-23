@@ -19,6 +19,8 @@ type Props = {
   onReject?: (orderId: string) => void;
   onComplete?: (orderId: string) => void;
   onUndoComplete?: (orderId: string) => void;
+  onSavePaymentRef?: (orderId: string, transactionId: string) => void | Promise<unknown>;
+  onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
   onTransfer?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
 };
@@ -31,6 +33,8 @@ export default function OrderDetailDrawer({
   onReject,
   onComplete,
   onUndoComplete,
+  onSavePaymentRef,
+  onAdjustTotal,
   employees,
   onTransfer,
 }: Props) {
@@ -46,6 +50,18 @@ export default function OrderDetailDrawer({
   const isManual = /offline|manual/i.test(order.orderSource || '') || /offline/i.test(order.method || '');
   const canTransfer = !!onTransfer && isManual && isPendingOrder(order.status) && employeeOptions.length > 0;
   const [assignEmployeeCode, setAssignEmployeeCode] = useState<string>('');
+  const [paymentRef, setPaymentRef] = useState('');
+  const [savingRef, setSavingRef] = useState(false);
+  const [amountEdit, setAmountEdit] = useState('');
+  const [savingAmount, setSavingAmount] = useState(false);
+
+  useEffect(() => {
+    setPaymentRef((order.transactionId || order.utr || '').toUpperCase());
+  }, [order.orderId, order.transactionId, order.utr]);
+
+  useEffect(() => {
+    setAmountEdit(String(order.totalPaid || order.total || ''));
+  }, [order.orderId, order.totalPaid, order.total]);
 
   useEffect(() => {
     if (!canTransfer) {
@@ -68,6 +84,40 @@ export default function OrderDetailDrawer({
     || (onReject && isPendingOrder(order.status))
     || (onComplete && canMarkOrderComplete(order.status))
     || (onUndoComplete && canUndoOrderComplete(order.status));
+
+  const savePaymentRef = async () => {
+    if (!onSavePaymentRef) return;
+    const clean = paymentRef.trim().replace(/\s+/g, '').toUpperCase();
+    if (clean.length < 6 || clean.length > 30) {
+      window.alert('Payment reference must be 6–30 characters (UTR from bank / UPI app).');
+      return;
+    }
+    setSavingRef(true);
+    try {
+      await Promise.resolve(onSavePaymentRef(order.orderId, clean));
+    } finally {
+      setSavingRef(false);
+    }
+  };
+
+  const saveAmount = async () => {
+    if (!onAdjustTotal) return;
+    const n = Math.round(parseFloat(amountEdit.replace(/,/g, '')) * 100) / 100;
+    if (!Number.isFinite(n) || n < 1) {
+      window.alert('Enter a valid amount.');
+      return;
+    }
+    const current = Number(order.totalPaid || order.total || 0);
+    if (Math.abs(n - current) < 0.009) return;
+    const ok = window.confirm(`Update order total from ${formatCurrency(current)} to ${formatCurrency(n)}?`);
+    if (!ok) return;
+    setSavingAmount(true);
+    try {
+      await Promise.resolve(onAdjustTotal(order.orderId, n));
+    } finally {
+      setSavingAmount(false);
+    }
+  };
 
   return (
     <div className="admin-drawer-overlay" onClick={onClose} role="presentation">
@@ -117,13 +167,70 @@ export default function OrderDetailDrawer({
             <div className="admin-drawer-grid">
               <div><span>Amount</span><strong>{formatCurrency(order.totalPaid || order.total || 0)}</strong></div>
               <div><span>Method</span><strong>{order.method || order.paymentMethod || '—'}</strong></div>
-              <div>
-                <span>Payment Ref</span>
-                <strong className="admin-utr-code" style={{ maxWidth: '100%' }}>
-                  {order.transactionId || order.utr || (order.orderSource === 'Online' || !order.orderSource ? 'Self-confirmed' : '—')}
-                </strong>
-              </div>
               <div><span>Date</span><strong>{getOrderDate(order) ? formatDate(getOrderDate(order)) : '—'}</strong></div>
+            </div>
+            {onAdjustTotal && (
+              <div style={{ marginTop: '0.85rem' }}>
+                <label className="form-label" htmlFor={`order-amount-${order.orderId}`}>
+                  Correct paid amount
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    id={`order-amount-${order.orderId}`}
+                    className="form-input"
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    value={amountEdit}
+                    onChange={(e) => setAmountEdit(e.target.value)}
+                    style={{ flex: '1 1 120px', fontFamily: 'monospace' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={savingAmount}
+                    onClick={() => void saveAmount()}
+                  >
+                    {savingAmount ? 'Saving…' : 'Save amount'}
+                  </button>
+                </div>
+                <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                  Use when bank credit differs from share value (e.g. old 1% fee shown at checkout).
+                </p>
+              </div>
+            )}
+            <div style={{ marginTop: '0.85rem' }}>
+              <label className="form-label" htmlFor={`payment-ref-${order.orderId}`}>
+                Payment Ref / UTR
+              </label>
+              {onSavePaymentRef ? (
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    id={`payment-ref-${order.orderId}`}
+                    className="form-input"
+                    value={paymentRef}
+                    onChange={(e) => setPaymentRef(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                    placeholder="Enter bank / UPI UTR"
+                    maxLength={30}
+                    style={{ flex: '1 1 160px', fontFamily: 'monospace' }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={savingRef}
+                    onClick={() => void savePaymentRef()}
+                  >
+                    {savingRef ? 'Saving…' : 'Save ref'}
+                  </button>
+                </div>
+              ) : (
+                <strong className="admin-utr-code" style={{ display: 'block', marginTop: '0.25rem' }}>
+                  {order.transactionId || order.utr || '—'}
+                </strong>
+              )}
+              <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                Paste the UTR from the buyer’s UPI / bank SMS here if missing.
+              </p>
             </div>
           </section>
 
@@ -167,6 +274,24 @@ export default function OrderDetailDrawer({
             <h4>Share</h4>
             <p><strong>{order.companyName || order.shareName}</strong> ({order.shareTicker || order.shareId})</p>
             <p>Qty {order.qty} × {formatCurrency(order.pricePerShare)}</p>
+            {(() => {
+              const shareValue = Math.round(order.qty * order.pricePerShare * 100) / 100;
+              const paid = Number(order.totalPaid || order.total || 0);
+              const fee = Math.round((paid - shareValue) * 100) / 100;
+              return (
+                <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', lineHeight: 1.55 }}>
+                  <div>Shares value: <strong>{formatCurrency(shareValue)}</strong></div>
+                  {Math.abs(fee) >= 0.01 ? (
+                    <>
+                      <div>Extra charges: <strong>{formatCurrency(fee)}</strong></div>
+                      <div>Order total: <strong>{formatCurrency(paid)}</strong></div>
+                    </>
+                  ) : (
+                    <div>Order total: <strong>{formatCurrency(paid)}</strong></div>
+                  )}
+                </div>
+              );
+            })()}
           </section>
         </div>
 

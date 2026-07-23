@@ -71,12 +71,12 @@ Every listing on GO UNLISTED needs these fields — **never ship a stock without
 | Shares credited | Mark Confirmed, notify buyer (SMS/WhatsApp) |
 | Failed / refund | Rejected / Refunded with ops notes |
 
-**Order statuses**: Manual → `Transfer Pending` → `Completed` | Online → `Transfer Pending` → `Completed` | also `Rejected` | `Cancelled` | `Refunded` (legacy Offline may still use `Pending Verification`)
+**Order statuses**: Online → `Pending Verification` (UTR) → admin Verify → `Transfer Pending` → `Completed` | Manual → `Transfer Pending` → `Completed` | also `Rejected` | `Cancelled` | `Refunded`
 
-- **Online checkout**: pay via UPI/NEFT/QR → confirm checkbox (no UTR) → `Transfer Pending` → shows in Portfolio → ops Complete after demat.
-- **Manual / Offline**: starts at `Transfer Pending` (payment already collected) → ops Complete after demat. Does **not** appear in client portfolio until `Completed`.
+- **Online checkout**: pay via UPI/NEFT/QR → enter UTR + confirm → `Pending Verification` → admin Verify → portfolio shows as confirmed (`Transfer Pending`) → ops Complete after demat.
+- **Manual / Offline**: starts at `Transfer Pending` (payment already collected) → ops Complete after demat.
 - **Undo Completed**: admin can revert `Completed` → `Transfer Pending`.
-- Ops match online bank credits by **amount + buyer name/phone + time** (no buyer-entered UTR).
+- Ops match online payments by **UTR + amount + buyer** in Verify Payments.
 
 ## Documents & compliance fields
 
@@ -133,10 +133,10 @@ Build and maintain these without user prompting:
 ## GO UNLISTED product decisions (do not reverse without asking)
 
 - **Browse & details**: always public
-- **Checkout**: Quantity → Payment Mode → pay → confirm checkbox (no UTR). Guest browse OK; place order needs login + KYC.
-- **Online payment**: buyer self-confirms payment → `Transfer Pending` → Portfolio shows shares → ops Complete after demat transfer.
-- **Manual / Offline**: `Transfer Pending` → Complete. Client portfolio shows only after `Completed`.
-- **Payment verification**: optional for Offline if still in `Pending Verification` (legacy). Online matched by amount + buyer + time.
+- **Checkout**: Quantity → Payment Mode → pay → enter UTR + confirm. Guest browse OK; place order needs login + KYC.
+- **Online payment**: buyer pays → enters UTR → `Pending Verification` → admin Verify → portfolio shows as confirmed (`Transfer Pending`) → ops Complete after demat.
+- **Manual / Offline**: `Transfer Pending` → Complete.
+- **Payment verification**: admin matches UTR / bank credit in Verify Payments before portfolio confirmation.
 - **MSG91**: OTP for user auth
 - **Theme**: light, matches gounlisted.in
 

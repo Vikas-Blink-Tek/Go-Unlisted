@@ -59,7 +59,7 @@ export default function AboutPage() {
           {[
             ['Verified Listings Only', 'Every company is thoroughly due-diligenced before listing on our platform.'],
             ['Secure Transactions', 'Pay via NEFT, RTGS, IMPS or UPI. We verify your UTR and confirm before transfer.'],
-            ['Transparent Pricing', 'Clear 1% platform commission. No hidden charges or management fees.'],
+            ['Transparent Pricing', 'Checkout shows share value clearly. Extra charges only when enabled in Site Settings — no hidden fees.'],
             ['Dedicated Support', 'Dedicated relationship managers for every investor query and concern.'],
           ].map(([title, desc]) => (
             <div key={title} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: '1.25rem' }}>

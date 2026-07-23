@@ -869,6 +869,13 @@ function mapInitiatedCheckoutRow(array $row): array {
 /** Payment accepted / transfer in progress / done — invoice + inventory apply. */
 function orderStatusIsPaid(string $status): bool {
     $s = strtolower(trim($status));
+    // "Pending Verification" is unpaid until admin approves
+    if (strpos($s, 'pending') !== false && strpos($s, 'verif') !== false) {
+        return false;
+    }
+    if (strpos($s, 'pending') !== false && strpos($s, 'transfer') === false) {
+        return false;
+    }
     return strpos($s, 'confirm') !== false
         || strpos($s, 'verif') !== false
         || strpos($s, 'transfer') !== false
@@ -2439,6 +2446,77 @@ switch ($action) {
         ]);
         break;
 
+    case 'adminAdjustOrderTotal':
+        // Master admin: correct recorded paid amount (e.g. buyer paid fee shown at checkout)
+        requireMasterAdmin();
+        $data = getPostData();
+        $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
+        $new_total = round((float) ($data['totalAmount'] ?? $data['totalPaid'] ?? 0), 2);
+        $note = trim((string) ($data['opsNote'] ?? $data['note'] ?? ''));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid order ID']);
+            break;
+        }
+        if ($new_total < 1 || $new_total > 100000000) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid total amount']);
+            break;
+        }
+        $stmtCheck = $conn->prepare('SELECT order_id, total_amount, quantity, price_per_share, status, ops_note FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck->bind_param('s', $order_id);
+        $stmtCheck->execute();
+        $orderRow = $stmtCheck->get_result()->fetch_assoc();
+        if (!$orderRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'Order not found']);
+            break;
+        }
+        $old_total = (float) $orderRow['total_amount'];
+        $share_value = round(((float) $orderRow['price_per_share']) * ((int) $orderRow['quantity']), 2);
+        $fee = round($new_total - $share_value, 2);
+        $charges_json = null;
+        if (abs($fee) >= 0.01) {
+            $charges_json = json_encode([[
+                'name' => 'Extra / platform fee (paid)',
+                'type' => 'flat',
+                'value' => $fee,
+                'amount' => $fee,
+            ]]);
+        }
+        $ops = trim((string) ($orderRow['ops_note'] ?? ''));
+        $autoNote = "Amount corrected {$old_total} → {$new_total}";
+        if ($note !== '') {
+            $autoNote .= ' — ' . $note;
+        }
+        $ops = $ops === '' ? $autoNote : ($ops . "\n" . $autoNote);
+
+        $upd = $conn->prepare('UPDATE orders SET total_amount = ?, custom_charges_json = ?, ops_note = ? WHERE order_id = ?');
+        $upd->bind_param('dsss', $new_total, $charges_json, $ops, $order_id);
+        if (!$upd->execute()) {
+            http_response_code(500);
+            sendResponse(['error' => 'Failed to update order total']);
+            break;
+        }
+        // Keep invoice in sync if one already exists
+        $invUpd = $conn->prepare('UPDATE invoices SET total_amount = ?, platform_fee = ?, custom_charges_json = ? WHERE order_id = ?');
+        $platform_fee = max(0.0, $fee);
+        $invUpd->bind_param('ddss', $new_total, $platform_fee, $charges_json, $order_id);
+        $invUpd->execute();
+
+        logAudit($conn, 'Adjust Order Total', $_SESSION['admin_id'], [
+            'orderId' => $order_id,
+            'from' => $old_total,
+            'to' => $new_total,
+        ]);
+        sendResponse([
+            'success' => true,
+            'orderId' => $order_id,
+            'totalPaid' => $new_total,
+            'previousTotal' => $old_total,
+        ]);
+        break;
+
     case 'saveOrder':
         $data = getPostData();
         $order_id = strtoupper(trim($data['orderId'] ?? ''));
@@ -2554,8 +2632,8 @@ switch ($action) {
                 $status = 'Transfer Pending';
             }
         } else {
-            $status = 'Transfer Pending';
-            // Until Razorpay is live: collect buyer UTR + checkbox confirm
+            // Online checkout: buyer pays + enters UTR → admin must Verify before portfolio
+            $status = 'Pending Verification';
             $paymentConfirmed = $data['paymentConfirmed'] ?? false;
             $confirmedOk = $paymentConfirmed === true
                 || $paymentConfirmed === 1
@@ -3328,6 +3406,15 @@ switch ($action) {
         while ($row = $res->fetch_assoc()) {
             if ($canAllSettings || in_array($row['setting_key'], PUBLIC_SETTINGS_KEYS, true)) {
                 $settings[$row['setting_key']] = $row['setting_value'];
+            }
+        }
+        // Always expose charge flags to checkout (default OFF) so client never invents a 1% fee
+        if (!$canAllSettings) {
+            if (!array_key_exists('enable_invoice_charges', $settings)) {
+                $settings['enable_invoice_charges'] = '0';
+            }
+            if (!array_key_exists('invoice_custom_charges', $settings)) {
+                $settings['invoice_custom_charges'] = '[]';
             }
         }
         sendResponse($settings);

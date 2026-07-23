@@ -2069,9 +2069,10 @@ switch ($action) {
             }
         }
         
-        $enableCharges = ($settings['enable_invoice_charges'] ?? '1') !== '0';
+        // Default OFF — never invent a 1% platform fee when setting is missing
+        $enableCharges = ($settings['enable_invoice_charges'] ?? '0') === '1';
         if ($enableCharges) {
-            $chargesStr = $settings['invoice_custom_charges'] ?? '[{"name":"Platform Fee","type":"percentage","value":1}]';
+            $chargesStr = $settings['invoice_custom_charges'] ?? '[]';
             $charges = json_decode($chargesStr, true);
             if (is_array($charges) && !empty($charges)) {
                 $snapshot = [];

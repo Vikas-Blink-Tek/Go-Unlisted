@@ -20,9 +20,11 @@ type Props = {
   limit?: number;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
   onTransferOrder?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
+  onSavePaymentRef?: (orderId: string, transactionId: string) => void | Promise<unknown>;
+  onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
 };
 
-export default function AdminOrdersSection({ orders, users, showActions, verifyMode, onVerify, onReject, onComplete, onUndoComplete, limit, employees, onTransferOrder }: Props) {
+export default function AdminOrdersSection({ orders, users, showActions, verifyMode, onVerify, onReject, onComplete, onUndoComplete, limit, employees, onTransferOrder, onSavePaymentRef, onAdjustTotal }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(verifyMode ? 'pending' : 'all');
   const [codeFilter, setCodeFilter] = useState('all');
@@ -196,7 +198,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                   <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
                   <td className="admin-orders-col-utr">
                     <code className="admin-utr-code" title="Bank UTR (manual) or self-confirmed online">
-                      {o.transactionId || o.utr || (o.orderSource === 'Online' || !o.orderSource ? 'Self-confirmed' : '—')}
+                      {o.transactionId || o.utr || '—'}
                     </code>
                   </td>
                   <td className="admin-orders-col-status">
@@ -244,6 +246,8 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         onUndoComplete={onUndoComplete ? handleUndoComplete : undefined}
         employees={employees}
         onTransfer={onTransferOrder}
+        onSavePaymentRef={onSavePaymentRef}
+        onAdjustTotal={onAdjustTotal}
       />
     </>
   );

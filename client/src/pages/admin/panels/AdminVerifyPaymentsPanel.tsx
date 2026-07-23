@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { getOrders, updateOrderStatus, transferOrder } from '../../../api/orders';
+import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal } from '../../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../../api/admin';
 import { useToast } from '../../../context/ToastContext';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
@@ -83,6 +83,19 @@ export default function AdminVerifyPaymentsPanel() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
+  const paymentRefMutation = useMutation({
+    mutationFn: ({ orderId, transactionId, status }: { orderId: string; transactionId: string; status: string }) =>
+      updateOrderPaymentRef(orderId, transactionId, status),
+    onSuccess: (_data, vars) => {
+      showToast('Payment reference saved', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      setSelected((prev) => (prev && prev.orderId === vars.orderId
+        ? { ...prev, transactionId: vars.transactionId, utr: vars.transactionId }
+        : prev));
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
   const verify = (id: string) => {
     if (confirm('Verify this payment against bank credit? Order will move to Pending Share Transfer.')) {
       statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING });
@@ -100,7 +113,7 @@ export default function AdminVerifyPaymentsPanel() {
       <AdminSectionHeader
         compact
         title="Verify Payments"
-        subtitle="Manual / Offline only — match bank credit (amount + buyer + time), then Verify → Share Transfer"
+        subtitle="Match UTR / bank credit → Verify. After approval, shares appear in the buyer’s portfolio as confirmed."
         badge={`${pendingOrders.length} pending`}
       />
 
@@ -109,7 +122,7 @@ export default function AdminVerifyPaymentsPanel() {
           type="search"
           inputMode="search"
           className="report-filter-input stock-list-search"
-          placeholder="Search mobile, name, email, order ID, payment ref..."
+          placeholder="Search mobile, name, email, order ID, UTR..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           aria-label="Search payments by mobile, name or order ID"
@@ -129,7 +142,7 @@ export default function AdminVerifyPaymentsPanel() {
 
       {!searching && (
         <p className="verify-payments-hint" style={{ margin: '0 0 1rem' }}>
-          Online checkout orders skip this queue (buyer self-confirms payment). Only manual / Offline deals appear here for Verify or Reject.
+          Online checkout orders with UTR appear here. Verify against bank credit, then Approve — buyer portfolio updates after that.
         </p>
       )}
 
@@ -252,6 +265,17 @@ export default function AdminVerifyPaymentsPanel() {
             ? (orderId, employeeCode) => transferMutation.mutateAsync({ orderId, employeeCode })
             : undefined
         }
+        onSavePaymentRef={(orderId, transactionId) => {
+          const status = selected?.status || ORDER_STATUS.PENDING_VERIFICATION;
+          return paymentRefMutation.mutateAsync({ orderId, transactionId, status });
+        }}
+        onAdjustTotal={isMaster ? (orderId, totalAmount) => {
+          return adjustOrderTotal(orderId, totalAmount).then(() => {
+            showToast('Order amount updated', 'success');
+            queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+            setSelected((prev) => (prev && prev.orderId === orderId ? { ...prev, totalPaid: totalAmount, total: totalAmount } : prev));
+          });
+        } : undefined}
       />
     </div>
   );
