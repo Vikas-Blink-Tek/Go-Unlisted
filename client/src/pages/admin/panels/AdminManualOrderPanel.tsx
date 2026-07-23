@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { saveOrder, getOrders, softDeleteOrder, restoreOrder } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
-import { calcOrderTotal, formatCurrency, formatIndianPhoneDisplay, formatPersonName } from '../../../utils/format';
+import { useAdminPanel } from '../../../context/AdminPanelContext';
+import { calcOrderTotal, formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, getOrderDate } from '../../../utils/format';
 import { useSiteSettings } from '../../../hooks/useSiteSettings';
 import { getAdminOrderStatusLabel, getOrderStatusClass } from '../../../utils/orderStatus';
 import AdminSectionHeader from '../components/AdminSectionHeader';
@@ -24,6 +25,7 @@ const empty = {
   method: 'NEFT',
   utr: '',
   source: 'Offline',
+  orderDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
 };
 
 function normalizePhone(phone: string) {
@@ -31,14 +33,31 @@ function normalizePhone(phone: string) {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+function filterSignupUsers(users: User[], query: string) {
+  const q = query.trim().toLowerCase();
+  const qDigits = query.replace(/\D/g, '');
+  const list = [...users].sort((a, b) => a.name.localeCompare(b.name));
+  if (!q && !qDigits) return list.slice(0, 12);
+  return list
+    .filter((u) => {
+      const hay = `${u.name} ${u.phone} ${u.email} ${u.referralCode || ''}`.toLowerCase();
+      if (q && hay.includes(q)) return true;
+      if (qDigits.length >= 2 && normalizePhone(u.phone).includes(qDigits)) return true;
+      return false;
+    })
+    .slice(0, 12);
+}
+
 export default function AdminManualOrderPanel() {
   const { showToast } = useToast();
+  const { isMaster } = useAdminPanel();
   const { shares } = useShares();
   const { settings } = useSiteSettings();
   const queryClient = useQueryClient();
   const [form, setForm] = useState(empty);
   const [editId, setEditId] = useState<string | null>(null);
-  const [clientSearch, setClientSearch] = useState('');
+  const [suggestFrom, setSuggestFrom] = useState<'name' | 'phone' | null>(null);
+  const suggestWrapRef = useRef<HTMLDivElement>(null);
 
   const usersQuery = useQuery({
     queryKey: ['admin-users'],
@@ -46,18 +65,22 @@ export default function AdminManualOrderPanel() {
   });
   const signupUsers = usersQuery.data || [];
 
-  const filteredUsers = useMemo(() => {
-    const q = clientSearch.trim().toLowerCase();
-    const qDigits = clientSearch.replace(/\D/g, '');
-    const list = [...signupUsers].sort((a, b) => a.name.localeCompare(b.name));
-    if (!q && !qDigits) return list;
-    return list.filter((u) => {
-      const hay = `${u.name} ${u.phone} ${u.email} ${u.referralCode || ''}`.toLowerCase();
-      if (q && hay.includes(q)) return true;
-      if (qDigits.length >= 3 && normalizePhone(u.phone).includes(qDigits)) return true;
-      return false;
-    });
-  }, [signupUsers, clientSearch]);
+  const suggestQuery = suggestFrom === 'phone' ? form.phone : form.name;
+  const clientSuggestions = useMemo(
+    () => (suggestFrom ? filterSignupUsers(signupUsers, suggestQuery) : []),
+    [signupUsers, suggestFrom, suggestQuery],
+  );
+
+  useEffect(() => {
+    if (!suggestFrom) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!suggestWrapRef.current?.contains(e.target as Node)) {
+        setSuggestFrom(null);
+      }
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [suggestFrom]);
 
   const handleQtyChange = (val: string) => {
     const qty = parseInt(val, 10) || 0;
@@ -94,7 +117,7 @@ export default function AdminManualOrderPanel() {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       setForm(empty);
       setEditId(null);
-      setClientSearch('');
+      setSuggestFrom(null);
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -122,19 +145,30 @@ export default function AdminManualOrderPanel() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
-  const selectUser = (user: User | null) => {
-    if (!user) {
-      setForm({ ...form, userId: '', name: '', phone: '', email: '' });
-      return;
-    }
-    setForm({
-      ...form,
+  const selectUser = (user: User) => {
+    setForm((prev) => ({
+      ...prev,
       userId: user.id,
-      name: user.name,
+      name: formatPersonName(user.name) || user.name,
       phone: normalizePhone(user.phone),
       email: user.email || '',
+    }));
+    setSuggestFrom(null);
+  };
+
+  const clearLinkedUserIfChanged = (next: Partial<typeof empty>) => {
+    setForm((prev) => {
+      const merged = { ...prev, ...next };
+      if (!merged.userId) return merged;
+      const linked = signupUsers.find((u) => u.id === merged.userId);
+      if (!linked) return { ...merged, userId: '' };
+      const nameSame =
+        merged.name.trim().toLowerCase() === linked.name.trim().toLowerCase()
+        || merged.name.trim().toLowerCase() === formatPersonName(linked.name).toLowerCase();
+      const phoneSame = normalizePhone(merged.phone) === normalizePhone(linked.phone);
+      if (nameSame && phoneSame) return merged;
+      return { ...merged, userId: '' };
     });
-    setClientSearch('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -151,9 +185,19 @@ export default function AdminManualOrderPanel() {
       showToast('UTR / reference must be 6–30 characters', 'error');
       return;
     }
+    if (!form.orderDate) {
+      showToast('Select order date', 'error');
+      return;
+    }
+    // Auto-link by exact mobile if admin typed without picking a suggestion
+    let userId = form.userId;
+    if (!userId) {
+      const byPhone = signupUsers.find((u) => normalizePhone(u.phone) === form.phone);
+      if (byPhone) userId = byPhone.id;
+    }
     saveMut.mutate({
       ...(editId ? { orderId: editId } : {}),
-      ...(form.userId ? { userId: form.userId } : {}),
+      ...(userId ? { userId } : {}),
       shareId: share.id,
       shareName: share.name,
       shareTicker: share.ticker,
@@ -166,6 +210,7 @@ export default function AdminManualOrderPanel() {
       transactionId: utrClean || undefined,
       status: 'Transfer Pending',
       orderSource: form.source,
+      orderDate: form.orderDate,
       _fullUpdate: !!editId,
     });
   };
@@ -175,6 +220,10 @@ export default function AdminManualOrderPanel() {
     const linked = o.userId && !o.userId.startsWith('admin:')
       ? signupUsers.find((u) => u.id === o.userId)
       : undefined;
+    const rawDate = getOrderDate(o) || o.createdAt || o.date || '';
+    const orderDate = rawDate
+      ? String(rawDate).slice(0, 10)
+      : new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     setForm({
       userId: linked?.id || (o.userId && !o.userId.startsWith('admin:') ? o.userId : ''),
       orderId: o.orderId,
@@ -187,8 +236,42 @@ export default function AdminManualOrderPanel() {
       method: o.method || 'Offline',
       utr: o.transactionId || o.utr || '',
       source: o.orderSource || 'Offline',
+      orderDate,
     });
-    setClientSearch('');
+    setSuggestFrom(null);
+  };
+
+  const renderClientSuggestions = () => {
+    if (!suggestFrom || !clientSuggestions.length) {
+      if (suggestFrom && suggestQuery.trim().length >= 1 && !usersQuery.isLoading) {
+        return (
+          <div className="manual-client-suggest" role="listbox">
+            <div className="manual-client-suggest__empty">No signup match — type details manually</div>
+          </div>
+        );
+      }
+      return null;
+    }
+    return (
+      <div className="manual-client-suggest" role="listbox">
+        {clientSuggestions.map((u) => (
+          <button
+            key={u.id}
+            type="button"
+            className="manual-client-suggest__item"
+            role="option"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => selectUser(u)}
+          >
+            <span className="manual-client-suggest__name">{formatPersonName(u.name)}</span>
+            <span className="manual-client-suggest__meta">
+              {formatIndianPhoneDisplay(u.phone)}
+              {u.referralCode ? ` · ${u.referralCode}` : ''}
+            </span>
+          </button>
+        ))}
+      </div>
+    );
   };
 
   return (
@@ -203,76 +286,84 @@ export default function AdminManualOrderPanel() {
         <div className="report-filter-title">{editId ? `Edit order ${editId}` : 'New order'}</div>
         <form onSubmit={handleSubmit} autoComplete="off" style={{ position: 'relative' }}>
           <AutofillBlocker />
-          <div className="report-filter-grid">
-            <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
-              <label className="report-filter-label">Select signup user</label>
-              <select
-                className="report-filter-input"
-                value={form.userId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!id) {
-                    selectUser(null);
-                    return;
-                  }
-                  const user = signupUsers.find((u) => u.id === id) || null;
-                  selectUser(user);
-                }}
-              >
-                <option value="">— Type below to search, or choose a registered client —</option>
-                {filteredUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {formatPersonName(u.name)} · {formatIndianPhoneDisplay(u.phone)}
-                    {u.referralCode ? ` · ${u.referralCode}` : ''}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="report-filter-input"
-                style={{ marginTop: '0.45rem' }}
-                placeholder="Search signup users by name or mobile…"
-                value={clientSearch}
-                onChange={(e) => setClientSearch(e.target.value)}
-                {...blockTextInput({ name: 'manual-order-user-search' })}
-              />
-              {usersQuery.isLoading && (
-                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>Loading signup users…</p>
-              )}
-              {!usersQuery.isLoading && signupUsers.length === 0 && (
-                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
-                  No signup users yet. You can still type name &amp; mobile manually below.
-                </p>
-              )}
-              {form.userId && (
-                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
-                  Linked to signup account — order appears in their Portfolio right away (Share Transfer).
-                </p>
-              )}
-              {!form.userId && (
-                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
-                  Tip: select a signup user (or matching mobile) so the order shows in their Portfolio.
-                </p>
-              )}
-            </div>
-            <div className="report-filter-group">
+          <div className="report-filter-grid" ref={suggestWrapRef}>
+            <div className="report-filter-group" style={{ position: 'relative' }}>
               <label className="report-filter-label">Client Name *</label>
               <input
                 className="report-filter-input"
                 required
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value, userId: form.userId })}
-                {...blockTextInput({ name: 'manual-order-name' })}
+                placeholder="Type name — signup clients appear"
+                onChange={(e) => {
+                  clearLinkedUserIfChanged({ name: e.target.value });
+                  setSuggestFrom('name');
+                }}
+                {...blockTextInput({
+                  name: 'manual-order-name',
+                  onFocus: (e: FocusEvent<HTMLInputElement>) => {
+                    e.currentTarget.readOnly = false;
+                    setSuggestFrom('name');
+                  },
+                })}
               />
+              {suggestFrom === 'name' && renderClientSuggestions()}
             </div>
-            <div className="report-filter-group">
+            <div className="report-filter-group" style={{ position: 'relative' }}>
               <label className="report-filter-label">Mobile *</label>
               <input
                 className="report-filter-input"
                 required
                 maxLength={10}
                 value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
-                {...blockTelInput({ name: 'manual-order-phone' })}
+                placeholder="Type mobile — signup clients appear"
+                onChange={(e) => {
+                  const phone = e.target.value.replace(/\D/g, '').slice(0, 10);
+                  clearLinkedUserIfChanged({ phone });
+                  setSuggestFrom('phone');
+                  if (phone.length === 10) {
+                    const hit = signupUsers.find((u) => normalizePhone(u.phone) === phone);
+                    if (hit) selectUser(hit);
+                  }
+                }}
+                {...blockTelInput({
+                  name: 'manual-order-phone',
+                  onFocus: (e: FocusEvent<HTMLInputElement>) => {
+                    e.currentTarget.readOnly = false;
+                    setSuggestFrom('phone');
+                  },
+                })}
+              />
+              {suggestFrom === 'phone' && renderClientSuggestions()}
+            </div>
+            <div className="report-filter-group" style={{ gridColumn: '1 / -1' }}>
+              {usersQuery.isLoading && (
+                <p className="article-field-hint">Loading signup clients…</p>
+              )}
+              {!usersQuery.isLoading && signupUsers.length === 0 && (
+                <p className="article-field-hint">
+                  No signup clients yet. You can still type name &amp; mobile manually.
+                </p>
+              )}
+              {form.userId && (
+                <p className="article-field-hint">
+                  Linked to signup account — order appears in their Portfolio right away (Share Transfer).
+                </p>
+              )}
+              {!form.userId && !usersQuery.isLoading && signupUsers.length > 0 && (
+                <p className="article-field-hint">
+                  Pick a suggestion (name or mobile) to link the order to their signup. Employee list shows only your signup clients
+                  {isMaster ? ' (Master sees all).' : '.'}
+                </p>
+              )}
+            </div>
+            <div className="report-filter-group">
+              <label className="report-filter-label">Email (optional)</label>
+              <input
+                className="report-filter-input"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                {...blockTextInput({ name: 'manual-order-email' })}
               />
             </div>
             <div className="report-filter-group">
@@ -312,6 +403,19 @@ export default function AdminManualOrderPanel() {
               </select>
             </div>
             <div className="report-filter-group">
+              <label className="report-filter-label">Order date *</label>
+              <input
+                className="report-filter-input"
+                type="date"
+                required
+                value={form.orderDate}
+                onChange={(e) => setForm({ ...form, orderDate: e.target.value })}
+              />
+              <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
+                Default is today. Pick yesterday (or any past date) for backdated deals.
+              </p>
+            </div>
+            <div className="report-filter-group">
               <label className="report-filter-label">Bank UTR / Reference (optional)</label>
               <input
                 className="report-filter-input"
@@ -337,7 +441,7 @@ export default function AdminManualOrderPanel() {
                 onClick={() => {
                   setEditId(null);
                   setForm(empty);
-                  setClientSearch('');
+                  setSuggestFrom(null);
                 }}
               >
                 Cancel Edit
@@ -350,11 +454,26 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader compact title="Recent Manual Orders" badge={`${manualOrders.length} orders`} />
       <div className="price-table-wrap">
         <table className="data-table">
-          <thead><tr><th>Order ID</th><th>Client</th><th>Share</th><th>Qty</th><th>Total</th><th>Payment Ref</th><th>Status</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Date</th>
+              <th>Client</th>
+              <th>Share</th>
+              <th>Qty</th>
+              <th>Total</th>
+              <th>Payment Ref</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             {manualOrders.slice(0, 20).map((o) => (
               <tr key={o.orderId}>
                 <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
+                <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+                  {getOrderDate(o) ? formatDateTime(getOrderDate(o)) : '—'}
+                </td>
                 <td>
                   <div>{formatPersonName(o.buyerName)}</div>
                   {o.buyerPhone && (
@@ -373,18 +492,20 @@ export default function AdminManualOrderPanel() {
                 <td>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadEdit(o)}>Edit</button>
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      style={{ color: '#ef4444' }}
-                      onClick={() => {
-                        if (confirm(`Delete ${o.orderId}? You can Undo from Recently deleted.`)) {
-                          deleteMut.mutate(o.orderId);
-                        }
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {isMaster && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{ color: '#ef4444' }}
+                        onClick={() => {
+                          if (confirm(`Delete ${o.orderId}? You can Undo from Recently deleted.`)) {
+                            deleteMut.mutate(o.orderId);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -399,7 +520,7 @@ export default function AdminManualOrderPanel() {
         )}
       </div>
 
-      {deletedManual.length > 0 && (
+      {isMaster && deletedManual.length > 0 && (
         <>
           <AdminSectionHeader
             compact

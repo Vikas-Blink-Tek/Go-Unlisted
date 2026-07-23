@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { saveUser } from '../../../api/admin';
 import type { User } from '../../../types';
+import { useAdminPanel } from '../../../context/AdminPanelContext';
 import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { formatDate } from '../../../utils/format';
@@ -35,6 +36,7 @@ function userToForm(u: User): KycForm {
 }
 
 export default function AdminUsersPanel({ users }: Props) {
+  const { isMaster } = useAdminPanel();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -141,6 +143,10 @@ export default function AdminUsersPanel({ users }: Props) {
   };
 
   const quickTransfer = (user: User) => {
+    if (!isMaster) {
+      showToast('Only Master Admin can transfer users between employees', 'error');
+      return;
+    }
     const code = prompt(`Transfer ${user.name}\nEnter new Employee Code (e.g. GUE002):`, displayUserCode(user.referralCode));
     if (code === null) return;
     const cleanCode = code.trim().toUpperCase();
@@ -249,14 +255,16 @@ export default function AdminUsersPanel({ users }: Props) {
                         Reject
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      disabled={saveMutation.isPending}
-                      onClick={() => quickTransfer(u)}
-                    >
-                      Transfer
-                    </button>
+                    {isMaster && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={saveMutation.isPending}
+                        onClick={() => quickTransfer(u)}
+                      >
+                        Transfer
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -373,14 +381,24 @@ export default function AdminUsersPanel({ users }: Props) {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Employee Code (Transfer)</label>
+              <label className="form-label">Employee Code{isMaster ? ' (Transfer)' : ''}</label>
               <input
                 className="form-input"
                 value={form.referralCode}
-                onChange={(e) => setField({ referralCode: e.target.value.toUpperCase() })}
-                placeholder="GUE003 (Optional)"
+                onChange={(e) => isMaster && setField({ referralCode: e.target.value.toUpperCase() })}
+                placeholder="GUE003"
+                readOnly={!isMaster}
+                disabled={!isMaster}
               />
-              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>Change this code to transfer the user to a different employee.</p>
+              {isMaster ? (
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+                  Change this code to transfer the user to a different employee.
+                </p>
+              ) : (
+                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+                  Only Master Admin can reassign this client to another employee.
+                </p>
+              )}
             </div>
             
             <div className="kyc-modal-actions">

@@ -6,6 +6,7 @@ import {
   getAdminOrderStatusLabel,
   getOrderStatusClass,
   isPendingOrder,
+  isTransferPendingOrder,
   canMarkOrderComplete,
   canUndoOrderComplete,
 } from '../../../utils/orderStatus';
@@ -49,8 +50,10 @@ export default function OrderDetailDrawer({
     })
     .filter(Boolean) as Array<{ code: string; name: string }>;
 
-  const isManual = /offline|manual/i.test(order.orderSource || '') || /offline/i.test(order.method || '');
-  const canTransfer = !!onTransfer && isManual && isPendingOrder(order.status) && employeeOptions.length > 0;
+  const statusOpen =
+    isPendingOrder(order.status)
+    || isTransferPendingOrder(order.status);
+  const canTransfer = !!onTransfer && statusOpen && employeeOptions.length > 0;
   const [assignEmployeeCode, setAssignEmployeeCode] = useState<string>('');
   const [paymentRef, setPaymentRef] = useState('');
   const [savingRef, setSavingRef] = useState(false);
@@ -245,7 +248,7 @@ export default function OrderDetailDrawer({
 
           {canTransfer && (
             <section className="admin-drawer-section">
-              <h4>Assign verification employee</h4>
+              <h4>Transfer order (assign employee)</h4>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <select
                   className="report-filter-input"
@@ -264,17 +267,17 @@ export default function OrderDetailDrawer({
                   className="btn btn-primary"
                   onClick={async () => {
                     if (!assignEmployeeCode) return;
-                    const ok = confirm('Assign this manual order to the employee for verification?');
+                    const ok = confirm(`Transfer this order to ${displayUserCode(assignEmployeeCode)}?`);
                     if (!ok) return;
                     await Promise.resolve(onTransfer?.(order.orderId, assignEmployeeCode));
                     onClose();
                   }}
                 >
-                  Assign
+                  Transfer
                 </button>
               </div>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                The order will move into the employee’s Verify Payments queue.
+                Changes the User Code on this order so that employee can work it in their queue.
               </p>
             </section>
           )}

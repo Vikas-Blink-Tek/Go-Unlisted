@@ -261,7 +261,7 @@ export default function AdminVerifyPaymentsPanel() {
         onReject={selected && isPendingOrder(selected.status) ? reject : undefined}
         employees={employeesQuery.data || []}
         onTransfer={
-          isMaster && selected && isPendingOrder(selected.status)
+          isMaster && selected && (isPendingOrder(selected.status) || /transfer|confirm|verif/i.test(selected.status))
             ? (orderId, employeeCode) => transferMutation.mutateAsync({ orderId, employeeCode })
             : undefined
         }

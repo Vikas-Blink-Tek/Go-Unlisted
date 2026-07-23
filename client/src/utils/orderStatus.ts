@@ -24,11 +24,11 @@ export function getOrderStatusLabel(status: string): string {
 /** Short labels for admin tables — avoid long buyer-facing copy wrapping in pills. */
 export function getAdminOrderStatusLabel(status: string): string {
   const s = status.toLowerCase();
-  if (s.includes('pending') && s.includes('transfer')) return 'Share Transfer';
-  if (s.includes('transfer')) return 'Share Transfer';
+  if (s.includes('pending') && s.includes('transfer')) return 'Pending Share Transfer';
+  if (s.includes('transfer')) return 'Pending Share Transfer';
   if (s.includes('pending') || s === 'initiated') return 'Pending';
-  if (s.includes('complete')) return 'Completed';
-  if (s.includes('confirm') || s.includes('verif')) return 'Verified';
+  if (s.includes('complete')) return 'Order Complete';
+  if (s.includes('confirm') || s.includes('verif')) return 'Pending Share Transfer';
   if (s.includes('reject')) return 'Rejected';
   if (s.includes('cancel')) return 'Cancelled';
   if (s.includes('refund')) return 'Refunded';
@@ -38,7 +38,10 @@ export function getAdminOrderStatusLabel(status: string): string {
 export function getOrderStatusClass(status: string): string {
   const s = status.toLowerCase();
   if (s.includes('complete')) return 'status-confirmed';
-  if (s.includes('confirm') || s.includes('verif') || s.includes('transfer')) return 'status-confirmed';
+  // Share transfer still pending — show as pending (not green complete)
+  if (s.includes('transfer') || ((s.includes('confirm') || s.includes('verif')) && !s.includes('pending'))) {
+    return 'status-pending';
+  }
   if (s.includes('pending') || s.includes('initiated')) return 'status-pending';
   if (s.includes('cancel') || s.includes('reject') || s.includes('refund')) return 'status-cancelled';
   return '';

@@ -47,7 +47,6 @@ export default function CheckoutPage() {
   const [qty, setQty] = useState<number | ''>(share?.minQty || 1);
   const safeQty = typeof qty === 'number' && !isNaN(qty) ? qty : 0;
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
-  const [paidConfirmed, setPaidConfirmed] = useState(false);
   const [utr, setUtr] = useState('');
   const [paying, setPaying] = useState(false);
   const [orderId, setOrderId] = useState('');
@@ -192,7 +191,6 @@ export default function CheckoutPage() {
       return;
     }
     setPaymentMode(mode);
-    setPaidConfirmed(false);
     try {
       await saveInitiatedCheckout({
         sessionId,
@@ -222,7 +220,6 @@ export default function CheckoutPage() {
       return;
     }
     setPaymentMode(null);
-    setPaidConfirmed(false);
     setUtr('');
     setStep(2);
   };
@@ -234,10 +231,6 @@ export default function CheckoutPage() {
     }
     if (!paymentMode) {
       showToast('Select a payment method first', 'warning');
-      return;
-    }
-    if (!paidConfirmed) {
-      showToast('Confirm that you have completed the payment', 'warning');
       return;
     }
     const utrClean = utr.trim().replace(/\s+/g, '').toUpperCase();
@@ -363,40 +356,12 @@ export default function CheckoutPage() {
           </p>
         </div>
 
-        <label
-          className="pay-confirm-check"
-          style={{
-            display: 'flex',
-            gap: 10,
-            alignItems: 'flex-start',
-            marginTop: '1rem',
-            padding: '0.85rem 1rem',
-            borderRadius: 10,
-            border: '1px solid var(--border, #e5e7eb)',
-            background: 'var(--surface-2, #f8fafc)',
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={paidConfirmed}
-            onChange={(e) => setPaidConfirmed(e.target.checked)}
-            style={{ marginTop: 3 }}
-          />
-          <span style={{ fontSize: '0.9rem', lineHeight: 1.45 }}>
-            I have paid <strong>{formatCurrency(total)}</strong> and entered the correct UTR above.
-            Shares will appear in my portfolio.
-          </span>
-        </label>
-
         <div className="pay-actions">
           <button
             type="button"
             className="btn btn-ghost"
             onClick={() => {
               setPaymentMode(null);
-              setPaidConfirmed(false);
               setUtr('');
             }}
           >
@@ -405,7 +370,7 @@ export default function CheckoutPage() {
           <button
             type="button"
             className="btn btn-primary btn-full"
-            disabled={paying || !paidConfirmed || utr.trim().length < 6}
+            disabled={paying || utr.trim().length < 6}
             onClick={handleConfirmPayment}
           >
             {paying ? 'Confirming…' : 'Confirm payment & place order'}

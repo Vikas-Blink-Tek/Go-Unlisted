@@ -301,7 +301,7 @@ export default function AdminDashboard() {
           <AdminSectionHeader
             compact
             title="All Orders"
-            subtitle="New orders start at Share Transfer. Open order → enter UTR / transfer ref → Save to mark Completed."
+            subtitle="Status starts as Pending Share Transfer. Transfer (assign employee) sits beside the status. After demat, mark Order Complete."
             badge={`${orders.length} total`}
           />
           <AdminOrdersSection
@@ -314,8 +314,8 @@ export default function AdminDashboard() {
             onReject={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.REJECTED })}
             onComplete={can('pending') ? complete : undefined}
             onUndoComplete={can('pending') ? undoComplete : undefined}
-            onDelete={can('orders') || can('manual-order') || can('pending') ? softDelete : undefined}
-            onRestore={can('orders') || can('manual-order') || can('pending') ? softRestore : undefined}
+            onDelete={isMaster ? softDelete : undefined}
+            onRestore={isMaster ? softRestore : undefined}
             onSavePaymentRef={(orderId, transactionId) => {
               const order = allOrders.find((o) => o.orderId === orderId);
               const status = order?.status || ORDER_STATUS.TRANSFER_PENDING;

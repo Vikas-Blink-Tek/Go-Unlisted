@@ -190,6 +190,10 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE orders ADD COLUMN deleted_at DATETIME DEFAULT NULL");
     }
+    $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'custom_charges_json'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE orders ADD COLUMN custom_charges_json TEXT DEFAULT NULL");
+    }
 
     // Fix legacy employee codes GU002 → GUE002 (exactly 3 digits after GU, missing E)
     $conn->query("UPDATE employees SET employee_id = CONCAT('GUE', SUBSTRING(employee_id, 3))
@@ -200,6 +204,66 @@ function autoMigrateSchema($conn) {
                   WHERE referral_code REGEXP '^GU[0-9]{3}$' AND referral_code <> 'GU00'");
     $conn->query("UPDATE initiated_checkouts SET employee_code = CONCAT('GUE', SUBSTRING(employee_code, 3))
                   WHERE employee_code REGEXP '^GU[0-9]{3}$' AND employee_code <> 'GU00'");
+
+    // Backfill: orders stuck on blank/GU00 but buyer signed up under an employee (GUE003…)
+    // Guarded — never crash the API if join matches are messy on live data
+    try {
+        $conn->query(
+            "UPDATE orders o
+             INNER JOIN users u ON u.id = o.user_id
+             SET o.employee_code = UPPER(TRIM(u.referral_code))
+             WHERE (o.employee_code IS NULL OR TRIM(o.employee_code) = '' OR UPPER(TRIM(o.employee_code)) = 'GU00')
+               AND u.referral_code IS NOT NULL
+               AND TRIM(u.referral_code) <> ''
+               AND UPPER(TRIM(u.referral_code)) <> 'GU00'
+               AND u.referral_code REGEXP '^GUE[0-9]{3}$'"
+        );
+        // Phone match only for full 10-digit mobiles (avoids empty/short false joins)
+        $conn->query(
+            "UPDATE orders o
+             INNER JOIN users u
+               ON RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(u.phone,''), ' ', ''), '-', ''), '+', ''), 10)
+                = RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(o.buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10)
+             SET o.employee_code = UPPER(TRIM(u.referral_code))
+             WHERE (o.employee_code IS NULL OR TRIM(o.employee_code) = '' OR UPPER(TRIM(o.employee_code)) = 'GU00')
+               AND LENGTH(RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(o.buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10)) = 10
+               AND LENGTH(RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(u.phone,''), ' ', ''), '-', ''), '+', ''), 10)) = 10
+               AND u.referral_code IS NOT NULL
+               AND TRIM(u.referral_code) <> ''
+               AND UPPER(TRIM(u.referral_code)) <> 'GU00'
+               AND u.referral_code REGEXP '^GUE[0-9]{3}$'"
+        );
+        // Portfolio: attach orphan admin:/blank orders to signup user by 10-digit mobile
+        $conn->query(
+            "UPDATE orders o
+             INNER JOIN (
+               SELECT RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) AS p10,
+                      MIN(id) AS id
+               FROM users
+               WHERE LENGTH(RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10)) = 10
+               GROUP BY p10
+             ) u ON u.p10 = RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(o.buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10)
+             SET o.user_id = u.id
+             WHERE o.deleted_at IS NULL
+               AND LENGTH(RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(o.buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10)) = 10
+               AND (o.user_id IS NULL OR TRIM(o.user_id) = '' OR o.user_id LIKE 'admin:%')"
+        );
+        $conn->query(
+            "UPDATE orders o
+             INNER JOIN (
+               SELECT LOWER(TRIM(email)) AS e, MIN(id) AS id
+               FROM users
+               WHERE email IS NOT NULL AND TRIM(email) <> '' AND LOCATE('@', email) > 1
+               GROUP BY e
+             ) u ON u.e = LOWER(TRIM(o.buyer_email))
+             SET o.user_id = u.id
+             WHERE o.deleted_at IS NULL
+               AND o.buyer_email IS NOT NULL AND TRIM(o.buyer_email) <> '' AND LOCATE('@', o.buyer_email) > 1
+               AND (o.user_id IS NULL OR TRIM(o.user_id) = '' OR o.user_id LIKE 'admin:%')"
+        );
+    } catch (Throwable $e) {
+        error_log('autoMigrate order backfill skipped: ' . $e->getMessage());
+    }
 
     $res = $conn->query("SHOW COLUMNS FROM initiated_checkouts LIKE 'employee_code'");
     if ($res && $res->num_rows === 0) {
@@ -278,6 +342,11 @@ function autoMigrateSchema($conn) {
         UNIQUE KEY uniq_order_invoice (order_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
 
+    $res = $conn->query("SHOW COLUMNS FROM invoices LIKE 'custom_charges_json'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE invoices ADD COLUMN custom_charges_json TEXT DEFAULT NULL AFTER invoice_date");
+    }
+
     $conn->query("CREATE TABLE IF NOT EXISTS articles (
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
@@ -306,7 +375,11 @@ function autoMigrateSchema($conn) {
 
     seedDefaultSharesIfEmpty($conn);
 }
-autoMigrateSchema($conn);
+try {
+    autoMigrateSchema($conn);
+} catch (Throwable $e) {
+    error_log('autoMigrateSchema failed: ' . $e->getMessage());
+}
 if (getenv('GU_DEV_MODE') === '1') {
     seedDemoUserIfEmpty($conn);
 }
@@ -977,23 +1050,75 @@ function employeeCodeExists(mysqli $conn, string $code): bool {
     return false;
 }
 
-function resolveOrderEmployeeCode(mysqli $conn, array $data, ?array $existingOrder, bool $isAdmin, bool $isUser, string $user_id): string {
-    $assigned = strtoupper(trim((string) ($data['assignEmployeeCode'] ?? $data['employeeCode'] ?? '')));
-    if ($isAdmin && isMasterAdminSession()) {
-        if ($assigned !== '') {
-            return sanitizeStoredUserCode($assigned);
+/** Prefer a real employee code (GUE###). GU00 / blank = unassigned / direct. */
+function isRealEmployeeUserCode(string $code): bool {
+    $code = canonicalizeEmployeeUserCode($code);
+    return $code !== '' && $code !== 'GU00';
+}
+
+/**
+ * Resolve the employee code that should be stored / shown for an order.
+ * Priority: explicit assign → order row → linked buyer referral → phone match.
+ */
+function resolveBuyerEmployeeCode(mysqli $conn, string $userId, string $buyerPhone = '', string $buyerEmail = ''): string {
+    if ($userId !== '' && !str_starts_with($userId, 'admin:')) {
+        $fromUser = lookupEmployeeCodeForUser($conn, $userId);
+        if (isRealEmployeeUserCode($fromUser)) {
+            return sanitizeStoredUserCode($fromUser);
         }
-        if ($existingOrder) {
-            return sanitizeStoredUserCode((string) ($existingOrder['employee_code'] ?? ''));
-        }
+    }
+    $phone10 = preg_replace('/\D/', '', $buyerPhone);
+    if (strlen($phone10) > 10) {
+        $phone10 = substr($phone10, -10);
+    }
+    $emailLower = strtolower(trim($buyerEmail));
+    if ($phone10 === '' && $emailLower === '') {
         return '';
     }
+    $stmt = $conn->prepare(
+        "SELECT referral_code FROM users
+         WHERE (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+            OR (? <> '' AND LOWER(email) = ?)
+         ORDER BY created_at DESC LIMIT 1"
+    );
+    $stmt->bind_param('ssss', $phone10, $phone10, $emailLower, $emailLower);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $ref = sanitizeStoredUserCode((string) ($row['referral_code'] ?? ''));
+    return isRealEmployeeUserCode($ref) ? $ref : '';
+}
+
+function resolveOrderEmployeeCode(mysqli $conn, array $data, ?array $existingOrder, bool $isAdmin, bool $isUser, string $user_id, string $buyerPhone = '', string $buyerEmail = ''): string {
+    $assigned = strtoupper(trim((string) ($data['assignEmployeeCode'] ?? $data['employeeCode'] ?? '')));
+
+    // Staff: always tag with the logged-in employee (never GU00)
     if ($isAdmin && !isMasterAdminSession()) {
-        return sanitizeStoredUserCode(currentEmployeeCode($conn));
+        $mine = sanitizeStoredUserCode(currentEmployeeCode($conn));
+        return isRealEmployeeUserCode($mine) ? $mine : '';
     }
+
+    if ($assigned !== '' && isRealEmployeeUserCode($assigned)) {
+        return sanitizeStoredUserCode($assigned);
+    }
+
+    if ($existingOrder) {
+        $prev = sanitizeStoredUserCode((string) ($existingOrder['employee_code'] ?? ''));
+        if (isRealEmployeeUserCode($prev)) {
+            return $prev;
+        }
+    }
+
+    $fromBuyer = resolveBuyerEmployeeCode($conn, $user_id, $buyerPhone, $buyerEmail);
+    if (isRealEmployeeUserCode($fromBuyer)) {
+        return $fromBuyer;
+    }
+
     if ($isUser) {
-        return sanitizeStoredUserCode(lookupEmployeeCodeForUser($conn, $user_id));
+        $fromSession = sanitizeStoredUserCode(lookupEmployeeCodeForUser($conn, $user_id));
+        return isRealEmployeeUserCode($fromSession) ? $fromSession : '';
     }
+
+    // Master with no assign / no buyer referral → leave blank (UI shows Direct / —)
     return '';
 }
 
@@ -1893,18 +2018,22 @@ switch ($action) {
         }
         if ($exists && isset($_SESSION['admin_id'])) {
             requirePermission('users');
-            if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
-                $code = currentEmployeeCode($conn);
-                $chk = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
-                $chk->bind_param('s', $id);
-                $chk->execute();
-                $u = $chk->get_result()->fetch_assoc();
-                if (!$u || strtoupper(trim((string) ($u['referral_code'] ?? ''))) !== $code) {
-                    http_response_code(403);
-                    sendResponse(['error' => 'You can only edit users signed up with your employee code']);
-                    break;
+            $chk = $conn->prepare('SELECT referral_code FROM users WHERE id = ? LIMIT 1');
+            $chk->bind_param('s', $id);
+            $chk->execute();
+            $u = $chk->get_result()->fetch_assoc();
+            $existingReferral = strtoupper(trim((string) ($u['referral_code'] ?? '')));
+            if (!isMasterAdminSession()) {
+                // Employees may edit KYC for their clients, but never reassign (transfer) to another employee
+                if (!adminCan('view-all-kyc')) {
+                    $code = currentEmployeeCode($conn);
+                    if ($existingReferral !== $code) {
+                        http_response_code(403);
+                        sendResponse(['error' => 'You can only edit users signed up with your employee code']);
+                        break;
+                    }
                 }
-                $referral_code = $code;
+                $referral_code = $existingReferral;
             }
         }
 
@@ -2353,7 +2482,18 @@ switch ($action) {
             );
             $stmt->bind_param('sssss', $uid, $email, $email, $phone10, $phone10);
         }
-        $stmt->execute();
+        if (!$stmt) {
+            error_log('getOrders prepare failed: ' . $conn->error);
+            http_response_code(500);
+            sendResponse(['error' => 'Could not load orders']);
+            break;
+        }
+        if (!$stmt->execute()) {
+            error_log('getOrders execute failed: ' . $stmt->error);
+            http_response_code(500);
+            sendResponse(['error' => 'Could not load orders']);
+            break;
+        }
         $res = $stmt->get_result();
         
         $data = [];
@@ -2362,39 +2502,66 @@ switch ($action) {
             if (!isset($_SESSION['admin_id']) && !empty($row['deleted_at'])) {
                 continue;
             }
+            // Auto-heal: if buyer order is still tagged admin:/blank, attach to this account
+            if (!isset($_SESSION['admin_id']) && isset($uid)) {
+                $rowUid = (string) ($row['user_id'] ?? '');
+                if ($rowUid === '' || str_starts_with($rowUid, 'admin:')) {
+                    $oid = (string) $row['order_id'];
+                    $heal = $conn->prepare('UPDATE orders SET user_id = ? WHERE order_id = ? AND (user_id IS NULL OR user_id = \'\' OR user_id LIKE \'admin:%\') AND deleted_at IS NULL');
+                    if ($heal) {
+                        $heal->bind_param('ss', $uid, $oid);
+                        $heal->execute();
+                    }
+                    $row['user_id'] = $uid;
+                }
+            }
             $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
-            if ($employeeCode === '' && !str_starts_with((string) ($row['user_id'] ?? ''), 'admin:')) {
-                $employeeCode = lookupEmployeeCodeForUser($conn, (string) ($row['user_id'] ?? ''));
+            $employeeCode = canonicalizeEmployeeUserCode($employeeCode);
+            // Blank / GU00 on order → recover from buyer's signup referral (GUE003 etc.)
+            if (!isRealEmployeeUserCode($employeeCode)) {
+                try {
+                    $recovered = resolveBuyerEmployeeCode(
+                        $conn,
+                        (string) ($row['user_id'] ?? ''),
+                        (string) ($row['buyer_phone'] ?? ''),
+                        (string) ($row['buyer_email'] ?? '')
+                    );
+                    if (isRealEmployeeUserCode($recovered)) {
+                        $employeeCode = $recovered;
+                    }
+                } catch (Throwable $e) {
+                    // never fail the whole orders list for one row
+                }
             }
             $employeeCode = normalizeUserCode($employeeCode);
-            // BUG 3 FIX: Return ALL fields the frontend expects
+            // BUG 3 FIX: Return ALL fields the frontend expects (cast nulls — PHP 8.1+ htmlspecialchars)
             $data[] = [
-                "orderId" => htmlspecialchars($row['order_id']),
-                "buyerName" => htmlspecialchars($row['buyer_name']),
-                "buyerEmail" => htmlspecialchars($row['buyer_email']),
-                "buyerPhone" => htmlspecialchars($row['buyer_phone']),
-                "shareId" => htmlspecialchars($row['share_id']),
-                "companyName" => htmlspecialchars($row['share_name']),
-                "shareName" => htmlspecialchars($row['share_name']),
-                "shareTicker" => htmlspecialchars($row['share_ticker']),
-                "sector" => htmlspecialchars($row['share_ticker']),
-                "logoInitials" => strtoupper(substr($row['share_name'] ?? '', 0, 2)),
+                "orderId" => htmlspecialchars((string) ($row['order_id'] ?? '')),
+                "buyerName" => htmlspecialchars((string) ($row['buyer_name'] ?? '')),
+                "buyerEmail" => htmlspecialchars((string) ($row['buyer_email'] ?? '')),
+                "buyerPhone" => htmlspecialchars((string) ($row['buyer_phone'] ?? '')),
+                "shareId" => htmlspecialchars((string) ($row['share_id'] ?? '')),
+                "companyName" => htmlspecialchars((string) ($row['share_name'] ?? '')),
+                "shareName" => htmlspecialchars((string) ($row['share_name'] ?? '')),
+                "shareTicker" => htmlspecialchars((string) ($row['share_ticker'] ?? '')),
+                "sector" => htmlspecialchars((string) ($row['share_ticker'] ?? '')),
+                "logoInitials" => strtoupper(substr((string) ($row['share_name'] ?? ''), 0, 2)),
                 "logoGradient" => "linear-gradient(135deg, #333, #555)",
                 "pricePerShare" => (float)$row['price_per_share'],
                 "qty" => (int)$row['quantity'],
                 "totalPaid" => (float)$row['total_amount'],
                 "total" => (float)$row['total_amount'],
-                "status" => htmlspecialchars($row['status']),
-                "method" => htmlspecialchars($row['method']),
-                "paymentMethod" => htmlspecialchars($row['method']),
-                "transactionId" => htmlspecialchars($row['transaction_id'] ?? ''),
-                "utr" => htmlspecialchars($row['transaction_id'] ?? ''),
-                "orderSource" => htmlspecialchars($row['order_source'] ?? 'Online'),
-                "employeeCode" => htmlspecialchars($employeeCode),
-                "opsNote" => htmlspecialchars($row['ops_note'] ?? ''),
+                "status" => htmlspecialchars((string) ($row['status'] ?? '')),
+                "method" => htmlspecialchars((string) ($row['method'] ?? '')),
+                "paymentMethod" => htmlspecialchars((string) ($row['method'] ?? '')),
+                "transactionId" => htmlspecialchars((string) ($row['transaction_id'] ?? '')),
+                "utr" => htmlspecialchars((string) ($row['transaction_id'] ?? '')),
+                "orderSource" => htmlspecialchars((string) ($row['order_source'] ?? 'Online')),
+                "employeeCode" => htmlspecialchars((string) $employeeCode),
+                "opsNote" => htmlspecialchars((string) ($row['ops_note'] ?? '')),
                 "date" => orderRowDate($row),
                 "createdAt" => orderRowDate($row),
-                "userId" => htmlspecialchars($row['user_id'] ?? ''),
+                "userId" => htmlspecialchars((string) ($row['user_id'] ?? '')),
                 "deletedAt" => !empty($row['deleted_at']) ? (string) $row['deleted_at'] : null,
             ];
         }
@@ -2402,12 +2569,7 @@ switch ($action) {
         break;
 
     case 'transferOrder':
-        requireAdmin();
-        if (!isMasterAdminSession() && !adminCan('view-all-orders')) {
-            http_response_code(403);
-            sendResponse(['error' => 'Only master admin can reassign orders to employees']);
-            break;
-        }
+        requireMasterAdmin(); // Only Master Admin may reassign orders between employees
         $data = getPostData();
         $order_id = strtoupper(trim($data['orderId'] ?? ''));
         $employee_code = strtoupper(trim($data['employeeCode'] ?? $data['assignEmployeeCode'] ?? ''));
@@ -2456,9 +2618,8 @@ switch ($action) {
         break;
 
     case 'adminDeleteOrder':
-        // Soft-delete — order can be restored (Undo). Does not wipe invoices.
-        requireAdmin();
-        requireAnyPermission(['orders', 'manual-order', 'pending', 'cancel-refund']);
+        // Soft-delete — master admin only (employees never see delete)
+        requireMasterAdmin();
         $data = getPostData();
         $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
         if ($order_id === '' || !isValidOrderId($order_id)) {
@@ -2507,8 +2668,7 @@ switch ($action) {
         break;
 
     case 'adminRestoreOrder':
-        requireAdmin();
-        requireAnyPermission(['orders', 'manual-order', 'pending', 'cancel-refund']);
+        requireMasterAdmin();
         $data = getPostData();
         $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
         if ($order_id === '' || !isValidOrderId($order_id)) {
@@ -2883,6 +3043,9 @@ switch ($action) {
         $chargeTotals = computeOrderChargeTotals($subtotal, $conn);
         $total_amount = $chargeTotals['total'];
         $custom_charges_json = $chargeTotals['custom_charges_json'];
+        if ($custom_charges_json === null) {
+            $custom_charges_json = '';
+        }
 
         // Online checkout requires a logged-in user and KYC verification
         if ($isUser) {
@@ -2934,7 +3097,7 @@ switch ($action) {
                     $buyer_email = strtolower(trim((string) $linkedUser['email']));
                 }
             }
-            // Auto-link signup user by phone/email so manual orders appear in client portfolio
+            // Auto-link signup user by phone/email so manual orders always appear in client portfolio
             if (str_starts_with($user_id, 'admin:') && ($buyer_phone !== '' || $buyer_email !== '')) {
                 $phone10 = preg_replace('/\D/', '', $buyer_phone);
                 if (strlen($phone10) > 10) {
@@ -2951,19 +3114,13 @@ switch ($action) {
                 $autoStmt->execute();
                 $autoUser = $autoStmt->get_result()->fetch_assoc();
                 if ($autoUser) {
-                    if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
-                        $code = currentEmployeeCode($conn);
-                        $ref = strtoupper(trim((string) ($autoUser['referral_code'] ?? '')));
-                        if ($code !== '' && $ref === $code) {
-                            $user_id = (string) $autoUser['id'];
-                        }
-                    } else {
-                        $user_id = (string) $autoUser['id'];
+                    // Always link for portfolio — employee scope enforced on explicit user pick above
+                    $user_id = (string) $autoUser['id'];
+                    if ($buyer_email === '' && !empty($autoUser['email'])) {
+                        $buyer_email = strtolower(trim((string) $autoUser['email']));
                     }
-                    if (!str_starts_with($user_id, 'admin:')) {
-                        if ($buyer_email === '' && !empty($autoUser['email'])) {
-                            $buyer_email = strtolower(trim((string) $autoUser['email']));
-                        }
+                    if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
+                        $buyer_name = trim((string) ($autoUser['name'] ?? $buyer_name));
                     }
                 }
             }
@@ -2990,7 +3147,27 @@ switch ($action) {
             break;
         }
 
-        $employee_code = resolveOrderEmployeeCode($conn, $data, $existingOrder, $isAdmin, $isUser, $user_id ?? '');
+        $employee_code = resolveOrderEmployeeCode(
+            $conn,
+            $data,
+            $existingOrder,
+            $isAdmin,
+            $isUser,
+            $user_id ?? '',
+            $buyer_phone,
+            $buyer_email
+        );
+        // Final safety: if still blank/GU00, pull from linked buyer (post auto-link)
+        if (!isRealEmployeeUserCode($employee_code)) {
+            $fallback = resolveBuyerEmployeeCode($conn, $user_id ?? '', $buyer_phone, $buyer_email);
+            if (isRealEmployeeUserCode($fallback)) {
+                $employee_code = $fallback;
+            }
+        }
+        // Staff creating order: never allow blank — force their code again
+        if ($isAdmin && !isMasterAdminSession() && !isRealEmployeeUserCode($employee_code)) {
+            $employee_code = sanitizeStoredUserCode(currentEmployeeCode($conn));
+        }
 
         if ($order_id === '') {
             $order_id = allocateNextOrderId($conn);
@@ -2998,13 +3175,26 @@ switch ($action) {
 
         // Lock purchase time in IST at buy moment (not MySQL server TZ quirks)
         $purchasedAt = date('Y-m-d H:i:s');
+        // Manual / admin: allow backdated order date from form (YYYY-MM-DD)
+        if ($isAdmin) {
+            $orderDateRaw = trim((string) ($data['orderDate'] ?? $data['purchasedAt'] ?? $data['date'] ?? ''));
+            if ($orderDateRaw !== '' && preg_match('/^(\d{4}-\d{2}-\d{2})/', $orderDateRaw, $dm)) {
+                $purchasedAt = $dm[1] . ' ' . date('H:i:s');
+            }
+        }
 
         if (isset($fullUpdate) && $fullUpdate && $existingOrder) {
             $stmt = $conn->prepare(
-                "UPDATE orders SET buyer_name=?, buyer_email=?, buyer_phone=?, share_id=?, share_name=?, share_ticker=?, price_per_share=?, quantity=?, total_amount=?, method=?, transaction_id=?, status=?, order_source=?, employee_code=?, custom_charges_json=? WHERE order_id=?"
+                "UPDATE orders SET buyer_name=?, buyer_email=?, buyer_phone=?, share_id=?, share_name=?, share_ticker=?, price_per_share=?, quantity=?, total_amount=?, method=?, transaction_id=?, status=?, order_source=?, employee_code=?, custom_charges_json=?, created_at=? WHERE order_id=?"
             );
+            if (!$stmt) {
+                error_log('saveOrder UPDATE prepare failed: ' . $conn->error);
+                http_response_code(500);
+                sendResponse(['error' => 'Could not update order. Please try again.']);
+                break;
+            }
             $stmt->bind_param(
-                "ssssssdidsssssss",
+                "ssssssdidssssssss",
                 $buyer_name,
                 $buyer_email,
                 $buyer_phone,
@@ -3020,6 +3210,7 @@ switch ($action) {
                 $order_source,
                 $employee_code,
                 $custom_charges_json,
+                $purchasedAt,
                 $order_id
             );
         } else {
@@ -3027,6 +3218,12 @@ switch ($action) {
                 "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, created_at, custom_charges_json)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
+            if (!$stmt) {
+                error_log('saveOrder INSERT prepare failed: ' . $conn->error);
+                http_response_code(500);
+                sendResponse(['error' => 'Could not place order. Please try again.']);
+                break;
+            }
             $stmt->bind_param(
                 "ssssssssdidsssssss",
                 $order_id,
@@ -3057,10 +3254,16 @@ switch ($action) {
         }
 
         if (orderStatusIsPaid($status)) {
-            createInvoiceFromOrder($conn, $order_id);
+            try {
+                createInvoiceFromOrder($conn, $order_id);
+            } catch (Throwable $e) {
+                error_log('saveOrder invoice failed for ' . $order_id . ': ' . $e->getMessage());
+            }
             $dec = $conn->prepare('UPDATE shares SET qty_on_hand = GREATEST(0, qty_on_hand - ?) WHERE share_id = ?');
-            $dec->bind_param('is', $quantity, $share_id);
-            $dec->execute();
+            if ($dec) {
+                $dec->bind_param('is', $quantity, $share_id);
+                $dec->execute();
+            }
         }
 
         sendResponse([
@@ -3192,9 +3395,18 @@ switch ($action) {
         $chargeTotals = computeOrderChargeTotals($subtotal, $conn);
         $total_amount = $chargeTotals['total'];
         $custom_charges_json = $chargeTotals['custom_charges_json'];
+        if ($custom_charges_json === null) {
+            $custom_charges_json = '';
+        }
 
         $purchasedAt = date('Y-m-d H:i:s');
         $ins = $conn->prepare("INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, status, order_source, employee_code, created_at, custom_charges_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Offline', ?, ?, ?)");
+        if (!$ins) {
+            error_log('approveInitiatedCheckout prepare failed: ' . $conn->error);
+            http_response_code(500);
+            sendResponse(['error' => 'Could not create order from initiate']);
+            break;
+        }
         $ins->bind_param("ssssssssdidsssss", $order_id, $user_id, $row['buyer_name'], $row['buyer_email'], $row['buyer_phone'], $row['share_id'], $row['share_name'], $row['share_ticker'], $row['price_per_share'], $row['qty'], $total_amount, $method, $status, $employee_code, $purchasedAt, $custom_charges_json);
         $ins->execute();
         $del = $conn->prepare("DELETE FROM initiated_checkouts WHERE session_id = ?");

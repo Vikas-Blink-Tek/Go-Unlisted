@@ -17,20 +17,7 @@ function validateIfsc(ifsc: string) {
   return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
 }
 
-function orderMatchesUser(
-  o: { buyerEmail?: string; buyerPhone?: string; userId?: string },
-  user: { id: string; email: string; phone?: string },
-): boolean {
-  if (o.userId && user.id && o.userId === user.id) return true;
-  const emailMatch = o.buyerEmail && user.email && o.buyerEmail.toLowerCase() === user.email.toLowerCase();
-  const phoneMatch =
-    o.buyerPhone &&
-    user.phone &&
-    o.buyerPhone.replace(/\D/g, '').slice(-10) === user.phone.replace(/\D/g, '').slice(-10);
-  return Boolean(emailMatch || phoneMatch);
-}
-
-/** Holdings: only after admin verifies payment (Transfer Pending / Confirmed / Completed). */
+/** Holdings: Transfer Pending / Confirmed / Completed (paid + in demat queue or done). */
 function isPortfolioHolding(o: { status: string; orderSource?: string; method?: string }) {
   const s = o.status.toLowerCase();
   if (/cancel|reject|refund/.test(s)) return false;
@@ -95,7 +82,9 @@ export default function DashboardPage() {
     queryKey: ['orders'],
     queryFn: getOrders,
     enabled: !!user,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 
   useEffect(() => {
@@ -134,7 +123,8 @@ export default function DashboardPage() {
     return null;
   }
 
-  const myOrders = (ordersQuery.data || []).filter((o) => !o.deletedAt && orderMatchesUser(o, user));
+  // getOrders already returns only this buyer's rows (user_id / phone / email) — don't drop them again
+  const myOrders = (ordersQuery.data || []).filter((o) => !o.deletedAt);
   const holdings = myOrders.filter((o) => isPortfolioHolding(o));
   const pendingOrders = myOrders.filter((o) => isPortfolioPendingVisible(o));
   const portfolioVisible = holdings.length + pendingOrders.length > 0;

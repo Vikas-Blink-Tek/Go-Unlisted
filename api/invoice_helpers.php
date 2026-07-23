@@ -111,6 +111,9 @@ function createInvoiceFromOrder(mysqli $conn, string $orderId, array $options = 
     $platformFee = 0;
     $stampDuty = 0;
     $customChargesJson = $order['custom_charges_json'] ?? null;
+    if ($customChargesJson === null) {
+        $customChargesJson = '';
+    }
 
     $invoiceId = generateInvoiceId($conn);
     $invoiceDate = date('Y-m-d');
@@ -120,8 +123,13 @@ function createInvoiceFromOrder(mysqli $conn, string $orderId, array $options = 
         'INSERT INTO invoices (invoice_id, order_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, quantity, price_per_share, subtotal, platform_fee, stamp_duty, total_amount, payment_method, transaction_id, status, invoice_date, custom_charges_json)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
+    if (!$ins) {
+        error_log('createInvoiceFromOrder prepare failed: ' . $conn->error);
+        return null;
+    }
+    // 8s + i + 5d + 5s = 19 params (qty int; price/subtotal/fee/stamp/total doubles)
     $ins->bind_param(
-        'sssssssssiddddsssss',
+        'ssssssssidddddsssss',
         $invoiceId,
         $order['order_id'],
         $order['buyer_name'],

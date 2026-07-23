@@ -2,7 +2,14 @@ import { useMemo, useState } from 'react';
 import type { Order, User } from '../../../types';
 import { formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, parseDbDateTime, getOrderDate } from '../../../utils/format';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
-import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canMarkOrderComplete, canUndoOrderComplete } from '../../../utils/orderStatus';
+import {
+  getAdminOrderStatusLabel,
+  getOrderStatusClass,
+  isPendingOrder,
+  isTransferPendingOrder,
+  canMarkOrderComplete,
+  canUndoOrderComplete,
+} from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
 import OrderDetailDrawer from './OrderDetailDrawer';
@@ -53,6 +60,16 @@ export default function AdminOrdersSection({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selected, setSelected] = useState<Order | null>(null);
+  const [transferPick, setTransferPick] = useState<Record<string, string>>({});
+
+  const employeeOptions = useMemo(() => {
+    return (employees || [])
+      .map((e) => {
+        const code = String(e.employee_id ?? e.employeeCode ?? '').trim();
+        return code ? { code, name: e.name ? String(e.name) : code } : null;
+      })
+      .filter(Boolean) as Array<{ code: string; name: string }>;
+  }, [employees]);
 
   const employeeCodes = useMemo(() => {
     const codes = new Set<string>([DEFAULT_USER_CODE]);
@@ -107,6 +124,11 @@ export default function AdminOrdersSection({
     || (!!onComplete && canMarkOrderComplete(o.status))
     || (!!onUndoComplete && canUndoOrderComplete(o.status));
 
+  const canShowTransfer = (o: Order) =>
+    !!onTransferOrder
+    && employeeOptions.length > 0
+    && (isPendingOrder(o.status) || isTransferPendingOrder(o.status));
+
   const handleVerify = (id: string) => {
     if (confirm('Verify payment? Order moves to Pending Share Transfer.')) {
       onVerify?.(id);
@@ -144,6 +166,18 @@ export default function AdminOrdersSection({
     onRestore?.(id);
   };
 
+  const handleTransfer = async (orderId: string) => {
+    const picked =
+      transferPick[orderId]
+      || display.find((o) => o.orderId === orderId)?.employeeCode
+      || employeeOptions[0]?.code
+      || '';
+    if (!picked) return;
+    const ok = confirm(`Transfer this order to ${displayUserCode(picked)}?`);
+    if (!ok) return;
+    await Promise.resolve(onTransferOrder?.(orderId, picked));
+  };
+
   return (
     <>
       <div className="stock-list-toolbar admin-orders-toolbar">
@@ -164,8 +198,8 @@ export default function AdminOrdersSection({
         <select className="report-filter-input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="all">All statuses</option>
           <option value="pending">Pending verification</option>
-          <option value="transfer">Share transfer</option>
-          <option value="completed">Complete</option>
+          <option value="transfer">Pending Share Transfer</option>
+          <option value="completed">Order Complete</option>
           <option value="rejected">Rejected / cancelled</option>
         </select>
         {employeeCodes.length > 0 && (
@@ -210,73 +244,108 @@ export default function AdminOrdersSection({
               </tr>
             </thead>
             <tbody>
-              {display.map((o) => (
-                <tr key={o.orderId} className="admin-order-row" onClick={() => setSelected(o)}>
-                  <td className="admin-orders-col-id" onClick={(e) => e.stopPropagation()}>
-                    <div className="admin-id-cell">
-                      <code className="admin-order-id">{o.orderId}</code>
-                      <CopyTextButton value={o.orderId} label="Order ID copied" />
-                    </div>
-                  </td>
-                  <td className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</td>
-                  <td className="admin-orders-col-code">{displayUserCode(o.employeeCode)}</td>
-                  <td className="admin-orders-col-buyer">
-                    <div className="admin-orders-buyer-name">{formatPersonName(o.buyerName)}</div>
-                    <div className="admin-orders-buyer-meta">
-                      {o.buyerPhone ? formatIndianPhoneDisplay(o.buyerPhone) : o.buyerEmail || '—'}
-                    </div>
-                  </td>
-                  <td className="admin-orders-col-share" title={o.companyName || o.shareName || ''}>
-                    {o.companyName || o.shareName || '—'}
-                  </td>
-                  <td className="admin-orders-col-price">{formatCurrency(o.pricePerShare || 0)}</td>
-                  <td className="admin-orders-col-qty">{o.qty}</td>
-                  <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
-                  <td className="admin-orders-col-utr">
-                    <code className="admin-utr-code" title="Bank UTR (manual) or self-confirmed online">
-                      {o.transactionId || o.utr || '—'}
-                    </code>
-                  </td>
-                  <td className="admin-orders-col-status">
-                    <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
-                      {getAdminOrderStatusLabel(o.status)}
-                    </span>
-                  </td>
-                  {showActionCol && (
-                    <td className="admin-orders-col-actions" onClick={(e) => e.stopPropagation()}>
-                      {showActions && isPendingOrder(o.status) && (
-                        <>
-                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>Verify</button>
-                          <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => handleReject(o.orderId)}>Reject</button>
-                        </>
-                      )}
-                      {onComplete && canMarkOrderComplete(o.status) && (
-                        <button type="button" className="btn btn-primary btn-sm" onClick={() => handleComplete(o.orderId)}>
-                          Complete
-                        </button>
-                      )}
-                      {onUndoComplete && canUndoOrderComplete(o.status) && (
-                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleUndoComplete(o.orderId)}>
-                          Undo
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{ color: '#ef4444' }}
-                          onClick={() => handleDelete(o.orderId)}
-                        >
-                          Delete
-                        </button>
-                      )}
-                      {verifyMode && !canUpdateStatus(o) && !onDelete && (
-                        <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>—</span>
-                      )}
+              {display.map((o) => {
+                const showTransfer = !verifyMode && canShowTransfer(o);
+                const transferValue =
+                  transferPick[o.orderId]
+                  || (o.employeeCode && employeeOptions.some((e) => e.code.toUpperCase() === o.employeeCode!.toUpperCase())
+                    ? o.employeeCode
+                    : employeeOptions[0]?.code)
+                  || '';
+                return (
+                  <tr key={o.orderId} className="admin-order-row" onClick={() => setSelected(o)}>
+                    <td className="admin-orders-col-id" onClick={(e) => e.stopPropagation()}>
+                      <div className="admin-id-cell">
+                        <code className="admin-order-id">{o.orderId}</code>
+                        <CopyTextButton value={o.orderId} label="Order ID copied" />
+                      </div>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</td>
+                    <td className="admin-orders-col-code">{displayUserCode(o.employeeCode)}</td>
+                    <td className="admin-orders-col-buyer">
+                      <div className="admin-orders-buyer-name">{formatPersonName(o.buyerName)}</div>
+                      <div className="admin-orders-buyer-meta">
+                        {o.buyerPhone ? formatIndianPhoneDisplay(o.buyerPhone) : o.buyerEmail || '—'}
+                      </div>
+                    </td>
+                    <td className="admin-orders-col-share" title={o.companyName || o.shareName || ''}>
+                      {o.companyName || o.shareName || '—'}
+                    </td>
+                    <td className="admin-orders-col-price">{formatCurrency(o.pricePerShare || 0)}</td>
+                    <td className="admin-orders-col-qty">{o.qty}</td>
+                    <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                    <td className="admin-orders-col-utr">
+                      <code className="admin-utr-code" title="Bank UTR (manual) or self-confirmed online">
+                        {o.transactionId || o.utr || '—'}
+                      </code>
+                    </td>
+                    <td className="admin-orders-col-status" onClick={(e) => showTransfer && e.stopPropagation()}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', minWidth: 160 }}>
+                        <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                          {getAdminOrderStatusLabel(o.status)}
+                        </span>
+                        {showTransfer && (
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <select
+                              className="report-filter-input"
+                              style={{ minWidth: 110, fontSize: '0.75rem', padding: '0.25rem 0.4rem' }}
+                              value={transferValue}
+                              aria-label="Transfer order assign employee"
+                              onChange={(e) => setTransferPick((prev) => ({ ...prev, [o.orderId]: e.target.value }))}
+                            >
+                              {employeeOptions.map((emp) => (
+                                <option key={emp.code} value={emp.code}>
+                                  {displayUserCode(emp.code)}{emp.name ? ` — ${emp.name}` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => void handleTransfer(o.orderId)}
+                            >
+                              Transfer
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    {showActionCol && (
+                      <td className="admin-orders-col-actions" onClick={(e) => e.stopPropagation()}>
+                        {showActions && isPendingOrder(o.status) && (
+                          <>
+                            <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>Verify</button>
+                            <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => handleReject(o.orderId)}>Reject</button>
+                          </>
+                        )}
+                        {onComplete && canMarkOrderComplete(o.status) && (
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleComplete(o.orderId)}>
+                            Complete
+                          </button>
+                        )}
+                        {onUndoComplete && canUndoOrderComplete(o.status) && (
+                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleUndoComplete(o.orderId)}>
+                            Undo
+                          </button>
+                        )}
+                        {onDelete && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: '#ef4444' }}
+                            onClick={() => handleDelete(o.orderId)}
+                          >
+                            Delete
+                          </button>
+                        )}
+                        {verifyMode && !canUpdateStatus(o) && !onDelete && (
+                          <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -305,7 +374,7 @@ export default function AdminOrdersSection({
                     <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
                     <td>{formatPersonName(o.buyerName)}</td>
                     <td>{o.companyName || o.shareName}</td>
-                    <td>{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                    <td>{formatCurrency(o.totalPaid || 0)}</td>
                     <td>
                       <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
                         {getAdminOrderStatusLabel(o.status)}
