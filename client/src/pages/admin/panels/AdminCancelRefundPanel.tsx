@@ -9,7 +9,8 @@ import AdminSectionHeader from '../components/AdminSectionHeader';
 export default function AdminCancelRefundPanel() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { data: orders = [] } = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
+  const { data: allOrders = [] } = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
+  const orders = allOrders.filter((o) => !o.deletedAt);
 
   const settlement = orders.filter((o) => {
     const s = o.status.toLowerCase();

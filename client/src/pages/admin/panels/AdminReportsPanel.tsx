@@ -27,7 +27,7 @@ export default function AdminReportsPanel() {
   const initiatedQuery = useQuery({ queryKey: ['initiated-checkouts'], queryFn: getInitiatedCheckouts });
 
   const users = usersQuery.data || [];
-  const orders = ordersQuery.data || [];
+  const orders = (ordersQuery.data || []).filter((o) => !o.deletedAt);
   const initiated = initiatedQuery.data || [];
 
   const payments = useMemo(() => [

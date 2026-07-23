@@ -17,6 +17,8 @@ type Props = {
   onReject?: (orderId: string) => void;
   onComplete?: (orderId: string) => void;
   onUndoComplete?: (orderId: string) => void;
+  onDelete?: (orderId: string) => void;
+  onRestore?: (orderId: string) => void;
   limit?: number;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
   onTransferOrder?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
@@ -24,7 +26,27 @@ type Props = {
   onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
 };
 
-export default function AdminOrdersSection({ orders, users, showActions, verifyMode, onVerify, onReject, onComplete, onUndoComplete, limit, employees, onTransferOrder, onSavePaymentRef, onAdjustTotal }: Props) {
+function isSoftDeleted(o: Order) {
+  return Boolean(o.deletedAt);
+}
+
+export default function AdminOrdersSection({
+  orders,
+  users,
+  showActions,
+  verifyMode,
+  onVerify,
+  onReject,
+  onComplete,
+  onUndoComplete,
+  onDelete,
+  onRestore,
+  limit,
+  employees,
+  onTransferOrder,
+  onSavePaymentRef,
+  onAdjustTotal,
+}: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(verifyMode ? 'pending' : 'all');
   const [codeFilter, setCodeFilter] = useState('all');
@@ -41,11 +63,14 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
     return Array.from(codes).sort();
   }, [orders]);
 
+  const activeOrders = useMemo(() => orders.filter((o) => !isSoftDeleted(o)), [orders]);
+  const deletedOrders = useMemo(() => orders.filter((o) => isSoftDeleted(o)), [orders]);
+
   const filtered = useMemo(() => {
     const utrSearch = verifyMode && search.trim().length > 0;
     const activeStatusFilter = utrSearch ? 'all' : statusFilter;
 
-    return orders.filter((o) => {
+    return activeOrders.filter((o) => {
       if (codeFilter !== 'all' && displayUserCode(o.employeeCode) !== codeFilter) return false;
       if (activeStatusFilter === 'pending' && !isPendingOrder(o.status)) return false;
       if (activeStatusFilter === 'transfer' && !/transfer|confirm|verif/i.test(o.status)) return false;
@@ -73,10 +98,10 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         o.employeeCode,
       );
     });
-  }, [orders, search, statusFilter, codeFilter, dateFrom, dateTo, verifyMode]);
+  }, [activeOrders, search, statusFilter, codeFilter, dateFrom, dateTo, verifyMode]);
 
   const display = limit ? filtered.slice(0, limit) : filtered;
-  const showActionCol = showActions || !!onComplete || !!onUndoComplete;
+  const showActionCol = showActions || !!onComplete || !!onUndoComplete || !!onDelete;
   const canUpdateStatus = (o: Order) =>
     (showActions && isPendingOrder(o.status))
     || (!!onComplete && canMarkOrderComplete(o.status))
@@ -106,6 +131,17 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
   const handleUndoComplete = (id: string) => {
     onUndoComplete?.(id);
     setSelected(null);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('Delete this order? You can Undo from Recently deleted below.')) {
+      onDelete?.(id);
+      setSelected(null);
+    }
+  };
+
+  const handleRestore = (id: string) => {
+    onRestore?.(id);
   };
 
   return (
@@ -224,7 +260,17 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
                           Undo
                         </button>
                       )}
-                      {verifyMode && !canUpdateStatus(o) && (
+                      {onDelete && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: '#ef4444' }}
+                          onClick={() => handleDelete(o.orderId)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                      {verifyMode && !canUpdateStatus(o) && !onDelete && (
                         <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>—</span>
                       )}
                     </td>
@@ -236,6 +282,48 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         </div>
       )}
 
+      {!verifyMode && onRestore && deletedOrders.length > 0 && (
+        <div style={{ marginTop: '1.5rem' }}>
+          <h4 style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>
+            Recently deleted ({deletedOrders.length}) — Undo anytime
+          </h4>
+          <div className="price-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Buyer</th>
+                  <th>Share</th>
+                  <th>Amount</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {deletedOrders.slice(0, 30).map((o) => (
+                  <tr key={o.orderId} style={{ opacity: 0.75 }}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
+                    <td>{formatPersonName(o.buyerName)}</td>
+                    <td>{o.companyName || o.shareName}</td>
+                    <td>{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                    <td>
+                      <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                        {getAdminOrderStatusLabel(o.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => handleRestore(o.orderId)}>
+                        Undo delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <OrderDetailDrawer
         order={selected}
         users={users}
@@ -244,6 +332,7 @@ export default function AdminOrdersSection({ orders, users, showActions, verifyM
         onReject={showActions ? handleReject : undefined}
         onComplete={onComplete ? handleComplete : undefined}
         onUndoComplete={onUndoComplete ? handleUndoComplete : undefined}
+        onDelete={onDelete ? handleDelete : undefined}
         employees={employees}
         onTransfer={onTransferOrder}
         onSavePaymentRef={onSavePaymentRef}

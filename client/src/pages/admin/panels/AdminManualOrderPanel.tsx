@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { saveOrder, getOrders } from '../../../api/orders';
+import { saveOrder, getOrders, softDeleteOrder, restoreOrder } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
@@ -82,16 +82,42 @@ export default function AdminManualOrderPanel() {
   };
 
   const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
-  const manualOrders = (ordersQuery.data || []).filter((o) => o.orderSource === 'Offline' || o.method === 'Offline');
+  const allManual = (ordersQuery.data || []).filter((o) => o.orderSource === 'Offline' || o.method === 'Offline');
+  const manualOrders = allManual.filter((o) => !o.deletedAt);
+  const deletedManual = allManual.filter((o) => Boolean(o.deletedAt));
 
   const saveMut = useMutation({
     mutationFn: saveOrder,
     onSuccess: (res) => {
-      showToast(editId ? 'Order updated' : `Order ${res.orderId || ''} created`, 'success');
+      showToast(editId ? 'Order updated' : `Order ${res.orderId || ''} created — visible in client portfolio`, 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
       setForm(empty);
       setEditId(null);
       setClientSearch('');
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: softDeleteOrder,
+    onSuccess: () => {
+      showToast('Order deleted — Undo below if needed', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      if (editId) {
+        setEditId(null);
+        setForm(empty);
+      }
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const restoreMut = useMutation({
+    mutationFn: restoreOrder,
+    onSuccess: () => {
+      showToast('Order restored', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
     onError: (e: Error) => showToast(e.message, 'error'),
   });
@@ -170,7 +196,7 @@ export default function AdminManualOrderPanel() {
       <AdminSectionHeader
         compact
         title="Manual Order Entry"
-        subtitle="Record phone / WhatsApp deals. Status starts at Share Transfer — client portfolio shows only after you mark Complete."
+        subtitle="Record phone / WhatsApp deals. Status starts at Share Transfer — linked clients see it in Portfolio immediately."
       />
 
       <div className="report-filter-box">
@@ -219,7 +245,12 @@ export default function AdminManualOrderPanel() {
               )}
               {form.userId && (
                 <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
-                  Linked to signup account — shares appear in their portfolio only after you mark the order Complete.
+                  Linked to signup account — order appears in their Portfolio right away (Share Transfer).
+                </p>
+              )}
+              {!form.userId && (
+                <p className="article-field-hint" style={{ marginTop: '0.35rem' }}>
+                  Tip: select a signup user (or matching mobile) so the order shows in their Portfolio.
                 </p>
               )}
             </div>
@@ -339,7 +370,23 @@ export default function AdminManualOrderPanel() {
                     {getAdminOrderStatusLabel(o.status)}
                   </span>
                 </td>
-                <td><button type="button" className="btn btn-ghost btn-sm" onClick={() => loadEdit(o)}>Edit</button></td>
+                <td>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => loadEdit(o)}>Edit</button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: '#ef4444' }}
+                      onClick={() => {
+                        if (confirm(`Delete ${o.orderId}? You can Undo from Recently deleted.`)) {
+                          deleteMut.mutate(o.orderId);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -351,6 +398,55 @@ export default function AdminManualOrderPanel() {
           </div>
         )}
       </div>
+
+      {deletedManual.length > 0 && (
+        <>
+          <AdminSectionHeader
+            compact
+            title="Recently deleted"
+            subtitle="Soft-deleted only — click Undo to restore"
+            badge={`${deletedManual.length}`}
+          />
+          <div className="price-table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Order ID</th>
+                  <th>Client</th>
+                  <th>Share</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {deletedManual.slice(0, 20).map((o) => (
+                  <tr key={o.orderId} style={{ opacity: 0.75 }}>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{o.orderId}</td>
+                    <td>{formatPersonName(o.buyerName)}</td>
+                    <td>{o.companyName || o.shareName}</td>
+                    <td>{formatCurrency(o.totalPaid || 0)}</td>
+                    <td>
+                      <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                        {getAdminOrderStatusLabel(o.status)}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => restoreMut.mutate(o.orderId)}
+                      >
+                        Undo delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

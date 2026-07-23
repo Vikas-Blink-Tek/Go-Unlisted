@@ -47,7 +47,7 @@ export default function AdminVerifyPaymentsPanel() {
     enabled: isMaster && can('view-all-orders'),
   });
 
-  const orders = ordersQuery.data || [];
+  const orders = (ordersQuery.data || []).filter((o) => !o.deletedAt);
   const users = usersQuery.data || [];
   const pendingOrders = orders.filter((o) => isPendingOrder(o.status));
 

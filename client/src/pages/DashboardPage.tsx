@@ -134,7 +134,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const myOrders = (ordersQuery.data || []).filter((o) => orderMatchesUser(o, user));
+  const myOrders = (ordersQuery.data || []).filter((o) => !o.deletedAt && orderMatchesUser(o, user));
   const holdings = myOrders.filter((o) => isPortfolioHolding(o));
   const pendingOrders = myOrders.filter((o) => isPortfolioPendingVisible(o));
   const portfolioVisible = holdings.length + pendingOrders.length > 0;

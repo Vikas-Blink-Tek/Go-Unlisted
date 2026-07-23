@@ -98,6 +98,8 @@ export interface Order {
   date?: string;
   createdAt?: string;
   created_at?: string;
+  /** Soft-deleted timestamp (admin only). Null/undefined = active. */
+  deletedAt?: string | null;
 }
 
 export interface Article {

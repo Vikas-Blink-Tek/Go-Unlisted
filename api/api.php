@@ -186,6 +186,20 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE orders ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP");
     }
+    $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'deleted_at'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE orders ADD COLUMN deleted_at DATETIME DEFAULT NULL");
+    }
+
+    // Fix legacy employee codes GU002 → GUE002 (exactly 3 digits after GU, missing E)
+    $conn->query("UPDATE employees SET employee_id = CONCAT('GUE', SUBSTRING(employee_id, 3))
+                  WHERE employee_id REGEXP '^GU[0-9]{3}$' AND employee_id <> 'GU00'");
+    $conn->query("UPDATE orders SET employee_code = CONCAT('GUE', SUBSTRING(employee_code, 3))
+                  WHERE employee_code REGEXP '^GU[0-9]{3}$' AND employee_code <> 'GU00'");
+    $conn->query("UPDATE users SET referral_code = CONCAT('GUE', SUBSTRING(referral_code, 3))
+                  WHERE referral_code REGEXP '^GU[0-9]{3}$' AND referral_code <> 'GU00'");
+    $conn->query("UPDATE initiated_checkouts SET employee_code = CONCAT('GUE', SUBSTRING(employee_code, 3))
+                  WHERE employee_code REGEXP '^GU[0-9]{3}$' AND employee_code <> 'GU00'");
 
     $res = $conn->query("SHOW COLUMNS FROM initiated_checkouts LIKE 'employee_code'");
     if ($res && $res->num_rows === 0) {
@@ -742,14 +756,29 @@ function defaultDirectUserCode(): string {
     return 'GU00';
 }
 
-function normalizeUserCode(string $code): string {
+/**
+ * Employee codes are GUE001, GUE002… Direct signups use GU00.
+ * Legacy mistakes like GU002 (missing E) → GUE002. Do not touch order IDs (GU0001 = 4+ digits).
+ */
+function canonicalizeEmployeeUserCode(string $code): string {
     $code = strtoupper(trim($code));
+    if ($code === '' || $code === 'GU00') {
+        return $code;
+    }
+    if (preg_match('/^GU(\d{3})$/', $code, $m)) {
+        return 'GUE' . $m[1];
+    }
+    return $code;
+}
+
+function normalizeUserCode(string $code): string {
+    $code = canonicalizeEmployeeUserCode($code);
     return $code !== '' ? $code : defaultDirectUserCode();
 }
 
-/** Raw code for DB writes — never invent GU00 on save. */
+/** Raw code for DB writes — never invent GU00 on save; fix GU002 → GUE002. */
 function sanitizeStoredUserCode(string $code): string {
-    return strtoupper(trim($code));
+    return canonicalizeEmployeeUserCode($code);
 }
 
 /** Short sequential IDs for new orders: GU0001, GU0002, … (legacy long IDs still accepted). */
@@ -927,14 +956,25 @@ function computeOrderChargeTotals(float $subtotal, mysqli $conn): array {
 }
 
 function employeeCodeExists(mysqli $conn, string $code): bool {
-    $code = strtoupper(trim($code));
+    $code = canonicalizeEmployeeUserCode($code);
     if ($code === '' || $code === 'GU00') {
         return true;
     }
     $stmt = $conn->prepare('SELECT id FROM employees WHERE UPPER(employee_id) = ? LIMIT 1');
     $stmt->bind_param('s', $code);
     $stmt->execute();
-    return $stmt->get_result()->num_rows > 0;
+    if ($stmt->get_result()->num_rows > 0) {
+        return true;
+    }
+    // Before migrate: accept legacy GU002 if that row still exists
+    if (preg_match('/^GUE(\d{3})$/', $code, $m)) {
+        $legacy = 'GU' . $m[1];
+        $stmt2 = $conn->prepare('SELECT id FROM employees WHERE UPPER(employee_id) = ? LIMIT 1');
+        $stmt2->bind_param('s', $legacy);
+        $stmt2->execute();
+        return $stmt2->get_result()->num_rows > 0;
+    }
+    return false;
 }
 
 function resolveOrderEmployeeCode(mysqli $conn, array $data, ?array $existingOrder, bool $isAdmin, bool $isUser, string $user_id): string {
@@ -1522,7 +1562,7 @@ switch ($action) {
         $id = !empty($data['id']) ? $data['id'] : 'emp-' . uniqid();
         $name = htmlspecialchars($data['name']);
         $email = htmlspecialchars($data['email']);
-        $employee_id = htmlspecialchars($data['employeeId'] ?? '');
+        $employee_id = canonicalizeEmployeeUserCode(htmlspecialchars($data['employeeId'] ?? ''));
         $phoneRaw = trim((string) ($data['phone'] ?? ''));
         $phone = $phoneRaw !== '' ? htmlspecialchars(normalizeIndianPhone($phoneRaw)) : '';
         $permissionsJson = json_encode(parseEmployeePermissions($data['permissions'] ?? defaultEmployeePermissions()));
@@ -2290,14 +2330,38 @@ switch ($action) {
                 $stmt->bind_param('sss', $code, $code, $adminUser);
             }
         } else {
-            $stmt = $conn->prepare("SELECT * FROM orders WHERE user_id=? ORDER BY created_at DESC");
-            $stmt->bind_param("s", $_SESSION['user_id']);
+            // Buyer: linked user_id OR matching email/phone (manual orders often match by contact)
+            $uid = (string) $_SESSION['user_id'];
+            $uStmt = $conn->prepare('SELECT email, phone FROM users WHERE id = ? LIMIT 1');
+            $uStmt->bind_param('s', $uid);
+            $uStmt->execute();
+            $uRow = $uStmt->get_result()->fetch_assoc() ?: [];
+            $email = strtolower(trim((string) ($uRow['email'] ?? '')));
+            $phone10 = preg_replace('/\D/', '', (string) ($uRow['phone'] ?? ''));
+            if (strlen($phone10) > 10) {
+                $phone10 = substr($phone10, -10);
+            }
+            $stmt = $conn->prepare(
+                "SELECT * FROM orders
+                 WHERE deleted_at IS NULL
+                   AND (
+                     user_id = ?
+                     OR (? <> '' AND LOWER(buyer_email) = ?)
+                     OR (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                   )
+                 ORDER BY created_at DESC"
+            );
+            $stmt->bind_param('sssss', $uid, $email, $email, $phone10, $phone10);
         }
         $stmt->execute();
         $res = $stmt->get_result();
         
         $data = [];
-        while($row = $res->fetch_assoc()) { 
+        while($row = $res->fetch_assoc()) {
+            // Buyers never see soft-deleted; admins get deletedAt for Undo UI
+            if (!isset($_SESSION['admin_id']) && !empty($row['deleted_at'])) {
+                continue;
+            }
             $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
             if ($employeeCode === '' && !str_starts_with((string) ($row['user_id'] ?? ''), 'admin:')) {
                 $employeeCode = lookupEmployeeCodeForUser($conn, (string) ($row['user_id'] ?? ''));
@@ -2331,6 +2395,7 @@ switch ($action) {
                 "date" => orderRowDate($row),
                 "createdAt" => orderRowDate($row),
                 "userId" => htmlspecialchars($row['user_id'] ?? ''),
+                "deletedAt" => !empty($row['deleted_at']) ? (string) $row['deleted_at'] : null,
             ];
         }
         sendResponse($data);
@@ -2391,12 +2456,9 @@ switch ($action) {
         break;
 
     case 'adminDeleteOrder':
+        // Soft-delete — order can be restored (Undo). Does not wipe invoices.
         requireAdmin();
-        if (!isMasterAdminSession()) {
-            http_response_code(403);
-            sendResponse(['error' => 'Only master admin can permanently delete an order']);
-            break;
-        }
+        requireAnyPermission(['orders', 'manual-order', 'pending', 'cancel-refund']);
         $data = getPostData();
         $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
         if ($order_id === '' || !isValidOrderId($order_id)) {
@@ -2404,7 +2466,7 @@ switch ($action) {
             sendResponse(['error' => 'Invalid order ID']);
             break;
         }
-        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, total_amount, status, user_id FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, total_amount, status, user_id, employee_code, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
         $stmtCheck->bind_param('s', $order_id);
         $stmtCheck->execute();
         $orderRow = $stmtCheck->get_result()->fetch_assoc();
@@ -2413,36 +2475,81 @@ switch ($action) {
             sendResponse(['error' => 'Order not found']);
             break;
         }
-        $conn->begin_transaction();
-        try {
-            $delInv = $conn->prepare('DELETE FROM invoices WHERE order_id = ?');
-            $delInv->bind_param('s', $order_id);
-            $delInv->execute();
-            $invDeleted = $delInv->affected_rows;
-            $delOrd = $conn->prepare('DELETE FROM orders WHERE order_id = ? LIMIT 1');
-            $delOrd->bind_param('s', $order_id);
-            $delOrd->execute();
-            $ordDeleted = $delOrd->affected_rows;
-            $conn->commit();
-        } catch (Throwable $e) {
-            $conn->rollback();
+        if (!orderBelongsToEmployee($conn, $orderRow)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only delete orders assigned to your employee code']);
+            break;
+        }
+        if (!empty($orderRow['deleted_at'])) {
+            sendResponse(['success' => true, 'orderId' => $order_id, 'alreadyDeleted' => true]);
+            break;
+        }
+        $upd = $conn->prepare('UPDATE orders SET deleted_at = NOW() WHERE order_id = ? AND deleted_at IS NULL');
+        $upd->bind_param('s', $order_id);
+        if (!$upd->execute() || $upd->affected_rows < 1) {
             http_response_code(500);
             sendResponse(['error' => 'Could not delete order']);
             break;
         }
-        logAudit($conn, 'Delete Order', $_SESSION['admin_id'], [
+        logAudit($conn, 'Soft Delete Order', $_SESSION['admin_id'], [
             'orderId' => $order_id,
             'buyerName' => $orderRow['buyer_name'] ?? '',
             'shareName' => $orderRow['share_name'] ?? '',
             'totalAmount' => $orderRow['total_amount'] ?? '',
             'status' => $orderRow['status'] ?? '',
-            'invoicesDeleted' => $invDeleted,
         ]);
         sendResponse([
             'success' => true,
             'orderId' => $order_id,
-            'deleted' => $ordDeleted > 0,
-            'invoicesDeleted' => $invDeleted,
+            'deleted' => true,
+            'soft' => true,
+        ]);
+        break;
+
+    case 'adminRestoreOrder':
+        requireAdmin();
+        requireAnyPermission(['orders', 'manual-order', 'pending', 'cancel-refund']);
+        $data = getPostData();
+        $order_id = strtoupper(trim((string) ($data['orderId'] ?? $data['order_id'] ?? '')));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid order ID']);
+            break;
+        }
+        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, status, user_id, employee_code, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck->bind_param('s', $order_id);
+        $stmtCheck->execute();
+        $orderRow = $stmtCheck->get_result()->fetch_assoc();
+        if (!$orderRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'Order not found']);
+            break;
+        }
+        if (!orderBelongsToEmployee($conn, $orderRow)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only restore orders assigned to your employee code']);
+            break;
+        }
+        if (empty($orderRow['deleted_at'])) {
+            sendResponse(['success' => true, 'orderId' => $order_id, 'alreadyActive' => true]);
+            break;
+        }
+        $upd = $conn->prepare('UPDATE orders SET deleted_at = NULL WHERE order_id = ?');
+        $upd->bind_param('s', $order_id);
+        if (!$upd->execute()) {
+            http_response_code(500);
+            sendResponse(['error' => 'Could not restore order']);
+            break;
+        }
+        logAudit($conn, 'Restore Order', $_SESSION['admin_id'], [
+            'orderId' => $order_id,
+            'buyerName' => $orderRow['buyer_name'] ?? '',
+            'status' => $orderRow['status'] ?? '',
+        ]);
+        sendResponse([
+            'success' => true,
+            'orderId' => $order_id,
+            'restored' => true,
         ]);
         break;
 
@@ -2530,7 +2637,7 @@ switch ($action) {
                 sendResponse(["error" => "Invalid Order ID format"]);
                 break;
             }
-            $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code FROM orders WHERE order_id=?");
+            $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code, deleted_at FROM orders WHERE order_id=?");
             $stmtCheck->bind_param("s", $order_id);
             $stmtCheck->execute();
             $existingOrder = $stmtCheck->get_result()->fetch_assoc();
@@ -2540,6 +2647,11 @@ switch ($action) {
         $fullUpdate = !empty($data['_fullUpdate']) && $isAdmin;
 
         if ($existingOrder && $fullUpdate) {
+            if (!empty($existingOrder['deleted_at'])) {
+                http_response_code(400);
+                sendResponse(['error' => 'Restore this order (Undo delete) before editing']);
+                break;
+            }
             if (!orderBelongsToEmployee($conn, $existingOrder)) {
                 http_response_code(403);
                 sendResponse(['error' => 'You can only update orders assigned to your employee code']);
@@ -2548,6 +2660,11 @@ switch ($action) {
         }
 
         if ($existingOrder && !$fullUpdate) {
+            if (!empty($existingOrder['deleted_at'])) {
+                http_response_code(400);
+                sendResponse(['error' => 'This order was deleted. Use Undo to restore it first.']);
+                break;
+            }
             if ($isAdmin && !orderBelongsToEmployee($conn, $existingOrder)) {
                 http_response_code(403);
                 sendResponse(["error" => "You can only update orders assigned to your employee code"]);
@@ -2632,8 +2749,8 @@ switch ($action) {
                 $status = 'Transfer Pending';
             }
         } else {
-            // Online checkout: buyer pays + enters UTR → admin must Verify before portfolio
-            $status = 'Pending Verification';
+            // Online checkout: pay + UTR → Share Transfer queue (All Orders). Admin saves ref → Complete.
+            $status = 'Transfer Pending';
             $paymentConfirmed = $data['paymentConfirmed'] ?? false;
             $confirmedOk = $paymentConfirmed === true
                 || $paymentConfirmed === 1
@@ -2717,9 +2834,9 @@ switch ($action) {
             break;
         }
 
-        // Block duplicate payment reference (UTR)
+        // Block duplicate payment reference (UTR) — ignore soft-deleted orders
         if ($transaction_id !== '') {
-            $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? LIMIT 1");
+            $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL LIMIT 1");
             $dupUtr->bind_param("s", $transaction_id);
             $dupUtr->execute();
             if ($dupUtr->get_result()->num_rows > 0) {
@@ -2733,7 +2850,7 @@ switch ($action) {
         if (!$isManualAdmin && $isUser) {
             $uid = (string) $_SESSION['user_id'];
             $hourStmt = $conn->prepare(
-                "SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
+                "SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND deleted_at IS NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
             );
             $hourStmt->bind_param('s', $uid);
             $hourStmt->execute();
@@ -2746,6 +2863,7 @@ switch ($action) {
             $recentStmt = $conn->prepare(
                 "SELECT order_id FROM orders
                  WHERE user_id = ? AND share_id = ?
+                   AND deleted_at IS NULL
                    AND created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
                    AND status NOT LIKE '%Cancel%'
                    AND status NOT LIKE '%Reject%'
@@ -2814,6 +2932,39 @@ switch ($action) {
                 }
                 if ($buyer_email === '' && !empty($linkedUser['email'])) {
                     $buyer_email = strtolower(trim((string) $linkedUser['email']));
+                }
+            }
+            // Auto-link signup user by phone/email so manual orders appear in client portfolio
+            if (str_starts_with($user_id, 'admin:') && ($buyer_phone !== '' || $buyer_email !== '')) {
+                $phone10 = preg_replace('/\D/', '', $buyer_phone);
+                if (strlen($phone10) > 10) {
+                    $phone10 = substr($phone10, -10);
+                }
+                $emailLower = strtolower(trim($buyer_email));
+                $autoStmt = $conn->prepare(
+                    "SELECT id, name, phone, email, referral_code FROM users
+                     WHERE (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                        OR (? <> '' AND LOWER(email) = ?)
+                     ORDER BY created_at DESC LIMIT 1"
+                );
+                $autoStmt->bind_param('ssss', $phone10, $phone10, $emailLower, $emailLower);
+                $autoStmt->execute();
+                $autoUser = $autoStmt->get_result()->fetch_assoc();
+                if ($autoUser) {
+                    if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
+                        $code = currentEmployeeCode($conn);
+                        $ref = strtoupper(trim((string) ($autoUser['referral_code'] ?? '')));
+                        if ($code !== '' && $ref === $code) {
+                            $user_id = (string) $autoUser['id'];
+                        }
+                    } else {
+                        $user_id = (string) $autoUser['id'];
+                    }
+                    if (!str_starts_with($user_id, 'admin:')) {
+                        if ($buyer_email === '' && !empty($autoUser['email'])) {
+                            $buyer_email = strtolower(trim((string) $autoUser['email']));
+                        }
+                    }
                 }
             }
         } else {

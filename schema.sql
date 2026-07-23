@@ -72,7 +72,8 @@ CREATE TABLE `orders` (
   `status` varchar(50) NOT NULL,
   `order_source` varchar(30) DEFAULT 'Online',
   `employee_code` varchar(50) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `deleted_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

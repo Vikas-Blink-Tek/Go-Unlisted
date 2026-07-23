@@ -47,6 +47,20 @@ export function adjustOrderTotal(orderId: string, totalAmount: number, opsNote?:
   );
 }
 
+/** Soft-delete — recoverable via restoreOrder. */
+export function softDeleteOrder(orderId: string) {
+  return apiRequest<{ success: boolean; orderId: string; soft?: boolean }>('adminDeleteOrder', 'POST', {
+    orderId,
+  });
+}
+
+/** Undo soft-delete. */
+export function restoreOrder(orderId: string) {
+  return apiRequest<{ success: boolean; orderId: string; restored?: boolean }>('adminRestoreOrder', 'POST', {
+    orderId,
+  });
+}
+
 export function transferOrder(orderId: string, employeeCode: string) {
   return apiRequest<{ success: boolean; orderId: string; employeeCode?: string }>('transferOrder', 'POST', {
     orderId,

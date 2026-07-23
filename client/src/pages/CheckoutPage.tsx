@@ -266,7 +266,7 @@ export default function CheckoutPage() {
       setOrderId(res.orderId || '');
       try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
       setStep(3);
-      showToast('Order submitted — we will verify your UTR and then add shares to your portfolio.', 'success');
+      showToast('Order placed — shares are in your portfolio (share transfer pending).', 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Order failed', 'error');
     } finally {
@@ -572,7 +572,7 @@ export default function CheckoutPage() {
               <div className="confirm-icon" style={{ color: 'var(--green)' }}>✓</div>
               <h2 className="confirm-title">Order Received!</h2>
               <p className="confirm-subtitle">
-                We have your UTR. Our team will verify the payment — after approval, shares appear in your portfolio as confirmed.
+                We have your UTR. Shares are in your portfolio while we complete demat transfer.
               </p>
               <div className="confirm-order-id">
                 Order ID <span>{orderId}</span>
@@ -583,10 +583,10 @@ export default function CheckoutPage() {
                 <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
                 <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
                 <div className="confirm-row"><span className="lbl">UTR</span><span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span></div>
-                <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--gold, #b45309)' }}>Payment under review</span></div>
+                <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--accent)' }}>Share transfer pending</span></div>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
-                Track status in Dashboard. Shares show in Portfolio only after admin verifies your UTR.
+                Track status in Dashboard. Our team marks the order Complete after demat credit.
               </p>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>

@@ -19,6 +19,7 @@ type Props = {
   onReject?: (orderId: string) => void;
   onComplete?: (orderId: string) => void;
   onUndoComplete?: (orderId: string) => void;
+  onDelete?: (orderId: string) => void;
   onSavePaymentRef?: (orderId: string, transactionId: string) => void | Promise<unknown>;
   onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
@@ -33,6 +34,7 @@ export default function OrderDetailDrawer({
   onReject,
   onComplete,
   onUndoComplete,
+  onDelete,
   onSavePaymentRef,
   onAdjustTotal,
   employees,
@@ -83,7 +85,8 @@ export default function OrderDetailDrawer({
     (onVerify && isPendingOrder(order.status))
     || (onReject && isPendingOrder(order.status))
     || (onComplete && canMarkOrderComplete(order.status))
-    || (onUndoComplete && canUndoOrderComplete(order.status));
+    || (onUndoComplete && canUndoOrderComplete(order.status))
+    || !!onDelete;
 
   const savePaymentRef = async () => {
     if (!onSavePaymentRef) return;
@@ -201,7 +204,7 @@ export default function OrderDetailDrawer({
             )}
             <div style={{ marginTop: '0.85rem' }}>
               <label className="form-label" htmlFor={`payment-ref-${order.orderId}`}>
-                Payment Ref / UTR
+                {canMarkOrderComplete(order.status) ? 'Transfer / Payment Ref (UTR)' : 'Payment Ref / UTR'}
               </label>
               {onSavePaymentRef ? (
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -216,11 +219,15 @@ export default function OrderDetailDrawer({
                   />
                   <button
                     type="button"
-                    className="btn btn-secondary btn-sm"
+                    className={canMarkOrderComplete(order.status) ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
                     disabled={savingRef}
                     onClick={() => void savePaymentRef()}
                   >
-                    {savingRef ? 'Saving…' : 'Save ref'}
+                    {savingRef
+                      ? 'Saving…'
+                      : canMarkOrderComplete(order.status)
+                        ? 'Save & Complete'
+                        : 'Save ref'}
                   </button>
                 </div>
               ) : (
@@ -229,7 +236,9 @@ export default function OrderDetailDrawer({
                 </strong>
               )}
               <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
-                Paste the UTR from the buyer’s UPI / bank SMS here if missing.
+                {canMarkOrderComplete(order.status)
+                  ? 'Enter UTR / transfer reference, then Save & Complete — status becomes Order Complete.'
+                  : 'Paste the UTR from the buyer’s UPI / bank SMS here if missing.'}
               </p>
             </div>
           </section>
@@ -315,6 +324,11 @@ export default function OrderDetailDrawer({
             {onReject && isPendingOrder(order.status) && (
               <button type="button" className="btn btn-ghost btn-full" style={{ color: '#ef4444' }} onClick={() => onReject(order.orderId)}>
                 Reject payment
+              </button>
+            )}
+            {onDelete && (
+              <button type="button" className="btn btn-ghost btn-full" style={{ color: '#ef4444' }} onClick={() => onDelete(order.orderId)}>
+                Delete order (can Undo)
               </button>
             )}
           </div>

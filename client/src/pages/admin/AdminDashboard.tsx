@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal } from '../../api/orders';
+import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder } from '../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
 import { useAdminPanel } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../utils/format';
-import { isPendingOrder, ORDER_STATUS } from '../../utils/orderStatus';
+import { isPendingOrder, canMarkOrderComplete, ORDER_STATUS } from '../../utils/orderStatus';
 import { blockAutofillOnFocus, blockTextInput } from '../../utils/autofill';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
 import {
@@ -77,7 +77,8 @@ export default function AdminDashboard() {
     enabled: isMaster && can('settings'),
   });
 
-  const orders = ordersQuery.data || [];
+  const allOrders = ordersQuery.data || [];
+  const orders = allOrders.filter((o) => !o.deletedAt);
   const users = usersQuery.data || [];
   const initiated = initiatedQuery.data || [];
   const pendingOrders = orders.filter((o) => isPendingOrder(o.status));
@@ -118,6 +119,25 @@ export default function AdminDashboard() {
       statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING });
     }
   };
+
+  const deleteMutation = useMutation({
+    mutationFn: (orderId: string) => softDeleteOrder(orderId),
+    onSuccess: () => {
+      showToast('Order deleted — use Undo in Recently deleted if needed', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (orderId: string) => restoreOrder(orderId),
+    onSuccess: () => {
+      showToast('Order restored', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+  const softDelete = (id: string) => deleteMutation.mutate(id);
+  const softRestore = (id: string) => restoreMutation.mutate(id);
 
   const saveSiteSettings = async () => {
     try {
@@ -278,9 +298,14 @@ export default function AdminDashboard() {
 
       {activePanel === 'orders' && (
         <>
-          <AdminSectionHeader compact title="All Orders" subtitle="Full order history with search and filters" badge={`${orders.length} total`} />
+          <AdminSectionHeader
+            compact
+            title="All Orders"
+            subtitle="New orders start at Share Transfer. Open order → enter UTR / transfer ref → Save to mark Completed."
+            badge={`${orders.length} total`}
+          />
           <AdminOrdersSection
-            orders={orders}
+            orders={allOrders}
             users={users}
             showActions={can('pending')}
             employees={employeesQuery.data || []}
@@ -289,9 +314,22 @@ export default function AdminDashboard() {
             onReject={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.REJECTED })}
             onComplete={can('pending') ? complete : undefined}
             onUndoComplete={can('pending') ? undoComplete : undefined}
+            onDelete={can('orders') || can('manual-order') || can('pending') ? softDelete : undefined}
+            onRestore={can('orders') || can('manual-order') || can('pending') ? softRestore : undefined}
             onSavePaymentRef={(orderId, transactionId) => {
-              const order = orders.find((o) => o.orderId === orderId);
-              return updateOrderPaymentRef(orderId, transactionId, order?.status || ORDER_STATUS.PENDING_VERIFICATION).then(() => {
+              const order = allOrders.find((o) => o.orderId === orderId);
+              const status = order?.status || ORDER_STATUS.TRANSFER_PENDING;
+              // Share Transfer: saving UTR / transfer ref marks the order Complete
+              if (canMarkOrderComplete(status)) {
+                return updateOrderStatus(orderId, ORDER_STATUS.COMPLETED, undefined, transactionId).then(() => {
+                  showToast('UTR saved — order marked Complete', 'success');
+                  queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+                  queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
+                  queryClient.invalidateQueries({ queryKey: ['orders'] });
+                });
+              }
+              // Pending Verification (legacy): save ref only — use Verify to move to Share Transfer
+              return updateOrderPaymentRef(orderId, transactionId, status).then(() => {
                 showToast('Payment reference saved', 'success');
                 queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
               });

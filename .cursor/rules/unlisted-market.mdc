@@ -71,12 +71,13 @@ Every listing on GO UNLISTED needs these fields — **never ship a stock without
 | Shares credited | Mark Confirmed, notify buyer (SMS/WhatsApp) |
 | Failed / refund | Rejected / Refunded with ops notes |
 
-**Order statuses**: Online → `Pending Verification` (UTR) → admin Verify → `Transfer Pending` → `Completed` | Manual → `Transfer Pending` → `Completed` | also `Rejected` | `Cancelled` | `Refunded`
+**Order statuses**: Online / Manual → `Transfer Pending` (Share Transfer) → admin saves UTR → `Completed` | also `Rejected` | `Cancelled` | `Refunded` | legacy `Pending Verification`
 
-- **Online checkout**: pay via UPI/NEFT/QR → enter UTR + confirm → `Pending Verification` → admin Verify → portfolio shows as confirmed (`Transfer Pending`) → ops Complete after demat.
-- **Manual / Offline**: starts at `Transfer Pending` (payment already collected) → ops Complete after demat.
+- **Online checkout**: pay via UPI/NEFT/QR → enter UTR + confirm → `Transfer Pending` → Portfolio → ops **Save & Complete** in All Orders after demat.
+- **Manual / Offline**: starts at `Transfer Pending` → portfolio → ops Save UTR & Complete (or Complete).
+- **Soft delete**: Manual Orders / All Orders can soft-delete with Undo (restore). Not a permanent wipe.
 - **Undo Completed**: admin can revert `Completed` → `Transfer Pending`.
-- Ops match online payments by **UTR + amount + buyer** in Verify Payments.
+- Ops confirm UTR in All Orders (Save & Complete).
 
 ## Documents & compliance fields
 
@@ -134,9 +135,10 @@ Build and maintain these without user prompting:
 
 - **Browse & details**: always public
 - **Checkout**: Quantity → Payment Mode → pay → enter UTR + confirm. Guest browse OK; place order needs login + KYC.
-- **Online payment**: buyer pays → enters UTR → `Pending Verification` → admin Verify → portfolio shows as confirmed (`Transfer Pending`) → ops Complete after demat.
-- **Manual / Offline**: `Transfer Pending` → Complete.
-- **Payment verification**: admin matches UTR / bank credit in Verify Payments before portfolio confirmation.
+- **Online payment**: buyer pays → enters UTR → `Transfer Pending` → Portfolio → All Orders: Save UTR & Complete after demat.
+- **Manual / Offline**: `Transfer Pending` → portfolio → Complete.
+- **Soft delete + Undo**: Manual Orders & All Orders (recoverable; not permanent wipe).
+- **All Orders complete flow**: Share Transfer → enter UTR / ref → Save & Complete.
 - **MSG91**: OTP for user auth
 - **Theme**: light, matches gounlisted.in
 
