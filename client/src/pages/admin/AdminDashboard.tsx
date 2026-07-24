@@ -188,14 +188,22 @@ export default function AdminDashboard() {
   })();
   const updateCustomCharges = async (newArr: any[]) => {
     const newVal = JSON.stringify(newArr);
+    // Adding a charge must also turn Extra Charges ON — otherwise checkout ignores the list
+    const enableOn = newArr.length > 0 ? '1' : settingsVal('enable_invoice_charges') || '0';
     setSettingField('invoice_custom_charges', newVal);
+    if (newArr.length > 0) setSettingField('enable_invoice_charges', '1');
     try {
-      await saveSettings({ ...settingsQuery.data, ...settingsForm, invoice_custom_charges: newVal });
-      showToast('Charges updated', 'success');
+      await saveSettings({
+        ...settingsQuery.data,
+        ...settingsForm,
+        invoice_custom_charges: newVal,
+        enable_invoice_charges: enableOn,
+      });
+      showToast(newArr.length > 0 ? 'Charges saved — now apply on checkout' : 'Charges updated', 'success');
       settingsQuery.refetch();
       queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
     } catch (e) {
-      showToast('Failed to save charges', 'error');
+      showToast(e instanceof Error ? e.message : 'Failed to save charges', 'error');
     }
   };
 
@@ -472,10 +480,17 @@ export default function AdminDashboard() {
                     setSettingField('enable_invoice_charges', val);
                     try {
                       await saveSettings({ ...settingsQuery.data, ...settingsForm, enable_invoice_charges: val });
-                      showToast('Settings saved', 'success');
+                      showToast(
+                        val === '1'
+                          ? 'Extra charges ON — checkout will add listed fees'
+                          : 'Extra charges OFF — checkout shows share value only',
+                        'success',
+                      );
                       settingsQuery.refetch();
                       queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
-                    } catch (err) {}
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : 'Failed to save', 'error');
+                    }
                   }}
                 />
               </div>
@@ -483,8 +498,45 @@ export default function AdminDashboard() {
               </label>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: '0.25rem', marginBottom: '1.5rem' }}>
                 When off, checkout and new orders show only share value (price × qty) — no platform fee or custom charges.
-                When on, only the custom charges listed below are added.
+                When on, only the custom charges listed below are added. Both the toggle and at least one charge are required.
               </p>
+              {!invoiceChargesEnabled && customCharges.length > 0 && (
+                <div
+                  style={{
+                    marginBottom: '1rem',
+                    padding: '0.75rem 1rem',
+                    borderRadius: 6,
+                    background: '#fef3c7',
+                    border: '1px solid #f59e0b',
+                    fontSize: '0.9rem',
+                    color: '#92400e',
+                  }}
+                >
+                  Platform fee / custom charges are saved, but Extra Charges is <strong>OFF</strong> — checkout will not add them.
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    style={{ marginLeft: '0.75rem', verticalAlign: 'middle' }}
+                    onClick={async () => {
+                      setSettingField('enable_invoice_charges', '1');
+                      try {
+                        await saveSettings({
+                          ...settingsQuery.data,
+                          ...settingsForm,
+                          enable_invoice_charges: '1',
+                        });
+                        showToast('Extra charges enabled on checkout', 'success');
+                        settingsQuery.refetch();
+                        queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
+                      } catch (err) {
+                        showToast(err instanceof Error ? err.message : 'Failed to enable', 'error');
+                      }
+                    }}
+                  >
+                    Turn on now
+                  </button>
+                </div>
+              )}
               <div style={{ fontWeight: 600, marginBottom: '0.75rem' }}>Custom Charges</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
                 {customCharges.map((charge, idx) => (

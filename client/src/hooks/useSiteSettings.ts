@@ -19,7 +19,9 @@ export function useSiteSettings() {
   const query = useQuery({
     queryKey: ['siteSettings'],
     queryFn: getSettings,
-    staleTime: 120_000,
+    // Keep short so checkout picks up admin fee changes quickly
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const settings = { ...DEFAULTS, ...(query.data || {}) };

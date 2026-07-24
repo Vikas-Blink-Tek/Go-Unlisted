@@ -384,6 +384,8 @@ function sanitizeArticleHtml($html) {
 const PUBLIC_SETTINGS_KEYS = [
     'email', 'mobile', 'whatsapp', 'address', 'disclaimer',
     'bank_name', 'bank_ac_name', 'bank_ac_no', 'bank_ifsc', 'bank_upi', 'bank_branch', 'bank_address',
+    // Needed on public checkout so fee toggle + charge lines match admin Site Settings
+    'enable_invoice_charges', 'invoice_custom_charges',
 ];
 
 /** Fallback company contact when settings row is missing (Admin → Site Settings overrides). */
@@ -2659,6 +2661,15 @@ switch ($action) {
         while ($row = $res->fetch_assoc()) {
             if ($canAllSettings || in_array($row['setting_key'], PUBLIC_SETTINGS_KEYS, true)) {
                 $settings[$row['setting_key']] = $row['setting_value'];
+            }
+        }
+        // Always expose charge flags to checkout (default OFF) so client never invents a 1% fee
+        if (!$canAllSettings) {
+            if (!array_key_exists('enable_invoice_charges', $settings)) {
+                $settings['enable_invoice_charges'] = '0';
+            }
+            if (!array_key_exists('invoice_custom_charges', $settings)) {
+                $settings['invoice_custom_charges'] = '[]';
             }
         }
         sendResponse($settings);
