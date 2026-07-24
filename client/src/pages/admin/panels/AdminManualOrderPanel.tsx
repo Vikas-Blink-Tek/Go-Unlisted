@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
-import { saveOrder, getOrders, softDeleteOrder, restoreOrder } from '../../../api/orders';
+import { saveOrder, getAdminOrders, softDeleteOrder, restoreOrder } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
@@ -104,7 +104,7 @@ export default function AdminManualOrderPanel() {
     setForm({ ...form, qty: val, price: newPrice });
   };
 
-  const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
+  const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getAdminOrders });
   const allManual = (ordersQuery.data || []).filter((o) => o.orderSource === 'Offline' || o.method === 'Offline');
   const manualOrders = allManual.filter((o) => !o.deletedAt);
   const deletedManual = allManual.filter((o) => Boolean(o.deletedAt));
@@ -194,6 +194,15 @@ export default function AdminManualOrderPanel() {
     if (!userId) {
       const byPhone = signupUsers.find((u) => normalizePhone(u.phone) === form.phone);
       if (byPhone) userId = byPhone.id;
+    }
+    if (!userId) {
+      const nameQ = form.name.trim().toLowerCase();
+      const byName = signupUsers.filter((u) => u.name.trim().toLowerCase() === nameQ);
+      if (byName.length === 1) userId = byName[0].id;
+    }
+    if (!userId) {
+      showToast('Pick the client from name/mobile suggestions so it shows in their Portfolio', 'error');
+      return;
     }
     saveMut.mutate({
       ...(editId ? { orderId: editId } : {}),

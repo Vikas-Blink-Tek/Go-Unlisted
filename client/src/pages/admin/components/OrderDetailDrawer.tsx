@@ -21,6 +21,7 @@ type Props = {
   onComplete?: (orderId: string) => void;
   onUndoComplete?: (orderId: string) => void;
   onDelete?: (orderId: string) => void;
+  onAttachPortfolio?: (orderId: string) => void | Promise<unknown>;
   onSavePaymentRef?: (orderId: string, transactionId: string) => void | Promise<unknown>;
   onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
@@ -36,6 +37,7 @@ export default function OrderDetailDrawer({
   onComplete,
   onUndoComplete,
   onDelete,
+  onAttachPortfolio,
   onSavePaymentRef,
   onAdjustTotal,
   employees,
@@ -89,7 +91,8 @@ export default function OrderDetailDrawer({
     || (onReject && isPendingOrder(order.status))
     || (onComplete && canMarkOrderComplete(order.status))
     || (onUndoComplete && canUndoOrderComplete(order.status))
-    || !!onDelete;
+    || !!onDelete
+    || !!onAttachPortfolio;
 
   const savePaymentRef = async () => {
     if (!onSavePaymentRef) return;
@@ -327,6 +330,15 @@ export default function OrderDetailDrawer({
             {onReject && isPendingOrder(order.status) && (
               <button type="button" className="btn btn-ghost btn-full" style={{ color: '#ef4444' }} onClick={() => onReject(order.orderId)}>
                 Reject payment
+              </button>
+            )}
+            {onAttachPortfolio && (
+              <button
+                type="button"
+                className="btn btn-primary btn-full"
+                onClick={() => void Promise.resolve(onAttachPortfolio(order.orderId))}
+              >
+                Show in client Portfolio
               </button>
             )}
             {onDelete && (

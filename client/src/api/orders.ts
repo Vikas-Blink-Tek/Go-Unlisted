@@ -5,6 +5,20 @@ export function getOrders() {
   return apiRequest<Order[]>('getOrders', 'GET');
 }
 
+/** Admin panel — always use admin scope (even if a buyer session exists in the same browser). */
+export function getAdminOrders() {
+  return apiRequest<Order[]>('getOrders', 'GET', undefined, { for: 'admin' });
+}
+
+/** Attach order to signup client by phone/name so it appears in their Portfolio. */
+export function attachOrderToClient(orderId: string) {
+  return apiRequest<{ success: boolean; orderId: string; userId: string; buyerName?: string }>(
+    'adminAttachOrderToClient',
+    'POST',
+    { orderId },
+  );
+}
+
 export function saveOrder(order: Record<string, unknown>) {
   return apiRequest<{
     success: boolean;

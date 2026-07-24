@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getOrders } from '../../../api/orders';
+import { getAdminOrders } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import { getInitiatedCheckouts } from '../../../api/initiated';
 import { exportCsv } from '../../../utils/exportCsv';
@@ -23,7 +23,7 @@ export default function AdminReportsPanel() {
   const [statusFilter, setStatusFilter] = useState('');
 
   const usersQuery = useQuery({ queryKey: ['admin-users'], queryFn: async () => (await getUsers()).map(mapApiUser) });
-  const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
+  const ordersQuery = useQuery({ queryKey: ['admin-orders'], queryFn: getAdminOrders });
   const initiatedQuery = useQuery({ queryKey: ['initiated-checkouts'], queryFn: getInitiatedCheckouts });
 
   const users = usersQuery.data || [];

@@ -26,6 +26,7 @@ type Props = {
   onUndoComplete?: (orderId: string) => void;
   onDelete?: (orderId: string) => void;
   onRestore?: (orderId: string) => void;
+  onAttachPortfolio?: (orderId: string) => void | Promise<unknown>;
   limit?: number;
   employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
   onTransferOrder?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
@@ -48,6 +49,7 @@ export default function AdminOrdersSection({
   onUndoComplete,
   onDelete,
   onRestore,
+  onAttachPortfolio,
   limit,
   employees,
   onTransferOrder,
@@ -402,6 +404,7 @@ export default function AdminOrdersSection({
         onComplete={onComplete ? handleComplete : undefined}
         onUndoComplete={onUndoComplete ? handleUndoComplete : undefined}
         onDelete={onDelete ? handleDelete : undefined}
+        onAttachPortfolio={onAttachPortfolio}
         employees={employees}
         onTransfer={onTransferOrder}
         onSavePaymentRef={onSavePaymentRef}

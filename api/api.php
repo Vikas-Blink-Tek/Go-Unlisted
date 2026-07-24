@@ -2439,8 +2439,20 @@ switch ($action) {
     // -----------------------------------------
     case 'getOrders':
         requireAuth();
+        $forAdmin = isset($_GET['for']) && $_GET['for'] === 'admin';
+        // Prefer buyer portfolio scope when a user session exists (unless admin explicitly asks for=admin)
+        $asAdmin = $forAdmin
+            ? isset($_SESSION['admin_id'])
+            : (isset($_SESSION['admin_id']) && !isset($_SESSION['user_id']));
+
+        if ($forAdmin && !isset($_SESSION['admin_id'])) {
+            http_response_code(401);
+            sendResponse(['error' => 'Admin login required']);
+            break;
+        }
+
         // If user is not admin, only return their own orders
-        if (isset($_SESSION['admin_id'])) {
+        if ($asAdmin) {
             requireAnyPermission(['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund']);
             if (isMasterAdminSession() || adminCan('view-all-orders')) {
                 $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
@@ -2459,28 +2471,141 @@ switch ($action) {
                 $stmt->bind_param('sss', $code, $code, $adminUser);
             }
         } else {
-            // Buyer: linked user_id OR matching email/phone (manual orders often match by contact)
+            if (!isset($_SESSION['user_id'])) {
+                http_response_code(401);
+                sendResponse(['error' => 'Please log in to view your portfolio']);
+                break;
+            }
             $uid = (string) $_SESSION['user_id'];
-            $uStmt = $conn->prepare('SELECT email, phone FROM users WHERE id = ? LIMIT 1');
+            $uStmt = $conn->prepare('SELECT email, phone, name FROM users WHERE id = ? LIMIT 1');
+            if (!$uStmt) {
+                http_response_code(500);
+                sendResponse(['error' => 'Could not load portfolio']);
+                break;
+            }
             $uStmt->bind_param('s', $uid);
             $uStmt->execute();
             $uRow = $uStmt->get_result()->fetch_assoc() ?: [];
             $email = strtolower(trim((string) ($uRow['email'] ?? '')));
+            $buyerName = trim((string) ($uRow['name'] ?? ''));
+            $buyerNameKey = preg_replace('/\s+/', '', strtolower($buyerName));
             $phone10 = preg_replace('/\D/', '', (string) ($uRow['phone'] ?? ''));
             if (strlen($phone10) > 10) {
                 $phone10 = substr($phone10, -10);
             }
-            $stmt = $conn->prepare(
-                "SELECT * FROM orders
-                 WHERE deleted_at IS NULL
-                   AND (
-                     user_id = ?
-                     OR (? <> '' AND LOWER(buyer_email) = ?)
-                     OR (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
-                   )
-                 ORDER BY created_at DESC"
-            );
-            $stmt->bind_param('sssss', $uid, $email, $email, $phone10, $phone10);
+            $phone8 = strlen($phone10) >= 8 ? substr($phone10, -8) : '';
+
+            // Load recent orders then match in PHP — avoids brittle SQL (deleted_at / phone format)
+            $hasDeletedCol = false;
+            $colChk = $conn->query("SHOW COLUMNS FROM orders LIKE 'deleted_at'");
+            if ($colChk && $colChk->num_rows > 0) {
+                $hasDeletedCol = true;
+            }
+            $sql = $hasDeletedCol
+                ? 'SELECT * FROM orders WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 500'
+                : 'SELECT * FROM orders ORDER BY created_at DESC LIMIT 500';
+            $resAll = $conn->query($sql);
+            if (!$resAll) {
+                error_log('getOrders buyer query failed: ' . $conn->error);
+                http_response_code(500);
+                sendResponse(['error' => 'Could not load orders']);
+                break;
+            }
+
+            $matched = [];
+            while ($row = $resAll->fetch_assoc()) {
+                if ($hasDeletedCol && !empty($row['deleted_at'])) {
+                    continue;
+                }
+                $rowUid = (string) ($row['user_id'] ?? '');
+                $rowPhone = preg_replace('/\D/', '', (string) ($row['buyer_phone'] ?? ''));
+                if (strlen($rowPhone) > 10) {
+                    $rowPhone = substr($rowPhone, -10);
+                }
+                $rowEmail = strtolower(trim((string) ($row['buyer_email'] ?? '')));
+                $rowNameKey = preg_replace('/\s+/', '', strtolower(trim((string) ($row['buyer_name'] ?? ''))));
+
+                $isMine = false;
+                if ($rowUid !== '' && $rowUid === $uid) {
+                    $isMine = true;
+                } elseif ($phone10 !== '' && $rowPhone !== '' && ($rowPhone === $phone10 || substr($rowPhone, -8) === $phone8)) {
+                    $isMine = true;
+                } elseif ($email !== '' && $rowEmail !== '' && $rowEmail === $email) {
+                    $isMine = true;
+                } elseif ($buyerNameKey !== '' && strlen($buyerNameKey) >= 6 && $rowNameKey === $buyerNameKey) {
+                    $isMine = true;
+                }
+
+                if (!$isMine) {
+                    continue;
+                }
+
+                // Permanently attach to this account for next loads
+                if ($rowUid === '' || str_starts_with($rowUid, 'admin:') || $rowUid !== $uid) {
+                    $oid = (string) $row['order_id'];
+                    $link = $conn->prepare('UPDATE orders SET user_id = ? WHERE order_id = ?');
+                    if ($link) {
+                        $link->bind_param('ss', $uid, $oid);
+                        $link->execute();
+                    }
+                    $row['user_id'] = $uid;
+                }
+                $matched[] = $row;
+            }
+
+            // Build response from matched rows (reuse loop below via fake result set)
+            $data = [];
+            foreach ($matched as $row) {
+                $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
+                $employeeCode = canonicalizeEmployeeUserCode($employeeCode);
+                if (!isRealEmployeeUserCode($employeeCode)) {
+                    try {
+                        $recovered = resolveBuyerEmployeeCode(
+                            $conn,
+                            (string) ($row['user_id'] ?? ''),
+                            (string) ($row['buyer_phone'] ?? ''),
+                            (string) ($row['buyer_email'] ?? '')
+                        );
+                        if (isRealEmployeeUserCode($recovered)) {
+                            $employeeCode = $recovered;
+                        }
+                    } catch (Throwable $e) {
+                        // ignore
+                    }
+                }
+                $employeeCode = normalizeUserCode($employeeCode);
+                $data[] = [
+                    'orderId' => htmlspecialchars((string) ($row['order_id'] ?? '')),
+                    'buyerName' => htmlspecialchars((string) ($row['buyer_name'] ?? '')),
+                    'buyerEmail' => htmlspecialchars((string) ($row['buyer_email'] ?? '')),
+                    'buyerPhone' => htmlspecialchars((string) ($row['buyer_phone'] ?? '')),
+                    'shareId' => htmlspecialchars((string) ($row['share_id'] ?? '')),
+                    'companyName' => htmlspecialchars((string) ($row['share_name'] ?? '')),
+                    'shareName' => htmlspecialchars((string) ($row['share_name'] ?? '')),
+                    'shareTicker' => htmlspecialchars((string) ($row['share_ticker'] ?? '')),
+                    'sector' => htmlspecialchars((string) ($row['share_ticker'] ?? '')),
+                    'logoInitials' => strtoupper(substr((string) ($row['share_name'] ?? ''), 0, 2)),
+                    'logoGradient' => 'linear-gradient(135deg, #333, #555)',
+                    'pricePerShare' => (float) $row['price_per_share'],
+                    'qty' => (int) $row['quantity'],
+                    'totalPaid' => (float) $row['total_amount'],
+                    'total' => (float) $row['total_amount'],
+                    'status' => htmlspecialchars((string) ($row['status'] ?? '')),
+                    'method' => htmlspecialchars((string) ($row['method'] ?? '')),
+                    'paymentMethod' => htmlspecialchars((string) ($row['method'] ?? '')),
+                    'transactionId' => htmlspecialchars((string) ($row['transaction_id'] ?? '')),
+                    'utr' => htmlspecialchars((string) ($row['transaction_id'] ?? '')),
+                    'orderSource' => htmlspecialchars((string) ($row['order_source'] ?? 'Online')),
+                    'employeeCode' => htmlspecialchars((string) $employeeCode),
+                    'opsNote' => htmlspecialchars((string) ($row['ops_note'] ?? '')),
+                    'date' => orderRowDate($row),
+                    'createdAt' => orderRowDate($row),
+                    'userId' => htmlspecialchars((string) ($row['user_id'] ?? '')),
+                    'deletedAt' => !empty($row['deleted_at']) ? (string) $row['deleted_at'] : null,
+                ];
+            }
+            sendResponse($data);
+            break;
         }
         if (!$stmt) {
             error_log('getOrders prepare failed: ' . $conn->error);
@@ -2566,6 +2691,103 @@ switch ($action) {
             ];
         }
         sendResponse($data);
+        break;
+
+    case 'adminAttachOrderToClient':
+        // Force-link an order to the signup user matching buyer phone / name → Portfolio
+        requireAnyPermission(['orders', 'manual-order', 'pending']);
+        $data = getPostData();
+        $order_id = strtoupper(trim((string) ($data['orderId'] ?? '')));
+        if ($order_id === '' || !isValidOrderId($order_id)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid order ID']);
+            break;
+        }
+        $stmt = $conn->prepare('SELECT order_id, user_id, buyer_name, buyer_phone, buyer_email, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
+        $stmt->bind_param('s', $order_id);
+        $stmt->execute();
+        $ord = $stmt->get_result()->fetch_assoc();
+        if (!$ord) {
+            http_response_code(404);
+            sendResponse(['error' => 'Order not found']);
+            break;
+        }
+        if (!empty($ord['deleted_at'])) {
+            http_response_code(400);
+            sendResponse(['error' => 'Restore this order first, then attach to portfolio']);
+            break;
+        }
+        if (!orderBelongsToEmployee($conn, $ord)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only attach orders for your employee code']);
+            break;
+        }
+        $phone10 = preg_replace('/\D/', '', (string) ($ord['buyer_phone'] ?? ''));
+        if (strlen($phone10) > 10) {
+            $phone10 = substr($phone10, -10);
+        }
+        $emailLower = strtolower(trim((string) ($ord['buyer_email'] ?? '')));
+        $name = trim((string) ($ord['buyer_name'] ?? ''));
+        $client = null;
+        if (strlen($phone10) === 10) {
+            $f = $conn->prepare(
+                "SELECT id, name, phone, email FROM users
+                 WHERE RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?
+                 ORDER BY created_at DESC LIMIT 1"
+            );
+            $f->bind_param('s', $phone10);
+            $f->execute();
+            $client = $f->get_result()->fetch_assoc();
+        }
+        if (!$client && $emailLower !== '' && strpos($emailLower, '@') !== false) {
+            $f = $conn->prepare('SELECT id, name, phone, email FROM users WHERE LOWER(email) = ? ORDER BY created_at DESC LIMIT 1');
+            $f->bind_param('s', $emailLower);
+            $f->execute();
+            $client = $f->get_result()->fetch_assoc();
+        }
+        if (!$client && $name !== '') {
+            $f = $conn->prepare('SELECT id, name, phone, email FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY created_at DESC LIMIT 2');
+            $f->bind_param('s', $name);
+            $f->execute();
+            $resN = $f->get_result();
+            $rows = [];
+            while ($r = $resN->fetch_assoc()) {
+                $rows[] = $r;
+            }
+            if (count($rows) === 1) {
+                $client = $rows[0];
+            }
+        }
+        if (!$client) {
+            http_response_code(404);
+            sendResponse(['error' => 'No signup user found for this buyer phone/name. Client must register first.']);
+            break;
+        }
+        $newUid = (string) $client['id'];
+        $ph = preg_replace('/\D/', '', (string) ($client['phone'] ?? ''));
+        if (strlen($ph) > 10) {
+            $ph = substr($ph, -10);
+        }
+        $em = strtolower(trim((string) ($client['email'] ?? '')));
+        $nm = trim((string) ($client['name'] ?? $name));
+        $upd = $conn->prepare('UPDATE orders SET user_id = ?, buyer_name = ?, buyer_phone = ?, buyer_email = ? WHERE order_id = ?');
+        $upd->bind_param('sssss', $newUid, $nm, $ph, $em, $order_id);
+        if (!$upd->execute()) {
+            http_response_code(500);
+            sendResponse(['error' => 'Could not attach order to client']);
+            break;
+        }
+        logAudit($conn, 'Attach Order Portfolio', $_SESSION['admin_id'], [
+            'orderId' => $order_id,
+            'userId' => $newUid,
+            'phone' => $ph,
+        ]);
+        sendResponse([
+            'success' => true,
+            'orderId' => $order_id,
+            'userId' => $newUid,
+            'buyerName' => $nm,
+        ]);
         break;
 
     case 'transferOrder':
@@ -3083,17 +3305,13 @@ switch ($action) {
                     }
                 }
                 $user_id = (string) $linkedUser['id'];
-                // Prefer profile name/phone/email when admin selected a signup user
-                if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
-                    $buyer_name = trim((string) ($linkedUser['name'] ?? $buyer_name));
+                // Always use signup profile contact details so portfolio matching never fails
+                $buyer_name = trim((string) ($linkedUser['name'] ?? $buyer_name));
+                $buyer_phone = preg_replace('/\D/', '', (string) ($linkedUser['phone'] ?? ''));
+                if (strlen($buyer_phone) > 10) {
+                    $buyer_phone = substr($buyer_phone, -10);
                 }
-                if ($buyer_phone === '') {
-                    $buyer_phone = preg_replace('/\D/', '', (string) ($linkedUser['phone'] ?? ''));
-                    if (strlen($buyer_phone) > 10) {
-                        $buyer_phone = substr($buyer_phone, -10);
-                    }
-                }
-                if ($buyer_email === '' && !empty($linkedUser['email'])) {
+                if (!empty($linkedUser['email'])) {
                     $buyer_email = strtolower(trim((string) $linkedUser['email']));
                 }
             }
@@ -3116,13 +3334,57 @@ switch ($action) {
                 if ($autoUser) {
                     // Always link for portfolio — employee scope enforced on explicit user pick above
                     $user_id = (string) $autoUser['id'];
-                    if ($buyer_email === '' && !empty($autoUser['email'])) {
+                    // Overwrite contact from signup so phone/email always match the account
+                    $buyer_name = trim((string) ($autoUser['name'] ?? $buyer_name));
+                    $ph = preg_replace('/\D/', '', (string) ($autoUser['phone'] ?? ''));
+                    if (strlen($ph) > 10) {
+                        $ph = substr($ph, -10);
+                    }
+                    if (strlen($ph) === 10) {
+                        $buyer_phone = $ph;
+                    }
+                    if (!empty($autoUser['email'])) {
                         $buyer_email = strtolower(trim((string) $autoUser['email']));
                     }
-                    if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
-                        $buyer_name = trim((string) ($autoUser['name'] ?? $buyer_name));
+                }
+            }
+            // Also try name match when phone was mistyped
+            if (str_starts_with($user_id, 'admin:') && $buyer_name !== '') {
+                $nameStmt = $conn->prepare(
+                    "SELECT id, name, phone, email FROM users
+                     WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))
+                     ORDER BY created_at DESC LIMIT 2"
+                );
+                $nameStmt->bind_param('s', $buyer_name);
+                $nameStmt->execute();
+                $nameRes = $nameStmt->get_result();
+                $matches = [];
+                while ($nr = $nameRes->fetch_assoc()) {
+                    $matches[] = $nr;
+                }
+                if (count($matches) === 1) {
+                    $hit = $matches[0];
+                    $user_id = (string) $hit['id'];
+                    $buyer_name = trim((string) ($hit['name'] ?? $buyer_name));
+                    $ph = preg_replace('/\D/', '', (string) ($hit['phone'] ?? ''));
+                    if (strlen($ph) > 10) {
+                        $ph = substr($ph, -10);
+                    }
+                    if (strlen($ph) === 10) {
+                        $buyer_phone = $ph;
+                    }
+                    if (!empty($hit['email'])) {
+                        $buyer_email = strtolower(trim((string) $hit['email']));
                     }
                 }
+            }
+            // Manual orders must be attached to a real signup for portfolio
+            if ($isManualAdmin && str_starts_with((string) $user_id, 'admin:')) {
+                http_response_code(400);
+                sendResponse([
+                    'error' => 'Select a signup client from suggestions (name / mobile) so the order appears in their Portfolio.',
+                ]);
+                break;
             }
         } else {
             http_response_code(401);

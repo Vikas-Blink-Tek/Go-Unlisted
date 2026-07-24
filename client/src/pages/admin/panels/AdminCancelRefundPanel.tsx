@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getOrders, updateOrderStatus } from '../../../api/orders';
+import { getAdminOrders, updateOrderStatus } from '../../../api/orders';
 import { useToast } from '../../../context/ToastContext';
 import { formatCurrency, formatDateTime, getOrderDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
@@ -9,7 +9,7 @@ import AdminSectionHeader from '../components/AdminSectionHeader';
 export default function AdminCancelRefundPanel() {
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const { data: allOrders = [] } = useQuery({ queryKey: ['admin-orders'], queryFn: getOrders });
+  const { data: allOrders = [] } = useQuery({ queryKey: ['admin-orders'], queryFn: getAdminOrders });
   const orders = allOrders.filter((o) => !o.deletedAt);
 
   const settlement = orders.filter((o) => {

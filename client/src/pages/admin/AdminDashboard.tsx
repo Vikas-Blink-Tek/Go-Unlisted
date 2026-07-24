@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder } from '../../api/orders';
+import { updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder, getAdminOrders, attachOrderToClient } from '../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
@@ -46,7 +46,7 @@ export default function AdminDashboard() {
 
   const ordersQuery = useQuery({
     queryKey: ['admin-orders'],
-    queryFn: getOrders,
+    queryFn: getAdminOrders,
     enabled: can('orders') || can('pending') || can('dashboard') || can('manual-order') || can('cancel-refund'),
   });
   const usersQuery = useQuery({
@@ -316,6 +316,13 @@ export default function AdminDashboard() {
             onUndoComplete={can('pending') ? undoComplete : undefined}
             onDelete={isMaster ? softDelete : undefined}
             onRestore={isMaster ? softRestore : undefined}
+            onAttachPortfolio={(orderId) =>
+              attachOrderToClient(orderId).then((res) => {
+                showToast(`Linked to ${res.buyerName || 'client'} — visible in their Portfolio`, 'success');
+                queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+                queryClient.invalidateQueries({ queryKey: ['orders'] });
+              }).catch((e: Error) => showToast(e.message, 'error'))
+            }
             onSavePaymentRef={(orderId, transactionId) => {
               const order = allOrders.find((o) => o.orderId === orderId);
               const status = order?.status || ORDER_STATUS.TRANSFER_PENDING;

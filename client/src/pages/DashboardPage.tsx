@@ -128,6 +128,9 @@ export default function DashboardPage() {
   const holdings = myOrders.filter((o) => isPortfolioHolding(o));
   const pendingOrders = myOrders.filter((o) => isPortfolioPendingVisible(o));
   const portfolioVisible = holdings.length + pendingOrders.length > 0;
+  const ordersError = ordersQuery.isError
+    ? (ordersQuery.error instanceof Error ? ordersQuery.error.message : 'Could not load portfolio orders')
+    : '';
 
   const totalInvested = holdings.reduce((sum, o) => sum + (o.totalPaid || o.total || 0), 0);
   const kycLabel =
@@ -237,6 +240,15 @@ export default function DashboardPage() {
       <div className="orders-wrap">
       {tab === 'portfolio' && (
         <div id="orders-tab-content">
+          {ordersError && (
+            <div className="admin-table-empty" style={{ marginBottom: '1rem', borderColor: '#fecaca', background: '#fef2f2' }}>
+              <strong>Could not load portfolio</strong>
+              {ordersError}
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: '0.75rem' }} onClick={() => void ordersQuery.refetch()}>
+                Retry
+              </button>
+            </div>
+          )}
           <div className="portfolio-summary">
             {[
               { label: 'Total Invested', value: formatCurrency(totalInvested) },

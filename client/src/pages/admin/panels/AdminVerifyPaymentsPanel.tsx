@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { getOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal } from '../../../api/orders';
+import { getAdminOrders, updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal } from '../../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../../api/admin';
 import { useToast } from '../../../context/ToastContext';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
@@ -38,7 +38,7 @@ export default function AdminVerifyPaymentsPanel() {
 
   const ordersQuery = useQuery({
     queryKey: ['admin-orders'],
-    queryFn: getOrders,
+    queryFn: getAdminOrders,
   });
   const usersQuery = useQuery({ queryKey: ['admin-users'], queryFn: async () => (await getUsers()).map(mapApiUser) });
   const employeesQuery = useQuery({
