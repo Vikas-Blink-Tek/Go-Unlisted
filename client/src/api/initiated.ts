@@ -13,6 +13,8 @@ export interface InitiatedCheckout {
   totalAmount: number;
   paymentMode: string;
   status: string;
+  /** Employee referral / user code (GUE001… or GU00 direct) */
+  employeeCode?: string;
   initiatedAt: string;
 }
 

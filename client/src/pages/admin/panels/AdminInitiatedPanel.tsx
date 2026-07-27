@@ -4,6 +4,7 @@ import { approveInitiatedCheckout, deleteInitiatedCheckout, getInitiatedCheckout
 import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { formatCurrency, formatDateTime } from '../../../utils/format';
+import { displayUserCode } from '../../../utils/userCode';
 import { initiateCheckoutMessage, whatsappUrl } from '../../../utils/whatsapp';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
@@ -25,6 +26,8 @@ export default function AdminInitiatedPanel() {
           o.shareTicker,
           o.sessionId,
           o.paymentMode,
+          o.employeeCode,
+          displayUserCode(o.employeeCode),
         ),
       ),
     [rows, search],
@@ -62,10 +65,10 @@ export default function AdminInitiatedPanel() {
           type="search"
           inputMode="search"
           className="report-filter-input stock-list-search"
-          placeholder="Search mobile, name, email, share..."
+          placeholder="Search mobile, name, email, share, user code..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search initiate checkouts by mobile, name or email"
+          aria-label="Search initiate checkouts by mobile, name, email or user code"
         />
         {search.trim() && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSearch('')}>
@@ -96,6 +99,7 @@ export default function AdminInitiatedPanel() {
                 <th>Share</th>
                 <th>Qty</th>
                 <th>Amount</th>
+                <th>User Code</th>
                 <th>Payment</th>
                 <th>Started</th>
                 <th>Actions</th>
@@ -119,6 +123,7 @@ export default function AdminInitiatedPanel() {
                     <td>{o.shareName}</td>
                     <td>{o.qty}</td>
                     <td>{formatCurrency(o.totalAmount)}</td>
+                    <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{displayUserCode(o.employeeCode)}</td>
                     <td>{o.paymentMode || '—'}</td>
                     <td style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>{formatDateTime(o.initiatedAt, true)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
