@@ -173,13 +173,53 @@ export default function OrderDetailDrawer({
 
           <section className="admin-drawer-section">
             <h4>Payment</h4>
-            <div className="admin-drawer-grid">
-              <div><span>Amount</span><strong>{formatCurrency(order.totalPaid || order.total || 0)}</strong></div>
-              <div><span>Method</span><strong>{order.method || order.paymentMethod || '—'}</strong></div>
-              <div><span>Date</span><strong>{getOrderDate(order) ? formatDate(getOrderDate(order)) : '—'}</strong></div>
-            </div>
+            {(() => {
+              const paid = Number(order.totalPaid || order.total || 0);
+              const shareValue = Math.round((Number(order.pricePerShare) || 0) * (Number(order.qty) || 0) * 100) / 100;
+              const extraFee = Math.round((paid - shareValue) * 100) / 100;
+              return (
+                <div className="admin-drawer-grid">
+                  <div><span>Shares value</span><strong>{formatCurrency(shareValue)}</strong></div>
+                  {extraFee > 0.009 && (
+                    <div>
+                      <span>Extra charges</span>
+                      <strong style={{ color: 'var(--danger, #dc2626)' }}>{formatCurrency(extraFee)}</strong>
+                    </div>
+                  )}
+                  <div><span>Amount</span><strong>{formatCurrency(paid)}</strong></div>
+                  <div><span>Method</span><strong>{order.method || order.paymentMethod || '—'}</strong></div>
+                  <div><span>Date</span><strong>{getOrderDate(order) ? formatDate(getOrderDate(order)) : '—'}</strong></div>
+                </div>
+              );
+            })()}
             {onAdjustTotal && (
               <div style={{ marginTop: '0.85rem' }}>
+                {(() => {
+                  const paid = Number(order.totalPaid || order.total || 0);
+                  const shareValue = Math.round((Number(order.pricePerShare) || 0) * (Number(order.qty) || 0) * 100) / 100;
+                  const extraFee = Math.round((paid - shareValue) * 100) / 100;
+                  if (extraFee <= 0.009) return null;
+                  return (
+                    <div style={{ marginBottom: '0.75rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={savingAmount}
+                        onClick={() => {
+                          if (!window.confirm(`Remove ₹${extraFee} extra charges? Amount will become ${formatCurrency(shareValue)} (share value only).`)) {
+                            return;
+                          }
+                          setAmountEdit(String(shareValue));
+                          setSavingAmount(true);
+                          Promise.resolve(onAdjustTotal(order.orderId, shareValue))
+                            .finally(() => setSavingAmount(false));
+                        }}
+                      >
+                        {savingAmount ? 'Removing…' : `Remove fees (−${formatCurrency(extraFee)})`}
+                      </button>
+                    </div>
+                  );
+                })()}
                 <label className="form-label" htmlFor={`order-amount-${order.orderId}`}>
                   Correct paid amount
                 </label>
@@ -204,7 +244,7 @@ export default function OrderDetailDrawer({
                   </button>
                 </div>
                 <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
-                  Use when bank credit differs from share value (e.g. old 1% fee shown at checkout).
+                  Extra charges stay on old orders until you remove them here (or re-save Manual Order with fees off).
                 </p>
               </div>
             )}

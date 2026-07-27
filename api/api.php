@@ -2964,7 +2964,8 @@ switch ($action) {
         $old_total = (float) $orderRow['total_amount'];
         $share_value = round(((float) $orderRow['price_per_share']) * ((int) $orderRow['quantity']), 2);
         $fee = round($new_total - $share_value, 2);
-        $charges_json = null;
+        // Empty string = no extra charges (null binds poorly with mysqli string params)
+        $charges_json = '';
         if (abs($fee) >= 0.01) {
             $charges_json = json_encode([[
                 'name' => 'Extra / platform fee (paid)',
@@ -2974,7 +2975,9 @@ switch ($action) {
             ]]);
         }
         $ops = trim((string) ($orderRow['ops_note'] ?? ''));
-        $autoNote = "Amount corrected {$old_total} → {$new_total}";
+        $autoNote = abs($fee) < 0.01
+            ? "Fees removed — amount set to share value {$share_value} (was {$old_total})"
+            : "Amount corrected {$old_total} → {$new_total}";
         if ($note !== '') {
             $autoNote .= ' — ' . $note;
         }
@@ -3216,10 +3219,19 @@ switch ($action) {
             break;
         }
 
-        // Block duplicate payment reference (UTR) — ignore soft-deleted orders
+        // Block duplicate payment reference (UTR) — ignore soft-deleted + allow same order on update
         if ($transaction_id !== '') {
-            $dupUtr = $conn->prepare("SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL LIMIT 1");
-            $dupUtr->bind_param("s", $transaction_id);
+            if (!empty($order_id) && $existingOrder) {
+                $dupUtr = $conn->prepare(
+                    "SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL AND order_id <> ? LIMIT 1"
+                );
+                $dupUtr->bind_param("ss", $transaction_id, $order_id);
+            } else {
+                $dupUtr = $conn->prepare(
+                    "SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL LIMIT 1"
+                );
+                $dupUtr->bind_param("s", $transaction_id);
+            }
             $dupUtr->execute();
             if ($dupUtr->get_result()->num_rows > 0) {
                 http_response_code(409);

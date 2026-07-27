@@ -478,12 +478,22 @@ export default function AdminDashboard() {
                   onChange={async (e) => {
                     const val = e.target.checked ? '1' : '0';
                     setSettingField('enable_invoice_charges', val);
+                    // Turning OFF also clears the charge list so old fees (₹49 etc.) cannot sneak back on
+                    const payload: Record<string, string> = {
+                      ...settingsQuery.data,
+                      ...settingsForm,
+                      enable_invoice_charges: val,
+                    };
+                    if (val === '0') {
+                      payload.invoice_custom_charges = '[]';
+                      setSettingField('invoice_custom_charges', '[]');
+                    }
                     try {
-                      await saveSettings({ ...settingsQuery.data, ...settingsForm, enable_invoice_charges: val });
+                      await saveSettings(payload);
                       showToast(
                         val === '1'
                           ? 'Extra charges ON — checkout will add listed fees'
-                          : 'Extra charges OFF — checkout shows share value only',
+                          : 'Extra charges OFF — list cleared; new orders = share value only',
                         'success',
                       );
                       settingsQuery.refetch();
