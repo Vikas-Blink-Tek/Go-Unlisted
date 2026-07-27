@@ -6,9 +6,9 @@ import {
   getAdminOrderStatusLabel,
   getOrderStatusClass,
   isPendingOrder,
-  isTransferPendingOrder,
   canMarkOrderComplete,
   canUndoOrderComplete,
+  canTransferOrder,
 } from '../../../utils/orderStatus';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
 
@@ -52,10 +52,7 @@ export default function OrderDetailDrawer({
     })
     .filter(Boolean) as Array<{ code: string; name: string }>;
 
-  const statusOpen =
-    isPendingOrder(order.status)
-    || isTransferPendingOrder(order.status);
-  const canTransfer = !!onTransfer && statusOpen && employeeOptions.length > 0;
+  const canTransfer = !!onTransfer && canTransferOrder(order.status) && employeeOptions.length > 0;
   const [assignEmployeeCode, setAssignEmployeeCode] = useState<string>('');
   const [paymentRef, setPaymentRef] = useState('');
   const [savingRef, setSavingRef] = useState(false);
@@ -320,7 +317,7 @@ export default function OrderDetailDrawer({
                 </button>
               </div>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>
-                Changes the User Code on this order so that employee can work it in their queue.
+                Works for Pending and Completed orders — changes User Code so that employee sees it in their queue / reports.
               </p>
             </section>
           )}

@@ -72,6 +72,17 @@ export function canUndoOrderComplete(status: string): boolean {
   return status.toLowerCase().includes('complete');
 }
 
+/** Master can reassign User Code even after Order Complete (old deals). Not for cancel/reject/refund. */
+export function canTransferOrder(status: string): boolean {
+  const s = status.toLowerCase();
+  if (s.includes('cancel') || s.includes('reject') || s.includes('refund')) return false;
+  return (
+    isPendingOrder(status)
+    || isTransferPendingOrder(status)
+    || s.includes('complete')
+  );
+}
+
 export function canViewInvoice(status: string): boolean {
   const s = status.toLowerCase();
   if (/cancel|reject|refund/.test(s)) return false;

@@ -6,9 +6,9 @@ import {
   getAdminOrderStatusLabel,
   getOrderStatusClass,
   isPendingOrder,
-  isTransferPendingOrder,
   canMarkOrderComplete,
   canUndoOrderComplete,
+  canTransferOrder,
 } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
@@ -129,7 +129,7 @@ export default function AdminOrdersSection({
   const canShowTransfer = (o: Order) =>
     !!onTransferOrder
     && employeeOptions.length > 0
-    && (isPendingOrder(o.status) || isTransferPendingOrder(o.status));
+    && canTransferOrder(o.status);
 
   const handleVerify = (id: string) => {
     if (confirm('Verify payment? Order moves to Pending Share Transfer.')) {

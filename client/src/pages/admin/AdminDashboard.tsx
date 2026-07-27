@@ -309,7 +309,7 @@ export default function AdminDashboard() {
           <AdminSectionHeader
             compact
             title="All Orders"
-            subtitle="Status starts as Pending Share Transfer. Transfer (assign employee) sits beside the status. After demat, mark Order Complete."
+            subtitle="Status starts as Pending Share Transfer. Transfer (User Code) works on Pending and Completed orders. After demat, mark Order Complete."
             badge={`${orders.length} total`}
           />
           <AdminOrdersSection
