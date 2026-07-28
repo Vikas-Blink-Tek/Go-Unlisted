@@ -30,6 +30,23 @@ export function demoteEmployee(id: string) {
   return apiRequest<{ success: boolean; message?: string }>('demoteEmployee', 'POST', { id });
 }
 
+/** Master: move user to another employee; optionally reassign their orders / initiate rows. */
+export function transferUser(
+  userId: string,
+  employeeCode: string,
+  orderScope: 'none' | 'open' | 'all' = 'all',
+) {
+  return apiRequest<{
+    success: boolean;
+    userId: string;
+    employeeCode: string;
+    orderScope?: string;
+    ordersUpdated?: number;
+    initiatedUpdated?: number;
+    message?: string;
+  }>('transferUser', 'POST', { userId, employeeCode, orderScope });
+}
+
 export function mapApiUser(u: Record<string, unknown>): User {
   return {
     id: String(u.id),

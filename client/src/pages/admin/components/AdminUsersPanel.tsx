@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { saveUser } from '../../../api/admin';
+import { saveUser, transferUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
 import { useToast } from '../../../context/ToastContext';
@@ -12,6 +12,7 @@ import AdminSectionHeader from './AdminSectionHeader';
 
 type Props = {
   users: User[];
+  employees?: Array<{ employee_id?: string; employeeCode?: string; name?: string }>;
 };
 
 type KycForm = {
@@ -23,6 +24,8 @@ type KycForm = {
   rejectReason: string;
   referralCode: string;
 };
+
+type OrderTransferScope = 'all' | 'open' | 'none';
 
 function userToForm(u: User): KycForm {
   return {
@@ -36,13 +39,16 @@ function userToForm(u: User): KycForm {
   };
 }
 
-export default function AdminUsersPanel({ users }: Props) {
+export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const { isMaster } = useAdminPanel();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [kycFilter, setKycFilter] = useState('all');
   const [detail, setDetail] = useState<User | null>(null);
+  const [transferTarget, setTransferTarget] = useState<User | null>(null);
+  const [transferCode, setTransferCode] = useState('');
+  const [orderScope, setOrderScope] = useState<OrderTransferScope>('all');
   const [form, setForm] = useState<KycForm>({
     kycPan: '',
     kycDemat: '',
@@ -53,6 +59,17 @@ export default function AdminUsersPanel({ users }: Props) {
     referralCode: '',
   });
 
+  const employeeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const list: Array<{ code: string; name: string }> = [];
+    for (const e of employees) {
+      const code = displayUserCode(String(e.employee_id ?? e.employeeCode ?? '').trim());
+      if (!code || code === 'GU00' || seen.has(code)) continue;
+      seen.add(code);
+      list.push({ code, name: e.name ? String(e.name) : code });
+    }
+    return list.sort((a, b) => a.code.localeCompare(b.code));
+  }, [employees]);
   const filtered = useMemo(() => {
     return users.filter((u) => {
       if (kycFilter === 'review' && u.kycStatus !== 'Under Review') return false;
@@ -106,6 +123,39 @@ export default function AdminUsersPanel({ users }: Props) {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
+  const transferMutation = useMutation({
+    mutationFn: () => {
+      if (!transferTarget) throw new Error('No user selected');
+      return transferUser(transferTarget.id, transferCode, orderScope);
+    },
+    onSuccess: (res) => {
+      const parts = [`Moved to ${displayUserCode(res.employeeCode)}`];
+      if ((res.ordersUpdated || 0) > 0) parts.push(`${res.ordersUpdated} order(s)`);
+      if ((res.initiatedUpdated || 0) > 0) parts.push(`${res.initiatedUpdated} initiate`);
+      showToast(parts.join(' · '), 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['initiated-checkouts'] });
+      setTransferTarget(null);
+    },
+    onError: (e: Error) => showToast(e.message, 'error'),
+  });
+
+  const openTransfer = (user: User) => {
+    if (!isMaster) {
+      showToast('Only Master Admin can transfer users between employees', 'error');
+      return;
+    }
+    const current = displayUserCode(user.referralCode);
+    const defaultCode =
+      employeeOptions.find((e) => e.code !== current)?.code
+      || employeeOptions[0]?.code
+      || '';
+    setTransferCode(defaultCode);
+    setOrderScope('all');
+    setTransferTarget(user);
+  };
+
   const setField = (patch: Partial<KycForm>) => setForm((f) => ({ ...f, ...patch }));
 
   const approve = (user: User) => {
@@ -140,22 +190,6 @@ export default function AdminUsersPanel({ users }: Props) {
       kycStatus: detail.kycStatus === 'Not Submitted' && form.kycPan ? 'Under Review' : detail.kycStatus,
       kycRejectReason: form.rejectReason,
       fields: form,
-    });
-  };
-
-  const quickTransfer = (user: User) => {
-    if (!isMaster) {
-      showToast('Only Master Admin can transfer users between employees', 'error');
-      return;
-    }
-    const code = prompt(`Transfer ${user.name}\nEnter new Employee Code (e.g. GUE002):`, displayUserCode(user.referralCode));
-    if (code === null) return;
-    const cleanCode = code.trim().toUpperCase();
-    if (cleanCode === displayUserCode(user.referralCode)) return;
-    saveMutation.mutate({
-      user,
-      kycStatus: user.kycStatus,
-      fields: { ...userToForm(user), referralCode: cleanCode },
     });
   };
 
@@ -260,8 +294,8 @@ export default function AdminUsersPanel({ users }: Props) {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        disabled={saveMutation.isPending}
-                        onClick={() => quickTransfer(u)}
+                        disabled={saveMutation.isPending || transferMutation.isPending}
+                        onClick={() => openTransfer(u)}
                       >
                         Transfer
                       </button>
@@ -410,24 +444,30 @@ export default function AdminUsersPanel({ users }: Props) {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Employee Code{isMaster ? ' (Transfer)' : ''}</label>
-              <input
-                className="form-input"
-                value={form.referralCode}
-                onChange={(e) => isMaster && setField({ referralCode: e.target.value.toUpperCase() })}
-                placeholder="GUE003"
-                readOnly={!isMaster}
-                disabled={!isMaster}
-              />
-              {isMaster ? (
-                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-                  Change this code to transfer the user to a different employee.
-                </p>
-              ) : (
-                <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
-                  Only Master Admin can reassign this client to another employee.
-                </p>
-              )}
+              <label className="form-label">Employee Code</label>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input
+                  className="form-input"
+                  value={form.referralCode}
+                  readOnly
+                  disabled
+                  style={{ flex: '1 1 120px', fontFamily: 'monospace' }}
+                />
+                {isMaster && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => openTransfer(detail)}
+                  >
+                    Transfer user…
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
+                {isMaster
+                  ? 'Use Transfer to move this client (and optionally their orders) to another employee.'
+                  : 'Only Master Admin can reassign this client to another employee.'}
+              </p>
             </div>
             
             <div className="kyc-modal-actions">
@@ -457,6 +497,89 @@ export default function AdminUsersPanel({ users }: Props) {
               </button>
               <button type="button" className="btn btn-ghost btn-full" onClick={() => setDetail(null)}>
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transferTarget && isMaster && (
+        <div className="modal-overlay" onClick={() => !transferMutation.isPending && setTransferTarget(null)}>
+          <div className="modal-card kyc-check-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="kyc-modal-header">
+              <h3>Transfer {transferTarget.name}</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setTransferTarget(null)}
+                disabled={transferMutation.isPending}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 0 }}>
+              Current code: <strong style={{ fontFamily: 'monospace' }}>{displayUserCode(transferTarget.referralCode)}</strong>
+            </p>
+            <div className="form-group">
+              <label className="form-label">New employee code</label>
+              {employeeOptions.length > 0 ? (
+                <select
+                  className="form-input"
+                  value={transferCode}
+                  onChange={(e) => setTransferCode(e.target.value)}
+                  aria-label="New employee code"
+                >
+                  {employeeOptions.map((e) => (
+                    <option key={e.code} value={e.code}>
+                      {e.code}{e.name && e.name !== e.code ? ` — ${e.name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="form-input"
+                  value={transferCode}
+                  onChange={(e) => setTransferCode(e.target.value.toUpperCase())}
+                  placeholder="GUE002"
+                  style={{ fontFamily: 'monospace' }}
+                />
+              )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Also transfer orders</label>
+              <select
+                className="form-input"
+                value={orderScope}
+                onChange={(e) => setOrderScope(e.target.value as OrderTransferScope)}
+              >
+                <option value="all">All orders (incl. Completed) + Initiate</option>
+                <option value="open">Open only (Pending / Share Transfer) + Initiate</option>
+                <option value="none">User only — leave orders as-is</option>
+              </select>
+              <p style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '0.35rem' }}>
+                Matches this client’s orders by account / phone / email so you don’t reassign each row in All Orders.
+              </p>
+            </div>
+            <div className="kyc-modal-actions">
+              <button
+                type="button"
+                className="btn btn-primary btn-full"
+                disabled={
+                  transferMutation.isPending
+                  || !transferCode.trim()
+                  || displayUserCode(transferCode) === displayUserCode(transferTarget.referralCode)
+                }
+                onClick={() => transferMutation.mutate()}
+              >
+                {transferMutation.isPending ? 'Transferring…' : 'Confirm transfer'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-full"
+                disabled={transferMutation.isPending}
+                onClick={() => setTransferTarget(null)}
+              >
+                Cancel
               </button>
             </div>
           </div>

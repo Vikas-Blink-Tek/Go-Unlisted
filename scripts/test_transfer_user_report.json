@@ -1,0 +1,158 @@
+{
+    "ranAt": "2026-07-28T09:29:04+00:00",
+    "db": "127.0.0.1\/gounlisted",
+    "passed": 30,
+    "failed": 0,
+    "results": [
+        {
+            "ok": true,
+            "name": "Seed: user on GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "Seed: open order on GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "Seed: completed order on GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "Seed: initiate on GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "none: user moved to GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "none: no order\/initiate updates",
+            "detail": "{\"ordersUpdated\":0,\"initiatedUpdated\":0}"
+        },
+        {
+            "ok": true,
+            "name": "none: open order still GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "none: completed still GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "none: initiate still GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "open: Transfer Pending \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "open: Completed stays GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "open: Cancelled stays GUE001",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "open: initiate \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "open: affected \u22651 order",
+            "detail": "ordersUpdated=1"
+        },
+        {
+            "ok": true,
+            "name": "all: open \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "all: completed \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "all: cancelled \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "all: initiate \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "all: affected \u22653 orders",
+            "detail": "ordersUpdated=3"
+        },
+        {
+            "ok": true,
+            "name": "match: order linked by phone only \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "invalid orderScope normalizes to all",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "same-code: sanitize stable",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "normalize empty \u2192 GU00",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "canonicalize GU002 \u2192 GUE002",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: api has transferUser case",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: transferUser gated by master",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: client API exports transferUser",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: UI has order scope control",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: UI scopes all\/open\/none",
+            "detail": ""
+        },
+        {
+            "ok": true,
+            "name": "source: employees passed to Users panel",
+            "detail": ""
+        }
+    ]
+}

@@ -2981,6 +2981,132 @@ switch ($action) {
         ]);
         break;
 
+    case 'transferUser':
+        // Master: move signup to another employee + optionally reassign their orders / initiate rows
+        requireMasterAdmin();
+        $data = getPostData();
+        $user_id = trim((string) ($data['userId'] ?? $data['id'] ?? ''));
+        $employee_code = strtoupper(trim((string) ($data['employeeCode'] ?? $data['referralCode'] ?? '')));
+        $orderScope = strtolower(trim((string) ($data['orderScope'] ?? $data['transferOrders'] ?? 'all')));
+        if (!in_array($orderScope, ['none', 'open', 'all'], true)) {
+            $orderScope = 'all';
+        }
+        if ($user_id === '' || str_starts_with($user_id, 'admin:')) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid user']);
+            break;
+        }
+        if ($employee_code === '') {
+            http_response_code(400);
+            sendResponse(['error' => 'Employee code is required']);
+            break;
+        }
+        if (!employeeCodeExists($conn, $employee_code)) {
+            http_response_code(400);
+            sendResponse(['error' => "Employee code $employee_code does not exist"]);
+            break;
+        }
+        $employee_code = sanitizeStoredUserCode($employee_code);
+
+        $uStmt = $conn->prepare('SELECT id, name, email, phone, referral_code FROM users WHERE id = ? LIMIT 1');
+        $uStmt->bind_param('s', $user_id);
+        $uStmt->execute();
+        $userRow = $uStmt->get_result()->fetch_assoc();
+        if (!$userRow) {
+            http_response_code(404);
+            sendResponse(['error' => 'User not found']);
+            break;
+        }
+        $fromCode = sanitizeStoredUserCode((string) ($userRow['referral_code'] ?? ''));
+        if ($fromCode === $employee_code) {
+            sendResponse([
+                'success' => true,
+                'userId' => $user_id,
+                'employeeCode' => normalizeUserCode($employee_code),
+                'ordersUpdated' => 0,
+                'initiatedUpdated' => 0,
+                'message' => 'Already on this employee code',
+            ]);
+            break;
+        }
+
+        $updUser = $conn->prepare('UPDATE users SET referral_code = ? WHERE id = ?');
+        $updUser->bind_param('ss', $employee_code, $user_id);
+        if (!$updUser->execute()) {
+            http_response_code(500);
+            sendResponse(['error' => 'Could not transfer user']);
+            break;
+        }
+
+        $ordersUpdated = 0;
+        $initiatedUpdated = 0;
+        if ($orderScope !== 'none') {
+            $email = strtolower(trim((string) ($userRow['email'] ?? '')));
+            $phone10 = preg_replace('/\D/', '', (string) ($userRow['phone'] ?? ''));
+            if (strlen($phone10) > 10) {
+                $phone10 = substr($phone10, -10);
+            }
+
+            $statusSql = '';
+            if ($orderScope === 'open') {
+                $statusSql = " AND LOWER(status) NOT LIKE '%complete%'
+                               AND LOWER(status) NOT LIKE '%cancel%'
+                               AND LOWER(status) NOT LIKE '%reject%'
+                               AND LOWER(status) NOT LIKE '%refund%'";
+            }
+
+            // Match by linked user_id, phone, or email
+            $ordSql = "UPDATE orders SET employee_code = ?
+                       WHERE deleted_at IS NULL
+                         AND (
+                           user_id = ?
+                           OR (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                           OR (? <> '' AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
+                         )
+                         {$statusSql}";
+            $ordUpd = $conn->prepare($ordSql);
+            if ($ordUpd) {
+                $ordUpd->bind_param('ssssss', $employee_code, $user_id, $phone10, $phone10, $email, $email);
+                if ($ordUpd->execute()) {
+                    $ordersUpdated = (int) $ordUpd->affected_rows;
+                }
+            }
+
+            // Initiate checkouts for same buyer
+            $initSql = "UPDATE initiated_checkouts SET employee_code = ?
+                        WHERE status = 'Initiated'
+                          AND (
+                            (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                            OR (? <> '' AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
+                          )";
+            $initUpd = $conn->prepare($initSql);
+            if ($initUpd) {
+                $initUpd->bind_param('sssss', $employee_code, $phone10, $phone10, $email, $email);
+                if ($initUpd->execute()) {
+                    $initiatedUpdated = (int) $initUpd->affected_rows;
+                }
+            }
+        }
+
+        logAudit($conn, 'Transfer User', $_SESSION['admin_id'], [
+            'userId' => $user_id,
+            'name' => $userRow['name'] ?? '',
+            'from' => $fromCode,
+            'to' => $employee_code,
+            'orderScope' => $orderScope,
+            'ordersUpdated' => $ordersUpdated,
+            'initiatedUpdated' => $initiatedUpdated,
+        ]);
+        sendResponse([
+            'success' => true,
+            'userId' => $user_id,
+            'employeeCode' => normalizeUserCode($employee_code),
+            'orderScope' => $orderScope,
+            'ordersUpdated' => $ordersUpdated,
+            'initiatedUpdated' => $initiatedUpdated,
+        ]);
+        break;
+
     case 'adminDeleteOrder':
         // Soft-delete — master admin only (employees never see delete)
         requireMasterAdmin();

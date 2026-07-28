@@ -359,7 +359,7 @@ export default function AdminDashboard() {
         </>
       )}
 
-      {activePanel === 'users' && <AdminUsersPanel users={users} />}
+      {activePanel === 'users' && <AdminUsersPanel users={users} employees={employeesQuery.data || []} />}
 
       {activePanel === 'settings' && (
         <div className="report-filter-box" style={{ position: 'relative' }}>
