@@ -12,6 +12,7 @@ import { blockTextInput } from '../utils/autofill';
 import { getInvoiceByOrder, type Invoice } from '../api/invoices';
 import InvoicePrintView from './admin/components/InvoicePrintView';
 import KycDetailsCard from '../components/kyc/KycDetailsCard';
+import { isPdfProof, kycProofViewUrl } from '../utils/kyc';
 
 function validateIfsc(ifsc: string) {
   return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
@@ -502,9 +503,19 @@ export default function DashboardPage() {
                 {kycForm.dematProof && !proofUploading && (
                   <div className="kyc-proof-uploaded">
                     <span>Proof uploaded</span>
-                    <a href={`/${kycForm.dematProof}`} target="_blank" rel="noopener noreferrer">Preview</a>
-                    {/\.(jpe?g|png|webp)$/i.test(kycForm.dematProof) && (
-                      <img src={`/${kycForm.dematProof}`} alt="Demat proof preview" className="kyc-proof-thumb" />
+                    <a
+                      href={kycProofViewUrl({ path: kycForm.dematProof }) || '#'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Preview
+                    </a>
+                    {!isPdfProof(kycForm.dematProof) && (
+                      <img
+                        src={kycProofViewUrl({ path: kycForm.dematProof }) || undefined}
+                        alt="Demat proof preview"
+                        className="kyc-proof-thumb"
+                      />
                     )}
                   </div>
                 )}

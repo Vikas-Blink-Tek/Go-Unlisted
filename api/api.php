@@ -889,6 +889,7 @@ function rowTimestampIst(array $row, string $column = 'created_at'): ?string {
 }
 
 function mapUserRow(array $row): array {
+    $proof = trim((string) ($row['kyc_demat_proof'] ?? ''));
     return [
         'id' => $row['id'],
         'name' => $row['name'],
@@ -898,12 +899,56 @@ function mapUserRow(array $row): array {
         'kycRejectReason' => $row['kyc_reject_reason'] ?? '',
         'kycPan' => $row['kyc_pan'],
         'kycDemat' => $row['kyc_demat'],
-        'kycDematProof' => $row['kyc_demat_proof'] ?? '',
+        'kycDematProof' => $proof,
+        'kycDematProofExists' => $proof !== '' && resolveKycProofAbsolutePath($proof) !== null,
         'bankAccount' => $row['bank_account'],
         'bankName' => $row['bank_name'] ?? '',
         'ifsc' => $row['ifsc'],
         'referralCode' => normalizeUserCode((string) ($row['referral_code'] ?? '')),
     ];
+}
+
+/** Absolute path for a stored KYC proof relative path, or null if invalid / missing. */
+function resolveKycProofAbsolutePath(string $relative): ?string {
+    $relative = ltrim(str_replace('\\', '/', trim($relative)), '/');
+    if ($relative === '' || !preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $relative)) {
+        return null;
+    }
+    $abs = realpath(__DIR__ . '/../' . $relative);
+    $root = realpath(__DIR__ . '/../uploads/kyc');
+    if ($abs === false || $root === false || !is_file($abs)) {
+        return null;
+    }
+    // Stay inside uploads/kyc
+    if (strpos($abs, $root) !== 0) {
+        return null;
+    }
+    return $abs;
+}
+
+function kycProofMimeForPath(string $absPath): string {
+    $ext = strtolower(pathinfo($absPath, PATHINFO_EXTENSION));
+    $map = [
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'pdf' => 'application/pdf',
+    ];
+    return $map[$ext] ?? 'application/octet-stream';
+}
+
+/** Stream a KYC proof file (exits). Call after auth + path checks. */
+function streamKycProofFile(string $absPath): void {
+    $mime = kycProofMimeForPath($absPath);
+    // Override default application/json from bootstrap
+    header_remove('Content-Type');
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . (string) filesize($absPath));
+    header('Cache-Control: private, max-age=300');
+    header('X-Content-Type-Options: nosniff');
+    readfile($absPath);
+    exit;
 }
 
 function lookupEmployeeCodeForUser(mysqli $conn, string $userId): string {
@@ -1998,7 +2043,11 @@ switch ($action) {
             $res = $stmt->get_result();
         }
         $data = [];
-        while ($row = $res->fetch_assoc()) { $data[] = $row; }
+        while ($row = $res->fetch_assoc()) {
+            $proof = trim((string) ($row['kyc_demat_proof'] ?? ''));
+            $row['kyc_demat_proof_exists'] = ($proof !== '' && resolveKycProofAbsolutePath($proof) !== null) ? 1 : 0;
+            $data[] = $row;
+        }
         sendResponse($data);
         break;
 
@@ -2357,6 +2406,99 @@ switch ($action) {
         $url = 'uploads/kyc/' . $filename;
         logAudit($conn, 'Upload KYC Demat Proof', $user_id, ['file' => $filename]);
         sendResponse(['success' => true, 'url' => $url]);
+        break;
+
+    case 'viewKycProof':
+        // Authenticated stream of CMR / demat proof (admin or owning user).
+        // Prefer this over raw /uploads/kyc/ — works when static files are missing/blocked after redeploy.
+        $isAdmin = isset($_SESSION['admin_id']);
+        $sessionUserId = (string) ($_SESSION['user_id'] ?? '');
+        if (!$isAdmin && $sessionUserId === '') {
+            http_response_code(401);
+            sendResponse(['error' => 'Login required']);
+            break;
+        }
+        if ($isAdmin) {
+            requireAnyPermission(['users', 'signups', 'pending', 'orders']);
+        }
+
+        $targetUserId = trim((string) ($_GET['userId'] ?? $_GET['user_id'] ?? ''));
+        $fileParam = ltrim(str_replace('\\', '/', trim((string) ($_GET['file'] ?? ''))), '/');
+        $relative = '';
+
+        if ($targetUserId !== '') {
+            if (!$isAdmin && $targetUserId !== $sessionUserId) {
+                http_response_code(403);
+                sendResponse(['error' => 'Forbidden']);
+                break;
+            }
+            if ($isAdmin && !isMasterAdminSession() && !adminCan('view-all-kyc')) {
+                $chk = $conn->prepare('SELECT referral_code, kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
+                $chk->bind_param('s', $targetUserId);
+                $chk->execute();
+                $urow = $chk->get_result()->fetch_assoc();
+                if (!$urow) {
+                    http_response_code(404);
+                    sendResponse(['error' => 'User not found']);
+                    break;
+                }
+                $code = currentEmployeeCode($conn);
+                if (strtoupper(trim((string) ($urow['referral_code'] ?? ''))) !== $code) {
+                    http_response_code(403);
+                    sendResponse(['error' => 'You can only view proofs for your referral clients']);
+                    break;
+                }
+                $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
+            } else {
+                $chk = $conn->prepare('SELECT kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
+                $chk->bind_param('s', $targetUserId);
+                $chk->execute();
+                $urow = $chk->get_result()->fetch_assoc();
+                if (!$urow) {
+                    http_response_code(404);
+                    sendResponse(['error' => 'User not found']);
+                    break;
+                }
+                $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
+            }
+        } elseif ($fileParam !== '') {
+            // Preview right after upload (path not yet saved on user row)
+            if (!preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $fileParam)) {
+                http_response_code(400);
+                sendResponse(['error' => 'Invalid proof path']);
+                break;
+            }
+            if (!$isAdmin) {
+                $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', $sessionUserId) ?: 'user';
+                $base = basename($fileParam);
+                if (strpos($base, 'kyc_' . $safeUser . '_') !== 0) {
+                    http_response_code(403);
+                    sendResponse(['error' => 'Forbidden']);
+                    break;
+                }
+            }
+            $relative = $fileParam;
+        } else {
+            http_response_code(400);
+            sendResponse(['error' => 'userId or file required']);
+            break;
+        }
+
+        if ($relative === '') {
+            http_response_code(404);
+            sendResponse(['error' => 'No demat proof on file. Ask the client to re-upload CMR.']);
+            break;
+        }
+        $abs = resolveKycProofAbsolutePath($relative);
+        if ($abs === null) {
+            http_response_code(404);
+            sendResponse([
+                'error' => 'Proof file missing on server (often deleted during redeploy). Ask the client to re-upload CMR from their dashboard.',
+                'path' => $relative,
+            ]);
+            break;
+        }
+        streamKycProofFile($abs);
         break;
 
     case 'getAccountContacts':

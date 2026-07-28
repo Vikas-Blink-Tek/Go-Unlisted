@@ -1,5 +1,6 @@
 import type { User } from '../../types';
 import { formatIndianPhoneDisplay } from '../../utils/format';
+import { isPdfProof, kycProofViewUrl } from '../../utils/kyc';
 
 type Props = {
   user: User;
@@ -18,10 +19,6 @@ function maskBank(account?: string): string {
   if (!a) return '—';
   if (a.length <= 4) return a;
   return `•••• ${a.slice(-4)}`;
-}
-
-function isPdfProof(path?: string): boolean {
-  return /\.pdf$/i.test(path || '');
 }
 
 export default function KycDetailsCard({ user, mode }: Props) {
@@ -97,23 +94,27 @@ export default function KycDetailsCard({ user, mode }: Props) {
                 <dt>CMR / Demat proof</dt>
                 <dd>
                   {user.kycDematProof ? (
-                    <a
-                      href={`/${user.kycDematProof.replace(/^\//, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="kyc-proof-link"
-                    >
-                      {isPdfProof(user.kycDematProof) ? 'View PDF proof' : 'View uploaded proof'}
-                    </a>
+                    user.kycDematProofExists === false ? (
+                      <span style={{ color: 'var(--danger, #dc2626)' }}>File missing — please re-upload</span>
+                    ) : (
+                      <a
+                        href={kycProofViewUrl({ userId: user.id }) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="kyc-proof-link"
+                      >
+                        {isPdfProof(user.kycDematProof) ? 'View PDF proof' : 'View uploaded proof'}
+                      </a>
+                    )
                   ) : (
                     '—'
                   )}
                 </dd>
               </div>
             </dl>
-            {user.kycDematProof && !isPdfProof(user.kycDematProof) && (
+            {user.kycDematProof && user.kycDematProofExists !== false && !isPdfProof(user.kycDematProof) && (
               <div className="kyc-proof-preview">
-                <img src={`/${user.kycDematProof.replace(/^\//, '')}`} alt="Demat / CMR proof" />
+                <img src={kycProofViewUrl({ userId: user.id }) || undefined} alt="Demat / CMR proof" />
               </div>
             )}
           </section>

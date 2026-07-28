@@ -7,6 +7,7 @@ import { useToast } from '../../../context/ToastContext';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { formatDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
+import { isPdfProof, kycProofViewUrl } from '../../../utils/kyc';
 import AdminSectionHeader from './AdminSectionHeader';
 
 type Props = {
@@ -333,11 +334,39 @@ export default function AdminUsersPanel({ users }: Props) {
               <div className="form-group">
                 <label className="form-label">CMR / Demat proof</label>
                 <div className="kyc-admin-proof">
-                  <a href={`/${detail.kycDematProof.replace(/^\//, '')}`} target="_blank" rel="noopener noreferrer">
-                    Open proof
-                  </a>
-                  {!/\.pdf$/i.test(detail.kycDematProof) && (
-                    <img src={`/${detail.kycDematProof.replace(/^\//, '')}`} alt="Demat proof" />
+                  {detail.kycDematProofExists === false ? (
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--danger, #dc2626)' }}>
+                      Proof path is saved, but the file is missing on the server (often wiped when
+                      <code> uploads/</code> was replaced on redeploy). Ask the client to re-upload CMR from their dashboard.
+                    </p>
+                  ) : (
+                    <>
+                      <a
+                        href={kycProofViewUrl({ userId: detail.id }) || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Open proof
+                      </a>
+                      {!isPdfProof(detail.kycDematProof) && (
+                        <img
+                          src={kycProofViewUrl({ userId: detail.id }) || undefined}
+                          alt="Demat proof"
+                          onError={(e) => {
+                            const el = e.currentTarget;
+                            el.style.display = 'none';
+                            const note = el.parentElement?.querySelector('.kyc-proof-missing');
+                            if (!note && el.parentElement) {
+                              const p = document.createElement('p');
+                              p.className = 'kyc-proof-missing';
+                              p.style.cssText = 'margin:0.5rem 0 0;font-size:0.85rem;color:var(--danger,#dc2626)';
+                              p.textContent = 'Could not load image — file missing. Ask client to re-upload CMR.';
+                              el.parentElement.appendChild(p);
+                            }
+                          }}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               </div>

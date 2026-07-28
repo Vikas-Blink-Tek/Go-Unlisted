@@ -62,6 +62,8 @@ export interface User {
   kycDemat?: string;
   /** Path to uploaded CMR / demat proof (e.g. uploads/kyc/xxx.jpg) */
   kycDematProof?: string;
+  /** False when DB has a path but file is missing on disk (common after redeploy wipe of uploads/). */
+  kycDematProofExists?: boolean;
   bankAccount?: string;
   /** Buyer's bank name (HDFC, SBI, etc.) */
   bankName?: string;

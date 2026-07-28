@@ -42,6 +42,11 @@ export function mapApiUser(u: Record<string, unknown>): User {
     kycPan: u.kyc_pan ? String(u.kyc_pan) : u.kycPan ? String(u.kycPan) : undefined,
     kycDemat: u.kyc_demat ? String(u.kyc_demat) : u.kycDemat ? String(u.kycDemat) : undefined,
     kycDematProof: u.kyc_demat_proof ? String(u.kyc_demat_proof) : u.kycDematProof ? String(u.kycDematProof) : undefined,
+    kycDematProofExists: (() => {
+      const raw = u.kyc_demat_proof_exists ?? u.kycDematProofExists;
+      if (raw === undefined || raw === null || raw === '') return undefined;
+      return raw === 1 || raw === '1' || raw === true;
+    })(),
     bankAccount: u.bank_account ? String(u.bank_account) : u.bankAccount ? String(u.bankAccount) : undefined,
     bankName: u.bank_name ? String(u.bank_name) : u.bankName ? String(u.bankName) : undefined,
     ifsc: u.ifsc ? String(u.ifsc) : undefined,

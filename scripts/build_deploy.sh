@@ -40,13 +40,17 @@ else
 fi
 rm -f "$DEPLOY/api/db_config.local.php" "$DEPLOY/api/deploy.config.php"
 
-# Uploads directory security
+# Uploads: only ship .htaccess — never empty upload trees that risk wiping live KYC proofs / logos
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true
 mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc" "$DEPLOY/uploads/articles"
 cp "$ROOT/uploads/shares/.htaccess" "$DEPLOY/uploads/shares/" 2>/dev/null || true
 cp "$ROOT/uploads/kyc/.htaccess" "$DEPLOY/uploads/kyc/" 2>/dev/null || true
 cp "$ROOT/uploads/articles/.htaccess" "$DEPLOY/uploads/articles/" 2>/dev/null || true
-touch "$DEPLOY/uploads/kyc/.gitkeep" "$DEPLOY/uploads/articles/.gitkeep"
+printf '%s\n' \
+  'KEEP THIS FOLDER ON THE SERVER.' \
+  'Do not replace public_html/uploads with this empty package folder.' \
+  'KYC demat proofs are in uploads/kyc/ — deleting them breaks admin preview.' \
+  > "$DEPLOY/uploads/DO_NOT_OVERWRITE.txt"
 
 # Never ship logs or install locks
 rm -f "$DEPLOY/api/php_errors.log" "$DEPLOY/api/.installed"
@@ -61,7 +65,8 @@ SAFE RE-DEPLOY (site already live — employees & data stay intact):
 2. Upload/extract zip to public_html/ — overwrite PHP and JS files only.
 3. Do NOT replace api/db_config.php or api/mail_config.php if unchanged.
 4. Do NOT import schema.sql — that is first-install only (repo root).
-5. Do NOT delete the uploads/ folder — share logos live there.
+5. Do NOT delete or overwrite the uploads/ folder — share logos AND KYC demat proofs (uploads/kyc/) live there.
+   When extracting a new zip, skip replacing uploads/ if it already exists on the server.
 6. First page load runs safe DB migrations only (adds missing columns/tables — does NOT update or delete your data).
 
 Employee data isolation (after this deploy):
