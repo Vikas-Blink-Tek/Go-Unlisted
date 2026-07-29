@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { ensureCsrfToken } from './csrf';
 import { displayUserCode } from '../utils/userCode';
 import type { User } from '../types';
 
@@ -45,6 +46,36 @@ export function transferUser(
     initiatedUpdated?: number;
     message?: string;
   }>('transferUser', 'POST', { userId, employeeCode, orderScope });
+}
+
+/** Admin: upload / replace CMR demat proof for a client. */
+export async function adminUploadKycDematProof(userId: string, file: File) {
+  if (!file.type.match(/^(image\/(jpeg|png|webp)|application\/pdf)$/i) && !/\.(jpe?g|png|webp|pdf)$/i.test(file.name)) {
+    throw new Error('Use JPG, PNG, WEBP, or PDF only');
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('File too large (max 5MB)');
+  }
+  const form = new FormData();
+  form.append('proof', file);
+  form.append('userId', userId);
+  const token = await ensureCsrfToken();
+  const res = await fetch('/api/api.php?action=adminUploadKycDematProof', {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers: { 'X-CSRF-Token': token },
+  });
+  let data: { success?: boolean; url?: string; error?: string } = {};
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(res.ok ? 'Invalid server response' : `Upload failed (HTTP ${res.status})`);
+  }
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || 'Proof upload failed');
+  }
+  return data as { success: boolean; url: string; userId?: string; kycDematProofExists?: boolean };
 }
 
 export function mapApiUser(u: Record<string, unknown>): User {

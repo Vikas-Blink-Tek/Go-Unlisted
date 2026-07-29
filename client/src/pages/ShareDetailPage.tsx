@@ -122,6 +122,46 @@ export default function ShareDetailPage() {
           </div>
         </div>
 
+        {share.discountTiers && share.discountTiers.length > 0 && (
+          <div className="detail-bulk-pricing">
+            <div className="detail-bulk-header">
+              <span className="detail-bulk-icon">🏷️</span>
+              <div>
+                <div className="detail-bulk-title">Bulk Discount Pricing</div>
+                <div className="detail-bulk-subtitle">Get additional discount on purchasing higher number of units</div>
+              </div>
+            </div>
+            <table className="detail-bulk-table">
+              <thead>
+                <tr>
+                  <th>Quantity</th>
+                  <th>Rate / Share</th>
+                  <th>You Save</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...share.discountTiers]
+                  .sort((a, b) => a.minQty - b.minQty)
+                  .map((tier, idx, arr) => {
+                    const nextTier = arr[idx + 1];
+                    const range = nextTier
+                      ? `${tier.minQty.toLocaleString('en-IN')} – ${(nextTier.minQty - 1).toLocaleString('en-IN')}`
+                      : `${tier.minQty.toLocaleString('en-IN')}+`;
+                    const saving = share.price - tier.price;
+                    const savePct = ((saving / share.price) * 100).toFixed(1);
+                    return (
+                      <tr key={idx}>
+                        <td>{range}</td>
+                        <td className="detail-bulk-price">{formatCurrency(tier.price)}</td>
+                        <td className="detail-bulk-save">{saving > 0 ? `${formatCurrency(saving)} (${savePct}%)` : '—'}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <div className="chart-section">
           <div className="chart-header">
             <div className="chart-title">Price Performance</div>

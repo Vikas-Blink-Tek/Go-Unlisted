@@ -938,6 +938,69 @@ function kycProofMimeForPath(string $absPath): string {
     return $map[$ext] ?? 'application/octet-stream';
 }
 
+/**
+ * Validate + move an uploaded CMR/demat proof into uploads/kyc/.
+ * @return array{ok:true,url:string}|array{ok:false,error:string,http?:int}
+ */
+function storeUploadedKycProofFile(string $userIdForName): array {
+    if (!isset($_FILES['proof'])) {
+        return ['ok' => false, 'error' => 'No file received. Try again.', 'http' => 400];
+    }
+    $fileErr = (int) ($_FILES['proof']['error'] ?? UPLOAD_ERR_NO_FILE);
+    if ($fileErr !== UPLOAD_ERR_OK) {
+        $uploadErrors = [
+            UPLOAD_ERR_INI_SIZE => 'File exceeds server limit',
+            UPLOAD_ERR_FORM_SIZE => 'File too large',
+            UPLOAD_ERR_PARTIAL => 'Upload incomplete — try again',
+            UPLOAD_ERR_NO_FILE => 'No file selected',
+        ];
+        return ['ok' => false, 'error' => $uploadErrors[$fileErr] ?? "Upload error code $fileErr", 'http' => 400];
+    }
+    $tmpName = $_FILES['proof']['tmp_name'];
+    $fileSize = (int) $_FILES['proof']['size'];
+    if ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
+        return ['ok' => false, 'error' => 'File must be under 5MB', 'http' => 400];
+    }
+    $mime = '';
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = (string) finfo_file($finfo, $tmpName);
+        finfo_close($finfo);
+    }
+    $allowedMimes = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'application/pdf' => 'pdf',
+    ];
+    if ($mime === '' || $mime === 'application/octet-stream') {
+        $info = @getimagesize($tmpName);
+        if (is_array($info) && !empty($info['mime']) && isset($allowedMimes[$info['mime']])) {
+            $mime = $info['mime'];
+        }
+    }
+    if (!isset($allowedMimes[$mime])) {
+        return ['ok' => false, 'error' => 'Use JPG, PNG, WEBP, or PDF only', 'http' => 400];
+    }
+    $uploadDir = __DIR__ . '/../uploads/kyc/';
+    if (!is_dir($uploadDir)) {
+        if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            return ['ok' => false, 'error' => 'Could not create upload folder. Create public_html/uploads/kyc on the server.', 'http' => 500];
+        }
+    }
+    if (!is_writable($uploadDir)) {
+        return ['ok' => false, 'error' => 'Upload folder is not writable. Set permissions on uploads/kyc.', 'http' => 500];
+    }
+    $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', $userIdForName) ?: 'user';
+    $filename = 'kyc_' . $safeUser . '_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
+    $target = $uploadDir . $filename;
+    if (!move_uploaded_file($tmpName, $target)) {
+        return ['ok' => false, 'error' => 'Failed to save file', 'http' => 500];
+    }
+    @chmod($target, 0644);
+    return ['ok' => true, 'url' => 'uploads/kyc/' . $filename];
+}
+
 /** Stream a KYC proof file (exits). Call after auth + path checks. */
 function streamKycProofFile(string $absPath): void {
     $mime = kycProofMimeForPath($absPath);
@@ -2334,78 +2397,70 @@ switch ($action) {
             sendResponse(['error' => 'Login required to upload demat proof']);
             break;
         }
-        if (!isset($_FILES['proof'])) {
-            http_response_code(400);
-            sendResponse(['error' => 'No file received. Try again.']);
+        $stored = storeUploadedKycProofFile((string) $user_id);
+        if (empty($stored['ok'])) {
+            http_response_code((int) ($stored['http'] ?? 400));
+            sendResponse(['error' => $stored['error'] ?? 'Upload failed']);
             break;
         }
-        $fileErr = (int) ($_FILES['proof']['error'] ?? UPLOAD_ERR_NO_FILE);
-        if ($fileErr !== UPLOAD_ERR_OK) {
-            $uploadErrors = [
-                UPLOAD_ERR_INI_SIZE => 'File exceeds server limit',
-                UPLOAD_ERR_FORM_SIZE => 'File too large',
-                UPLOAD_ERR_PARTIAL => 'Upload incomplete — try again',
-                UPLOAD_ERR_NO_FILE => 'No file selected',
-            ];
+        $url = (string) $stored['url'];
+        logAudit($conn, 'Upload KYC Demat Proof', (string) $user_id, ['file' => basename($url)]);
+        sendResponse(['success' => true, 'url' => $url]);
+        break;
+
+    case 'adminUploadKycDematProof':
+        // Admin / employee: re-upload CMR for a client (fixes missing uploads/ after redeploy)
+        requirePermission('users');
+        validateCsrfToken();
+        $targetUserId = trim((string) ($_POST['userId'] ?? $_POST['user_id'] ?? ''));
+        if ($targetUserId === '' || str_starts_with($targetUserId, 'admin:')) {
             http_response_code(400);
-            sendResponse(['error' => $uploadErrors[$fileErr] ?? "Upload error code $fileErr"]);
+            sendResponse(['error' => 'User ID is required']);
             break;
         }
-        $tmpName = $_FILES['proof']['tmp_name'];
-        $fileSize = (int) $_FILES['proof']['size'];
-        if ($fileSize <= 0 || $fileSize > 5 * 1024 * 1024) {
-            http_response_code(400);
-            sendResponse(['error' => 'File must be under 5MB']);
+        $chk = $conn->prepare('SELECT id, referral_code, kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
+        $chk->bind_param('s', $targetUserId);
+        $chk->execute();
+        $urow = $chk->get_result()->fetch_assoc();
+        if (!$urow) {
+            http_response_code(404);
+            sendResponse(['error' => 'User not found']);
             break;
         }
-        $mime = '';
-        if (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = (string) finfo_file($finfo, $tmpName);
-            finfo_close($finfo);
-        }
-        $allowedMimes = [
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-            'application/pdf' => 'pdf',
-        ];
-        if ($mime === '' || $mime === 'application/octet-stream') {
-            $info = @getimagesize($tmpName);
-            if (is_array($info) && !empty($info['mime']) && isset($allowedMimes[$info['mime']])) {
-                $mime = $info['mime'];
-            }
-        }
-        if (!isset($allowedMimes[$mime])) {
-            http_response_code(400);
-            sendResponse(['error' => 'Use JPG, PNG, WEBP, or PDF only']);
-            break;
-        }
-        $uploadDir = __DIR__ . '/../uploads/kyc/';
-        if (!is_dir($uploadDir)) {
-            if (!@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                http_response_code(500);
-                sendResponse(['error' => 'Could not create upload folder. Create public_html/uploads/kyc on the server.']);
+        if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
+            $code = currentEmployeeCode($conn);
+            if (strtoupper(trim((string) ($urow['referral_code'] ?? ''))) !== $code) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only upload proofs for your referral clients']);
                 break;
             }
         }
-        if (!is_writable($uploadDir)) {
-            http_response_code(500);
-            sendResponse(['error' => 'Upload folder is not writable. Set permissions on uploads/kyc.']);
+        $stored = storeUploadedKycProofFile($targetUserId);
+        if (empty($stored['ok'])) {
+            http_response_code((int) ($stored['http'] ?? 400));
+            sendResponse(['error' => $stored['error'] ?? 'Upload failed']);
             break;
         }
-        $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $user_id) ?: 'user';
-        $filename = 'kyc_' . $safeUser . '_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
-        $target = $uploadDir . $filename;
-        if (!move_uploaded_file($tmpName, $target)) {
+        $url = (string) $stored['url'];
+        $upd = $conn->prepare('UPDATE users SET kyc_demat_proof = ? WHERE id = ?');
+        $upd->bind_param('ss', $url, $targetUserId);
+        if (!$upd->execute()) {
             http_response_code(500);
-            sendResponse(['error' => 'Failed to save file']);
+            sendResponse(['error' => 'File saved but could not update user record']);
             break;
         }
-        @chmod($target, 0644);
-        $url = 'uploads/kyc/' . $filename;
-        logAudit($conn, 'Upload KYC Demat Proof', $user_id, ['file' => $filename]);
-        sendResponse(['success' => true, 'url' => $url]);
+        // Best-effort: remove old missing/orphan path is skipped (may already be gone)
+        logAudit($conn, 'Admin Upload KYC Demat Proof', $_SESSION['admin_id'] ?? '', [
+            'userId' => $targetUserId,
+            'file' => basename($url),
+            'previous' => $urow['kyc_demat_proof'] ?? '',
+        ]);
+        sendResponse([
+            'success' => true,
+            'url' => $url,
+            'userId' => $targetUserId,
+            'kycDematProofExists' => true,
+        ]);
         break;
 
     case 'viewKycProof':

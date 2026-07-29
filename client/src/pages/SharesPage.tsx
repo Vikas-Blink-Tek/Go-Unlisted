@@ -47,24 +47,6 @@ export default function SharesPage() {
 
       <div className="section" style={{ paddingTop: '2rem' }}>
         <div className="container">
-          {top10Shares.length > 0 && (
-            <div style={{ marginBottom: '3rem' }}>
-              <h2 className="section-title" style={{ fontSize: '1.75rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '2rem' }}>🏆</span> Top 10 Shares
-              </h2>
-              <div className="shares-grid">
-                {top10Shares.map((share) => (
-                  <ShareCard
-                    key={share.id}
-                    share={share}
-                    isWatched={watched.includes(share.id)}
-                    onWatchlist={() => setWatched(watchlist.toggle(share.id))}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="filter-bar">
             <div className="search-wrap">
               <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
@@ -104,6 +86,24 @@ export default function SharesPage() {
               </div>
             </div>
           </div>
+
+          {top10Shares.length > 0 && (
+            <div style={{ marginBottom: '3rem' }}>
+              <h2 className="section-title" style={{ fontSize: '1.75rem', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '2rem' }}>🏆</span> Top 10 Shares
+              </h2>
+              <div className="shares-grid">
+                {top10Shares.map((share) => (
+                  <ShareCard
+                    key={share.id}
+                    share={share}
+                    isWatched={watched.includes(share.id)}
+                    onWatchlist={() => setWatched(watchlist.toggle(share.id))}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="shares-grid">
             {filtered.map((share) => (

@@ -307,6 +307,14 @@ button.footer-link {
   white-space: nowrap;
 }
 
+.share-bulk-hint {
+  font-size: 0.75rem;
+  color: var(--green, #22c55e);
+  font-weight: 600;
+  padding: 0.25rem 0;
+  letter-spacing: 0.01em;
+}
+
 .btn-buy,
 .btn-detail {
   text-decoration: none;
@@ -395,6 +403,74 @@ button.footer-link {
 .detail-meta-list li strong {
   color: var(--white);
   font-weight: 700;
+}
+
+/* ── Bulk discount pricing on detail page ── */
+.detail-bulk-pricing {
+  margin-top: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem;
+  overflow: hidden;
+}
+
+.detail-bulk-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.detail-bulk-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.detail-bulk-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.detail-bulk-subtitle {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.detail-bulk-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.detail-bulk-table thead tr {
+  background: var(--primary);
+  color: white;
+}
+
+.detail-bulk-table th {
+  padding: 0.65rem 0.5rem;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.detail-bulk-table td {
+  padding: 0.65rem 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.detail-bulk-price {
+  font-weight: 700;
+  color: var(--white) !important;
+}
+
+.detail-bulk-save {
+  font-weight: 600;
+  color: var(--green, #22c55e) !important;
 }
 
 .detail-invest-cta {

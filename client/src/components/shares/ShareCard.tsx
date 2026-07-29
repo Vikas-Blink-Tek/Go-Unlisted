@@ -67,6 +67,12 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
         <span>Min Investment: {formatCurrency(share.price * share.minQty)}</span>
       </div>
 
+      {share.discountTiers && share.discountTiers.length > 0 && (
+        <div className="share-bulk-hint">
+          🏷️ Bulk rates from {formatCurrency(Math.min(...share.discountTiers.map(t => t.price)))}
+        </div>
+      )}
+
       <div className="chart-mini">
         <ShareSparkline data={share.priceHistory['3M']} positive={share.changePositive} />
       </div>

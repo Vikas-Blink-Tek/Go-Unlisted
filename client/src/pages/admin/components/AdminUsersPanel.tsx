@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { saveUser, transferUser } from '../../../api/admin';
+import { adminUploadKycDematProof, saveUser, transferUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
 import { useToast } from '../../../context/ToastContext';
@@ -49,6 +49,8 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const [transferTarget, setTransferTarget] = useState<User | null>(null);
   const [transferCode, setTransferCode] = useState('');
   const [orderScope, setOrderScope] = useState<OrderTransferScope>('all');
+  const [proofUploading, setProofUploading] = useState(false);
+  const [proofThumbKey, setProofThumbKey] = useState(0);
   const [form, setForm] = useState<KycForm>({
     kycPan: '',
     kycDemat: '',
@@ -83,6 +85,28 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const openCheck = (u: User) => {
     setDetail(u);
     setForm(userToForm(u));
+    setProofThumbKey(0);
+  };
+
+  const handleAdminProofUpload = async (file: File | null) => {
+    if (!detail || !file) return;
+    setProofUploading(true);
+    try {
+      const res = await adminUploadKycDematProof(detail.id, file);
+      const next: User = {
+        ...detail,
+        kycDematProof: res.url,
+        kycDematProofExists: true,
+      };
+      setDetail(next);
+      setProofThumbKey((k) => k + 1);
+      showToast('CMR / demat proof uploaded', 'success');
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Upload failed', 'error');
+    } finally {
+      setProofUploading(false);
+    }
   };
 
   const saveMutation = useMutation({
@@ -364,47 +388,56 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
                 maxLength={16}
               />
             </div>
-            {detail.kycDematProof && (
-              <div className="form-group">
-                <label className="form-label">CMR / Demat proof</label>
-                <div className="kyc-admin-proof">
-                  {detail.kycDematProofExists === false ? (
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--danger, #dc2626)' }}>
-                      Proof path is saved, but the file is missing on the server (often wiped when
-                      <code> uploads/</code> was replaced on redeploy). Ask the client to re-upload CMR from their dashboard.
-                    </p>
-                  ) : (
-                    <>
-                      <a
-                        href={kycProofViewUrl({ userId: detail.id }) || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Open proof
-                      </a>
-                      {!isPdfProof(detail.kycDematProof) && (
-                        <img
-                          src={kycProofViewUrl({ userId: detail.id }) || undefined}
-                          alt="Demat proof"
-                          onError={(e) => {
-                            const el = e.currentTarget;
-                            el.style.display = 'none';
-                            const note = el.parentElement?.querySelector('.kyc-proof-missing');
-                            if (!note && el.parentElement) {
-                              const p = document.createElement('p');
-                              p.className = 'kyc-proof-missing';
-                              p.style.cssText = 'margin:0.5rem 0 0;font-size:0.85rem;color:var(--danger,#dc2626)';
-                              p.textContent = 'Could not load image — file missing. Ask client to re-upload CMR.';
-                              el.parentElement.appendChild(p);
-                            }
-                          }}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
+            <div className="form-group">
+              <label className="form-label">CMR / Demat proof</label>
+              <div className="kyc-admin-proof">
+                {detail.kycDematProofExists === false && (
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: 'var(--danger, #dc2626)' }}>
+                    Proof path is saved, but the file is missing on the server. Re-upload CMR below (JPG / PNG / WEBP / PDF, max 5MB).
+                  </p>
+                )}
+                {detail.kycDematProof && detail.kycDematProofExists !== false && (
+                  <>
+                    <a
+                      href={`${kycProofViewUrl({ userId: detail.id }) || '#'}&t=${proofThumbKey}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open proof
+                    </a>
+                    {!isPdfProof(detail.kycDematProof) && (
+                      <img
+                        key={proofThumbKey}
+                        src={`${kycProofViewUrl({ userId: detail.id }) || ''}&t=${proofThumbKey}`}
+                        alt="Demat proof"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    )}
+                  </>
+                )}
+                {!detail.kycDematProof && (
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.85rem', color: 'var(--muted)' }}>
+                    No proof on file yet — upload CMR from WhatsApp / email here.
+                  </p>
+                )}
+                <label className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem', cursor: proofUploading ? 'wait' : 'pointer' }}>
+                  {proofUploading ? 'Uploading…' : detail.kycDematProof ? 'Re-upload CMR' : 'Upload CMR'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+                    style={{ display: 'none' }}
+                    disabled={proofUploading}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      void handleAdminProofUpload(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
               </div>
-            )}
+            </div>
             <div className="form-group">
               <label className="form-label">Bank name</label>
               <input
