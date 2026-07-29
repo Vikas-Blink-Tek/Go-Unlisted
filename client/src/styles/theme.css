@@ -1784,6 +1784,10 @@ ul {
   color: var(--white);
 }
 
+.password-toggle--admin:hover {
+  color: var(--text, #0f172a);
+}
+
 /* ── Checkout ─────────────────────────────────────────────── */
 .checkout-wrap {
   max-width: 640px;
