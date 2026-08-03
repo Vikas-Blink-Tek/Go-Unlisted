@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/format';
 import { getInventoryBadge, isShareUnavailable } from '../../utils/inventory';
+import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
 import ShareSparkline from './ShareSparkline';
 import CompanyLogo from './CompanyLogo';
 import type { Share } from '../../types';
@@ -13,9 +14,11 @@ interface ShareCardProps {
 
 export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardProps) {
   const navigate = useNavigate();
+  const canViewRates = useCanViewShareRates();
   const changeSign = share.changePositive ? '▲' : '▼';
   const unavailable = isShareUnavailable(share.inventoryStatus);
   const badge = getInventoryBadge(share.inventoryStatus);
+  const sparkline = share.priceHistory?.['3M'] ?? [];
 
   return (
     <div
@@ -52,38 +55,59 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
         {badge && <span className={`inventory-badge inventory-${badge.toLowerCase().replace(/\s+/g, '-')}`}>{badge}</span>}
       </div>
 
-      <div className="share-price-row">
-        <div>
-          <div className="share-price">{formatCurrency(share.price)}</div>
-          <div className="share-price-sub">per share</div>
+      <BlurredRatesLock className="share-card-rates">
+        <div className="share-price-row">
+          <div>
+            <div className="share-price">{formatCurrency(share.price)}</div>
+            <div className="share-price-sub">per share</div>
+          </div>
+          {share.growth ? (
+            <div className={`share-change ${share.changePositive ? 'pos' : 'neg'}`}>
+              {changeSign} {share.growth}
+            </div>
+          ) : null}
         </div>
-        <div className={`share-change ${share.changePositive ? 'pos' : 'neg'}`}>
-          {changeSign} {share.growth}
+
+        <div className="share-meta">
+          <span>Min: {share.minQty} shares</span>
+          <span>Min Investment: {formatCurrency(share.price * share.minQty)}</span>
         </div>
-      </div>
 
-      <div className="share-meta">
-        <span>Min: {share.minQty} shares</span>
-        <span>Min Investment: {formatCurrency(share.price * share.minQty)}</span>
-      </div>
+        {share.discountTiers && share.discountTiers.length > 0 && (
+          <div className="share-bulk-hint">
+            🏷️ Bulk rates from {formatCurrency(Math.min(...share.discountTiers.map((t) => t.price)))}
+          </div>
+        )}
 
-      {share.discountTiers && share.discountTiers.length > 0 && (
-        <div className="share-bulk-hint">
-          🏷️ Bulk rates from {formatCurrency(Math.min(...share.discountTiers.map(t => t.price)))}
-        </div>
-      )}
-
-      <div className="chart-mini">
-        <ShareSparkline data={share.priceHistory['3M']} positive={share.changePositive} />
-      </div>
+        {sparkline.length > 0 ? (
+          <div className="chart-mini">
+            <ShareSparkline data={sparkline} positive={share.changePositive} />
+          </div>
+        ) : null}
+      </BlurredRatesLock>
 
       <div className="share-card-footer" onClick={(e) => e.stopPropagation()}>
         {unavailable ? (
-          <Link to="/contact" className="btn-buy btn-buy-muted" onClick={(e) => e.stopPropagation()}>Contact Us</Link>
+          <Link to="/contact" className="btn-buy btn-buy-muted" onClick={(e) => e.stopPropagation()}>
+            Contact Us
+          </Link>
+        ) : canViewRates ? (
+          <Link to={`/checkout/${share.id}`} className="btn-buy" onClick={(e) => e.stopPropagation()}>
+            Buy Now
+          </Link>
         ) : (
-          <Link to={`/checkout/${share.id}`} className="btn-buy" onClick={(e) => e.stopPropagation()}>Buy Now</Link>
+          <Link
+            to="/login"
+            state={{ from: `/checkout/${share.id}` }}
+            className="btn-buy"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Login to Buy
+          </Link>
         )}
-        <Link to={`/shares/${share.id}`} className="btn-detail">Details</Link>
+        <Link to={`/shares/${share.id}`} className="btn-detail">
+          Details
+        </Link>
       </div>
     </div>
   );

@@ -48,6 +48,8 @@ export interface Share {
   lastUpdated?: string | null;
   isBuiltin?: boolean;
   _isCustom?: boolean;
+  /** False when API strips rates for guests — login required to view prices */
+  ratesVisible?: boolean;
 }
 
 export interface User {

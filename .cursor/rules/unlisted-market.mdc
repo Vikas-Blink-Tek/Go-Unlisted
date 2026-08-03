@@ -24,8 +24,8 @@ alwaysApply: true
 ### Pricing (not market-driven)
 - Price set manually from last trade, funding round valuation, demand, and competitor quotes.
 - Update when new inventory arrives or market sentiment shifts.
-- Show **indicative price** + price history chart (admin-maintained, not live exchange data).
-- Display **min lot** and **min investment** (price × min qty) prominently.
+- Show **indicative price** + price history chart — guests see **blurred** rates + login CTA; clear after investor login (admin-maintained, not live exchange data).
+- Display **min lot** publicly; **min investment** blurred until login.
 
 ### Listing catalog (what admin must manage per stock)
 Every listing on GO UNLISTED needs these fields — **never ship a stock without description**:
@@ -133,7 +133,8 @@ Build and maintain these without user prompting:
 
 ## GO UNLISTED product decisions (do not reverse without asking)
 
-- **Browse & details**: always public
+- **Browse & details**: always public (company names, sectors, description)
+- **Share rates / prices**: listing cards & detail page blurred for guests (“Login to see the share prices”); clear after login. Exception: homepage **Market Activity** + **Pre-IPO vs Listing Price** track record stay public.
 - **Checkout**: Quantity → Payment Mode → pay → enter UTR + confirm. Guest browse OK; place order needs login + KYC.
 - **Online payment**: buyer pays → enters UTR → `Transfer Pending` → Portfolio → All Orders: Save UTR & Complete after demat.
 - **Manual / Offline**: `Transfer Pending` → portfolio → Complete.

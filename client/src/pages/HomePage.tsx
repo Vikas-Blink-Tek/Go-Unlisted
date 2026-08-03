@@ -8,10 +8,11 @@ import ListingComparison from '../components/home/ListingComparison';
 import { formatCurrency } from '../utils/format';
 import type { Share } from '../types';
 
+/** Homepage Market Activity — rates always public (track-record teaser). */
 function MarketActivityCard({ share }: { share: Share }) {
   const listingPrice =
     share.listingPrice != null && share.listingPrice > 0 ? share.listingPrice : null;
-  const hasComparison = listingPrice != null;
+  const hasComparison = listingPrice != null && share.price > 0;
   const gainPct = hasComparison ? ((listingPrice - share.price) / share.price) * 100 : null;
 
   return (
@@ -21,7 +22,9 @@ function MarketActivityCard({ share }: { share: Share }) {
           <CompanyLogo share={share} className="hero-logo-sm" />
           <div className="hero-card-company-text">
             <div className="hero-company-name">{share.name}</div>
-            <div className="hero-sector">{share.sector} · {share.listingType || 'Pre-IPO'}</div>
+            <div className="hero-sector">
+              {share.sector} · {share.listingType || 'Pre-IPO'}
+            </div>
           </div>
         </div>
       </div>
@@ -31,7 +34,9 @@ function MarketActivityCard({ share }: { share: Share }) {
           <span className="market-compare-label">Pre-IPO</span>
           <span className="market-compare-value">{formatCurrency(share.price)}</span>
         </div>
-        <div className="market-compare-arrow" aria-hidden="true">→</div>
+        <div className="market-compare-arrow" aria-hidden="true">
+          →
+        </div>
         <div className="market-compare-price-box list">
           <span className="market-compare-label">Listing</span>
           <span className={`market-compare-value${listingPrice == null ? ' market-compare-value--empty' : ''}`}>

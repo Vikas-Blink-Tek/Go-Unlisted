@@ -7,6 +7,7 @@ interface ListingComparisonProps {
   shares: Share[];
 }
 
+/** IPO track record — invest vs listing prices always public. */
 export default function ListingComparison({ shares }: ListingComparisonProps) {
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -38,7 +39,9 @@ export default function ListingComparison({ shares }: ListingComparisonProps) {
       <div className="container">
         <div className="section-header">
           <div className="section-tag">IPO Track Record</div>
-          <h2 className="section-title">Pre-IPO vs <span>Listing Price</span></h2>
+          <h2 className="section-title">
+            Pre-IPO vs <span>Listing Price</span>
+          </h2>
           <p className="section-subtitle">
             See how past and listed names performed — invest price versus listing price.
           </p>

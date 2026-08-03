@@ -101,7 +101,34 @@ function syncShareConfigPrice(mysqli $conn, string $shareId, float $price): void
     $stmt->execute();
 }
 
-function mapShareRow(array $row, bool $includeInternal = false): array {
+/**
+ * Strip monetary rates from a mapped share for guests (browse OK, rates after login).
+ */
+function maskShareRates(array $mapped): array {
+    $mapped['basePrice'] = 0;
+    $mapped['price'] = 0;
+    $mapped['listingPrice'] = null;
+    $mapped['discountTiers'] = [];
+    $mapped['growth'] = '';
+    $mapped['week52High'] = '';
+    $mapped['week52Low'] = '';
+    $mapped['bookValue'] = '';
+    $mapped['faceValue'] = '';
+    $mapped['peRatio'] = '';
+    $mapped['pbRatio'] = '';
+    if (isset($mapped['priceHistory']) && is_array($mapped['priceHistory'])) {
+        foreach (array_keys($mapped['priceHistory']) as $period) {
+            $mapped['priceHistory'][$period] = [];
+        }
+    } else {
+        $mapped['priceHistory'] = ['3M' => [], '6M' => [], '1Y' => []];
+    }
+    unset($mapped['buyPrice']);
+    $mapped['ratesVisible'] = false;
+    return $mapped;
+}
+
+function mapShareRow(array $row, bool $includeInternal = false, bool $includeRates = true): array {
     $price = (float) $row['base_price'];
     $history = json_decode($row['price_history'] ?? '', true);
     $labels = json_decode($row['chart_labels'] ?? '', true);
@@ -183,6 +210,7 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'isBuiltin' => (bool) $row['is_builtin'],
         'lastUpdated' => $row['updated_at'] ?? null,
         'qtyOnHand' => isset($row['qty_on_hand']) ? (int) $row['qty_on_hand'] : 0,
+        'ratesVisible' => true,
     ];
 
     if ($includeInternal && isset($row['buy_price']) && $row['buy_price'] !== null) {
@@ -190,6 +218,10 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
     }
     if ($includeInternal) {
         $mapped['qtyOnHand'] = isset($row['qty_on_hand']) ? (int) $row['qty_on_hand'] : 0;
+    }
+
+    if (!$includeRates) {
+        return maskShareRates($mapped);
     }
 
     return $mapped;

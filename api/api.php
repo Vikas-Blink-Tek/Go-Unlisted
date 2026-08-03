@@ -4018,13 +4018,15 @@ switch ($action) {
     // -----------------------------------------
     case 'getShares':
         $includeInternal = false;
-        if (isset($_SESSION['admin_id']) && refreshAdminSession($conn)) {
+        $adminOk = isset($_SESSION['admin_id']) && refreshAdminSession($conn);
+        if ($adminOk) {
             $includeInternal = adminCan('prices') || adminCan('inventory');
         }
+        // Rates included for everyone — guest UI blurs until login (avoids ₹0 looking fake).
         $res = $conn->query("SELECT * FROM shares WHERE is_active = 1 ORDER BY is_featured DESC, is_builtin DESC, name ASC");
         $shares = [];
         while ($row = $res->fetch_assoc()) {
-            $shares[] = mapShareRow($row, $includeInternal);
+            $shares[] = mapShareRow($row, $includeInternal, true);
         }
         sendResponse($shares);
         break;

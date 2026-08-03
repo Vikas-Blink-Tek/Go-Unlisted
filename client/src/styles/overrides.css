@@ -2534,3 +2534,90 @@ button.footer-link {
   font-size: 0.82rem;
   color: var(--muted, #64748b);
 }
+
+/* Login-gated share rates — real prices heavily blurred until login (no ₹0) */
+.share-rates-blur-wrap {
+  position: relative;
+  isolation: isolate;
+  min-height: 3.5rem;
+  overflow: hidden;
+  border-radius: 10px;
+}
+.share-rates-blur-content {
+  filter: blur(12px) saturate(0.85);
+  user-select: none;
+  pointer-events: none;
+  transform: translateZ(0);
+  opacity: 0.85;
+}
+.share-rates-blur-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  text-decoration: none;
+  background: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  border: 1px solid rgba(0, 52, 120, 0.08);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.share-rates-blur-overlay span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--navy, #003478);
+  letter-spacing: 0.01em;
+  max-width: 11.5rem;
+}
+.share-rates-blur-overlay:hover {
+  background: rgba(248, 250, 252, 0.88);
+  box-shadow: 0 4px 16px rgba(0, 52, 120, 0.08);
+}
+.share-rates-blur-overlay:hover span {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.share-card-rates {
+  margin: 0.15rem 0 0.35rem;
+}
+.share-card-rates .share-rates-blur-overlay span {
+  max-width: 10rem;
+  font-size: 0.74rem;
+}
+.detail-hero-price-lock {
+  min-width: 8rem;
+  min-height: 3rem;
+}
+.detail-fundamentals-lock,
+.detail-bulk-lock,
+.detail-chart-lock,
+.calc-rates-lock {
+  min-height: 5rem;
+}
+.detail-fundamentals-lock .share-rates-blur-overlay span,
+.calc-rates-lock .share-rates-blur-overlay span {
+  max-width: 14rem;
+  font-size: 0.85rem;
+}
+.market-compare-rates,
+.listing-compare-rates {
+  margin-top: 0.35rem;
+  min-height: 4rem;
+}
+.share-rate-login,
+.share-rate-login-inline {
+  font-weight: 600;
+  color: var(--navy, #003478);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.share-rate-login:hover {
+  color: var(--gold, #c9a227);
+}
+

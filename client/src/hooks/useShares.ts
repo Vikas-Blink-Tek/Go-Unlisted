@@ -2,13 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { getShares } from '../api/shares';
 import { mergeSharesWithPrices } from '../data/sharesCatalog';
 import { getSharesConfig } from '../api/shares';
+import { useAuth } from '../context/AuthContext';
 import type { Share } from '../types';
 
 export function useShares() {
+  const { user } = useAuth();
+  const authKey = user?.id ?? 'guest';
+
   const sharesQuery = useQuery({
-    queryKey: ['shares'],
+    queryKey: ['shares', authKey],
     queryFn: getShares,
-    // Always prefer live admin catalog (add/edit/price) over a long cache
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
@@ -16,7 +19,7 @@ export function useShares() {
   });
 
   const fallbackQuery = useQuery({
-    queryKey: ['sharesConfig'],
+    queryKey: ['sharesConfig', authKey],
     queryFn: getSharesConfig,
     staleTime: 0,
     refetchOnMount: 'always',

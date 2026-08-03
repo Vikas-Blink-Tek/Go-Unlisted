@@ -8,6 +8,7 @@ import { calcOrderTotal, formatCurrency, invoiceChargesEnabled } from '../utils/
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
+import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
 import type { ChartPeriod } from '../types';
 
 export default function ShareDetailPage() {
@@ -16,6 +17,7 @@ export default function ShareDetailPage() {
   const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const canViewRates = useCanViewShareRates();
   const { showToast } = useToast();
   const [period, setPeriod] = useState<ChartPeriod>('3M');
 
@@ -26,7 +28,9 @@ export default function ShareDetailPage() {
       <div className="detail-page-wrap">
         <div className="no-results">
           <p>Share not found.</p>
-          <Link to="/shares" className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }}>Back to Listings</Link>
+          <Link to="/shares" className="btn btn-primary btn-sm" style={{ marginTop: '1rem' }}>
+            Back to Listings
+          </Link>
         </div>
       </div>
     );
@@ -35,7 +39,7 @@ export default function ShareDetailPage() {
   const handleBuy = () => {
     if (isShareUnavailable(share.inventoryStatus)) return;
     if (!user) {
-      navigate('/login', { state: { from: `/share/${share.id}` } });
+      navigate('/login', { state: { from: `/shares/${share.id}` } });
       return;
     }
     if (user.kycStatus !== 'Verified') {
@@ -50,11 +54,11 @@ export default function ShareDetailPage() {
   const onRequest = isShareOnRequest(share.inventoryStatus);
   const invBadge = getInventoryBadge(share.inventoryStatus);
 
-  /** All key-data fields optional except price & lot — empty shows N/A (client request) */
   const na = (v?: string | number | null) => {
     if (v === null || v === undefined || v === '') return 'N/A';
     return String(v);
   };
+
   const fundamentals: { label: string; value: string }[] = [
     { label: 'Indicative price', value: formatCurrency(share.price) },
     { label: 'Lot size', value: share.minQty.toLocaleString('en-IN') },
@@ -70,6 +74,8 @@ export default function ShareDetailPage() {
     { label: 'ISIN', value: na(share.isin) },
   ];
 
+  const chartData = share.priceHistory?.[period] ?? [];
+
   return (
     <div className="view" id="view-detail">
       <div className="detail-page-wrap">
@@ -82,10 +88,14 @@ export default function ShareDetailPage() {
             <span className="detail-ticker-lg">{share.ticker}</span>
             <span className="detail-chip chip-sector">{share.sector}</span>
           </div>
-          <div className="detail-hero-price">
-            <strong>{formatCurrency(share.price)}</strong>
-            {share.growth && <span className={`detail-yoy ${share.changePositive ? 'pos' : 'neg'}`}>{share.growth} YoY</span>}
-          </div>
+          <BlurredRatesLock className="detail-hero-price-lock">
+            <div className="detail-hero-price">
+              <strong>{formatCurrency(share.price)}</strong>
+              {share.growth && (
+                <span className={`detail-yoy ${share.changePositive ? 'pos' : 'neg'}`}>{share.growth} YoY</span>
+              )}
+            </div>
+          </BlurredRatesLock>
         </div>
 
         <div className="detail-company-header" style={{ marginBottom: '1rem' }}>
@@ -95,7 +105,14 @@ export default function ShareDetailPage() {
             <div className="detail-subtitle">
               {share.ticker}
               {share.listingType && <span style={{ marginLeft: 8 }}>{share.listingType}</span>}
-              {invBadge && <span className={`inventory-badge inventory-${invBadge.toLowerCase().replace(/\s+/g, '-')}`} style={{ marginLeft: 8 }}>{invBadge}</span>}
+              {invBadge && (
+                <span
+                  className={`inventory-badge inventory-${invBadge.toLowerCase().replace(/\s+/g, '-')}`}
+                  style={{ marginLeft: 8 }}
+                >
+                  {invBadge}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -105,92 +122,118 @@ export default function ShareDetailPage() {
         {share.keyHighlights && share.keyHighlights.length > 0 && (
           <div className="detail-extra-block">
             <ul className="detail-highlights">
-              {share.keyHighlights.map((h) => <li key={h}>{h}</li>)}
+              {share.keyHighlights.map((h) => (
+                <li key={h}>{h}</li>
+              ))}
             </ul>
           </div>
         )}
 
         <div className="detail-fundamentals">
           <div className="detail-fundamentals-label">Key Data</div>
-          <div className="detail-fundamentals-grid">
-            {fundamentals.map((f) => (
-              <div key={f.label} className="detail-fundamentals-item">
-                <span>{f.label}</span>
-                <strong className={f.value === 'N/A' ? 'is-na' : undefined}>{f.value}</strong>
-              </div>
-            ))}
-          </div>
+          <BlurredRatesLock className="detail-fundamentals-lock" message="Login to see the share prices">
+            <div className="detail-fundamentals-grid">
+              {fundamentals.map((f) => (
+                <div key={f.label} className="detail-fundamentals-item">
+                  <span>{f.label}</span>
+                  <strong className={f.value === 'N/A' ? 'is-na' : undefined}>{f.value}</strong>
+                </div>
+              ))}
+            </div>
+          </BlurredRatesLock>
         </div>
 
         {share.discountTiers && share.discountTiers.length > 0 && (
-          <div className="detail-bulk-pricing">
-            <div className="detail-bulk-header">
-              <span className="detail-bulk-icon">🏷️</span>
-              <div>
-                <div className="detail-bulk-title">Bulk Discount Pricing</div>
-                <div className="detail-bulk-subtitle">Get additional discount on purchasing higher number of units</div>
+          <BlurredRatesLock className="detail-bulk-lock">
+            <div className="detail-bulk-pricing">
+              <div className="detail-bulk-header">
+                <span className="detail-bulk-icon">🏷️</span>
+                <div>
+                  <div className="detail-bulk-title">Bulk Discount Pricing</div>
+                  <div className="detail-bulk-subtitle">Get additional discount on purchasing higher number of units</div>
+                </div>
               </div>
+              <table className="detail-bulk-table">
+                <thead>
+                  <tr>
+                    <th>Quantity</th>
+                    <th>Rate / Share</th>
+                    <th>You Save</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...share.discountTiers]
+                    .sort((a, b) => a.minQty - b.minQty)
+                    .map((tier, idx, arr) => {
+                      const nextTier = arr[idx + 1];
+                      const range = nextTier
+                        ? `${tier.minQty.toLocaleString('en-IN')} – ${(nextTier.minQty - 1).toLocaleString('en-IN')}`
+                        : `${tier.minQty.toLocaleString('en-IN')}+`;
+                      const saving = share.price - tier.price;
+                      const savePct = share.price > 0 ? ((saving / share.price) * 100).toFixed(1) : '0';
+                      return (
+                        <tr key={idx}>
+                          <td>{range}</td>
+                          <td className="detail-bulk-price">{formatCurrency(tier.price)}</td>
+                          <td className="detail-bulk-save">
+                            {saving > 0 ? `${formatCurrency(saving)} (${savePct}%)` : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
             </div>
-            <table className="detail-bulk-table">
-              <thead>
-                <tr>
-                  <th>Quantity</th>
-                  <th>Rate / Share</th>
-                  <th>You Save</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...share.discountTiers]
-                  .sort((a, b) => a.minQty - b.minQty)
-                  .map((tier, idx, arr) => {
-                    const nextTier = arr[idx + 1];
-                    const range = nextTier
-                      ? `${tier.minQty.toLocaleString('en-IN')} – ${(nextTier.minQty - 1).toLocaleString('en-IN')}`
-                      : `${tier.minQty.toLocaleString('en-IN')}+`;
-                    const saving = share.price - tier.price;
-                    const savePct = ((saving / share.price) * 100).toFixed(1);
-                    return (
-                      <tr key={idx}>
-                        <td>{range}</td>
-                        <td className="detail-bulk-price">{formatCurrency(tier.price)}</td>
-                        <td className="detail-bulk-save">{saving > 0 ? `${formatCurrency(saving)} (${savePct}%)` : '—'}</td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
+          </BlurredRatesLock>
         )}
 
-        <div className="chart-section">
-          <div className="chart-header">
-            <div className="chart-title">Price Performance</div>
-            <div className="chart-tabs">
-              {(['3M', '6M', '1Y'] as ChartPeriod[]).map((p) => (
-                <button key={p} type="button" className={`chart-tab${period === p ? ' active' : ''}`} onClick={() => setPeriod(p)}>
-                  {p}
-                </button>
-              ))}
+        {chartData.length > 0 && (
+          <BlurredRatesLock className="detail-chart-lock">
+            <div className="chart-section">
+              <div className="chart-header">
+                <div className="chart-title">Price Performance</div>
+                <div className="chart-tabs">
+                  {(['3M', '6M', '1Y'] as ChartPeriod[]).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`chart-tab${period === p ? ' active' : ''}`}
+                      onClick={() => setPeriod(p)}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <PriceChart share={share} period={period} />
             </div>
-          </div>
-          <PriceChart share={share} period={period} />
-        </div>
+          </BlurredRatesLock>
+        )}
 
         <div className="detail-invest-cta">
           <div>
             <h3>Ready to invest in {share.name}?</h3>
             <p>
-              Min. {share.minQty} shares ·{' '}
-              {formatCurrency(calcOrderTotal(share.price, share.minQty, settings))}
-              {invoiceChargesEnabled(settings) ? ' (incl. extra charges)' : ''}
+              Min. {share.minQty} shares
+              {canViewRates ? (
+                <>
+                  {' '}
+                  · {formatCurrency(calcOrderTotal(share.price, share.minQty, settings))}
+                  {invoiceChargesEnabled(settings) ? ' (incl. extra charges)' : ''}
+                </>
+              ) : (
+                <> · <span className="share-rate-login-inline">login to see total</span></>
+              )}
               {onRequest && ' · Delivery timeline on request'}
             </p>
           </div>
           {unavailable ? (
-            <Link to="/contact" className="btn btn-outline btn-lg">Contact Us for Availability</Link>
+            <Link to="/contact" className="btn btn-outline btn-lg">
+              Contact Us for Availability
+            </Link>
           ) : (
             <button type="button" className="btn btn-primary btn-lg" onClick={handleBuy}>
-              Invest Now →
+              {canViewRates ? 'Invest Now →' : 'Login to Invest →'}
             </button>
           )}
         </div>
