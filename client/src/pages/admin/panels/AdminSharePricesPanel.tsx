@@ -500,7 +500,7 @@ export default function AdminSharePricesPanel() {
               <button
                 type="button"
                 className={`stock-star-btn${s.isFeatured ? ' stock-star-btn--on' : ''}`}
-                title={s.isFeatured ? 'Remove from homepage Market Activity' : 'Star — homepage only (hidden from /shares list)'}
+                title={s.isFeatured ? 'Remove from homepage Market Activity' : 'Star — also on homepage Market Activity (still findable via /shares search)'}
                 disabled={starMutation.isPending}
                 onClick={() => starMutation.mutate(s)}
                 aria-label={s.isFeatured ? 'Unstar stock' : 'Star stock for homepage'}

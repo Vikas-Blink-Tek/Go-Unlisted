@@ -19,22 +19,53 @@ export default function SharesPage() {
   }, [shares]);
 
   const top10Shares = useMemo(() => {
-    return shares.filter((s) => s.isTop10).slice(0, 10);
-  }, [shares]);
+    const q = search.trim().toLowerCase();
+    return shares
+      .filter((s) => {
+        if (!s.isTop10) return false;
+        if (sector !== 'All' && s.sector !== sector) return false;
+        if (maxPrice < 4000 && s.price > maxPrice) return false;
+        if (watchOnly && !watched.includes(s.id)) return false;
+        if (!q) return true;
+        return (
+          s.name.toLowerCase().includes(q)
+          || s.ticker.toLowerCase().includes(q)
+          || (s.sector || '').toLowerCase().includes(q)
+          || s.id.toLowerCase().includes(q)
+        );
+      })
+      .slice(0, 10);
+  }, [shares, search, sector, maxPrice, watchOnly, watched]);
 
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    // Default /shares browse hides homepage-starred + Top 10 (they have their own slots).
+    // Search / sector / watchlist / price filters must still find them.
+    const includeSpotlight = q !== '' || sector !== 'All' || watchOnly || maxPrice < 4000;
+    const top10Ids = new Set(top10Shares.map((s) => s.id));
+
     return shares.filter((s) => {
-      if (s.isFeatured) return false;
+      if (!includeSpotlight) {
+        if (s.isFeatured) return false;
+        if (s.isTop10) return false;
+      } else if (top10Ids.has(s.id)) {
+        // Already shown in Top 10 block for this filter — don't duplicate
+        return false;
+      }
       if (sector !== 'All' && s.sector !== sector) return false;
-      if (s.price > maxPrice) return false;
+      if (maxPrice < 4000 && s.price > maxPrice) return false;
       if (watchOnly && !watched.includes(s.id)) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        return s.name.toLowerCase().includes(q) || s.ticker.toLowerCase().includes(q) || s.sector.toLowerCase().includes(q);
+      if (q) {
+        return (
+          s.name.toLowerCase().includes(q)
+          || s.ticker.toLowerCase().includes(q)
+          || (s.sector || '').toLowerCase().includes(q)
+          || s.id.toLowerCase().includes(q)
+        );
       }
       return true;
     });
-  }, [shares, sector, maxPrice, watchOnly, watched, search]);
+  }, [shares, sector, maxPrice, watchOnly, watched, search, top10Shares]);
 
   return (
     <div className="view active">
@@ -105,6 +136,15 @@ export default function SharesPage() {
             </div>
           )}
 
+          {(search.trim() || sector !== 'All' || watchOnly || maxPrice < 4000) && (
+            <h2 className="section-title" style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>
+              {search.trim() ? `Results for “${search.trim()}”` : 'Matching listings'}
+              <span style={{ fontWeight: 500, color: 'var(--muted)', marginLeft: '0.5rem', fontSize: '0.95rem' }}>
+                ({filtered.length})
+              </span>
+            </h2>
+          )}
+
           <div className="shares-grid">
             {filtered.map((share) => (
               <ShareCard
@@ -119,6 +159,7 @@ export default function SharesPage() {
           {filtered.length === 0 && (
             <div className="empty-state" style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
               No shares match your filters.
+              {search.trim() ? ' Try another name, ticker, or clear search.' : ''}
             </div>
           )}
         </div>

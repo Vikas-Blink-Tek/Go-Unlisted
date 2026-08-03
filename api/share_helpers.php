@@ -162,7 +162,24 @@ function mapShareRow(array $row, bool $includeInternal = false): array {
         'faceValue' => trim($fundamentals['faceValue'] ?? ''),
         'isFeatured' => ((int) ($row['is_featured'] ?? 0)) === 1,
         'isTop10' => ((int) ($row['is_top10'] ?? 0)) === 1,
-        'discountTiers' => isset($row['discount_tiers']) ? json_decode($row['discount_tiers'], true) : [],
+        'discountTiers' => (static function ($raw) {
+            $tiers = is_string($raw) ? json_decode($raw, true) : $raw;
+            if (!is_array($tiers)) {
+                return [];
+            }
+            $out = [];
+            foreach ($tiers as $tier) {
+                if (!is_array($tier)) {
+                    continue;
+                }
+                $mq = (int) ($tier['minQty'] ?? $tier['min_qty'] ?? 0);
+                $pr = (float) ($tier['price'] ?? $tier['rate'] ?? 0);
+                if ($mq > 0 && $pr > 0) {
+                    $out[] = ['minQty' => $mq, 'price' => $pr];
+                }
+            }
+            return $out;
+        })($row['discount_tiers'] ?? null),
         'isBuiltin' => (bool) $row['is_builtin'],
         'lastUpdated' => $row['updated_at'] ?? null,
         'qtyOnHand' => isset($row['qty_on_hand']) ? (int) $row['qty_on_hand'] : 0,

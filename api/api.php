@@ -4077,9 +4077,24 @@ switch ($action) {
         $lock_in_months = 0;
         $is_featured = !empty($data['isFeatured']) ? 1 : 0;
         $is_top10 = !empty($data['isTop10']) ? 1 : 0;
-        $discount_tiers = isset($data['discountTiers']) && is_array($data['discountTiers']) 
-            ? json_encode($data['discountTiers']) 
-            : '[]';
+        $discount_tiers = '[]';
+        if (isset($data['discountTiers']) && is_array($data['discountTiers'])) {
+            $cleanTiers = [];
+            foreach ($data['discountTiers'] as $tier) {
+                if (!is_array($tier)) {
+                    continue;
+                }
+                $mq = (int) ($tier['minQty'] ?? $tier['min_qty'] ?? 0);
+                $pr = (float) ($tier['price'] ?? $tier['rate'] ?? 0);
+                if ($mq > 0 && $pr > 0) {
+                    $cleanTiers[] = ['minQty' => $mq, 'price' => round($pr, 2)];
+                }
+            }
+            usort($cleanTiers, static function ($a, $b) {
+                return $a['minQty'] <=> $b['minQty'];
+            });
+            $discount_tiers = json_encode(array_values($cleanTiers));
+        }
         $highlights = $data['keyHighlights'] ?? [];
         if (is_string($highlights)) {
             $highlights = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $highlights))));
