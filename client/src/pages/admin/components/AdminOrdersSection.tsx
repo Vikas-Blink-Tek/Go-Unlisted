@@ -9,6 +9,7 @@ import {
   canMarkOrderComplete,
   canUndoOrderComplete,
   canTransferOrder,
+  canRejectOrder,
 } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
@@ -120,7 +121,7 @@ export default function AdminOrdersSection({
   }, [activeOrders, search, statusFilter, codeFilter, dateFrom, dateTo, verifyMode]);
 
   const display = limit ? filtered.slice(0, limit) : filtered;
-  const showActionCol = showActions || !!onComplete || !!onUndoComplete || !!onDelete;
+  const showActionCol = showActions || !!onComplete || !!onUndoComplete || !!onDelete || !!onReject;
   const canUpdateStatus = (o: Order) =>
     (showActions && isPendingOrder(o.status))
     || (!!onComplete && canMarkOrderComplete(o.status))
@@ -139,7 +140,11 @@ export default function AdminOrdersSection({
   };
 
   const handleReject = (id: string) => {
-    if (confirm('Reject this payment?')) {
+    const order = display.find((o) => o.orderId === id);
+    const msg = order && isPendingOrder(order.status)
+      ? 'Reject this payment? Buyer will need to contact support.'
+      : 'Reject this order? Status will be set to Rejected.';
+    if (confirm(msg)) {
       onReject?.(id);
       setSelected(null);
     }
@@ -315,10 +320,19 @@ export default function AdminOrdersSection({
                     {showActionCol && (
                       <td className="admin-orders-col-actions" onClick={(e) => e.stopPropagation()}>
                         {showActions && isPendingOrder(o.status) && (
-                          <>
-                            <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>Verify</button>
-                            <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#ef4444' }} onClick={() => handleReject(o.orderId)}>Reject</button>
-                          </>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>
+                            Verify
+                          </button>
+                        )}
+                        {showActions && onReject && canRejectOrder(o.status) && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: '#ef4444' }}
+                            onClick={() => handleReject(o.orderId)}
+                          >
+                            Reject
+                          </button>
                         )}
                         {onComplete && canMarkOrderComplete(o.status) && (
                           <button type="button" className="btn btn-primary btn-sm" onClick={() => handleComplete(o.orderId)}>
@@ -340,7 +354,7 @@ export default function AdminOrdersSection({
                             Delete
                           </button>
                         )}
-                        {verifyMode && !canUpdateStatus(o) && !onDelete && (
+                        {verifyMode && !canUpdateStatus(o) && !onDelete && !(onReject && canRejectOrder(o.status)) && (
                           <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>—</span>
                         )}
                       </td>
@@ -400,7 +414,7 @@ export default function AdminOrdersSection({
         users={users}
         onClose={() => setSelected(null)}
         onVerify={showActions ? handleVerify : undefined}
-        onReject={showActions ? handleReject : undefined}
+        onReject={onReject ? handleReject : undefined}
         onComplete={onComplete ? handleComplete : undefined}
         onUndoComplete={onUndoComplete ? handleUndoComplete : undefined}
         onDelete={onDelete ? handleDelete : undefined}

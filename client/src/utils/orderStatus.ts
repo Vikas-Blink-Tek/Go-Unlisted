@@ -68,6 +68,13 @@ export function canMarkOrderComplete(status: string): boolean {
   return isTransferPendingOrder(status);
 }
 
+/** Reject open pipeline orders — payment pending or share-transfer pending (not completed / already closed). */
+export function canRejectOrder(status: string): boolean {
+  const s = status.toLowerCase();
+  if (s.includes('complete') || s.includes('cancel') || s.includes('reject') || s.includes('refund')) return false;
+  return isPendingOrder(status) || isTransferPendingOrder(status);
+}
+
 export function canUndoOrderComplete(status: string): boolean {
   return status.toLowerCase().includes('complete');
 }

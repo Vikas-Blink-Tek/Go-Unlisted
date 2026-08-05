@@ -9,6 +9,7 @@ import {
   canMarkOrderComplete,
   canUndoOrderComplete,
   canTransferOrder,
+  canRejectOrder,
 } from '../../../utils/orderStatus';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
 
@@ -85,7 +86,7 @@ export default function OrderDetailDrawer({
 
   const showFooter =
     (onVerify && isPendingOrder(order.status))
-    || (onReject && isPendingOrder(order.status))
+    || (onReject && canRejectOrder(order.status))
     || (onComplete && canMarkOrderComplete(order.status))
     || (onUndoComplete && canUndoOrderComplete(order.status))
     || !!onDelete
@@ -364,9 +365,9 @@ export default function OrderDetailDrawer({
                 Undo complete → Share transfer
               </button>
             )}
-            {onReject && isPendingOrder(order.status) && (
+            {onReject && canRejectOrder(order.status) && (
               <button type="button" className="btn btn-ghost btn-full" style={{ color: '#ef4444' }} onClick={() => onReject(order.orderId)}>
-                Reject payment
+                {isPendingOrder(order.status) ? 'Reject payment' : 'Reject order'}
               </button>
             )}
             {onAttachPortfolio && (

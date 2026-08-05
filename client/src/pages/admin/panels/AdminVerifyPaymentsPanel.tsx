@@ -5,7 +5,7 @@ import { getEmployees, getUsers, mapApiUser } from '../../../api/admin';
 import { useToast } from '../../../context/ToastContext';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
 import { formatCurrency, formatDateTime, formatIndianPhoneDisplay, formatPersonName, getOrderDate } from '../../../utils/format';
-import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, ORDER_STATUS } from '../../../utils/orderStatus';
+import { getAdminOrderStatusLabel, getOrderStatusClass, isPendingOrder, canRejectOrder, ORDER_STATUS } from '../../../utils/orderStatus';
 import { displayUserCode } from '../../../utils/userCode';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
 import AdminSectionHeader from '../components/AdminSectionHeader';
@@ -258,7 +258,7 @@ export default function AdminVerifyPaymentsPanel() {
         users={users}
         onClose={() => setSelected(null)}
         onVerify={selected && isPendingOrder(selected.status) ? verify : undefined}
-        onReject={selected && isPendingOrder(selected.status) ? reject : undefined}
+        onReject={selected && canRejectOrder(selected.status) ? reject : undefined}
         employees={employeesQuery.data || []}
         onTransfer={
           isMaster && selected && (isPendingOrder(selected.status) || /transfer|confirm|verif/i.test(selected.status))
