@@ -379,12 +379,12 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Demat (16 digits)</label>
+              <label className="form-label">Demat (16 letters/digits)</label>
               <input
                 className="form-input"
                 value={form.kycDemat}
-                onChange={(e) => setField({ kycDemat: e.target.value.replace(/\D/g, '').slice(0, 16) })}
-                placeholder="1234567890123456"
+                onChange={(e) => setField({ kycDemat: e.target.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16) })}
+                placeholder="e.g. 12081600XXXXXX12"
                 maxLength={16}
               />
             </div>

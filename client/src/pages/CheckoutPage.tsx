@@ -234,8 +234,12 @@ export default function CheckoutPage() {
       return;
     }
     const utrClean = utr.trim().replace(/\s+/g, '').toUpperCase();
+    if (utrClean.includes('@')) {
+      showToast('Enter the bank Transaction ID / UTR from payment SMS — not the UPI ID (…@bank)', 'warning');
+      return;
+    }
     if (utrClean.length < 6 || utrClean.length > 30) {
-      showToast('Enter your UTR / UPI reference (6–30 characters) from the payment app', 'warning');
+      showToast('Enter your Transaction ID / UTR (6–30 characters) from the payment app', 'warning');
       return;
     }
     setPaying(true);
@@ -339,20 +343,20 @@ export default function CheckoutPage() {
 
         <div className="form-group" style={{ marginTop: '1.25rem' }}>
           <label className="form-label" htmlFor="checkout-utr">
-            UTR / UPI reference *
+            Transaction ID / UTR *
           </label>
           <input
             id="checkout-utr"
             className="form-input"
             value={utr}
             onChange={(e) => setUtr(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-            placeholder="Paste UTR from GPay / PhonePe / bank SMS"
+            placeholder="e.g. 312345678901 from GPay / PhonePe / bank SMS"
             maxLength={30}
             autoComplete="off"
             inputMode="text"
           />
           <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-            Temporary until Razorpay is live — after paying, copy the UTR / reference from your UPI or bank app. Order is placed only with a valid UTR.
+            After paying, copy the <strong>Transaction ID / UTR</strong> from your UPI or bank app (not our UPI ID). Order is placed only with a valid reference.
           </p>
         </div>
 
@@ -537,7 +541,7 @@ export default function CheckoutPage() {
               <div className="confirm-icon" style={{ color: 'var(--green)' }}>✓</div>
               <h2 className="confirm-title">Order Received!</h2>
               <p className="confirm-subtitle">
-                We have your UTR. Shares are in your portfolio while we complete demat transfer.
+                We have your Transaction ID / UTR. Shares are in your portfolio while we complete demat transfer.
               </p>
               <div className="confirm-order-id">
                 Order ID <span>{orderId}</span>
@@ -547,7 +551,14 @@ export default function CheckoutPage() {
                 <div className="confirm-row"><span className="lbl">Quantity</span><span className="val">{qty} shares</span></div>
                 <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
                 <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
-                <div className="confirm-row"><span className="lbl">UTR</span><span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span></div>
+                <div className="confirm-row">
+                  <span className="lbl">Transaction ID</span>
+                  <span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span>
+                </div>
+                <div className="confirm-row">
+                  <span className="lbl">UTR</span>
+                  <span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span>
+                </div>
                 <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--accent)' }}>Share transfer pending</span></div>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>

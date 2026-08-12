@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { getArticles } from '../api/content';
 import { formatDate } from '../utils/format';
-import { mediaUrl } from '../utils/mediaUrl';
+import ArticleCoverImage from '../components/articles/ArticleCoverImage';
 
 export default function ArticlesPage() {
   const [search, setSearch] = useState('');
@@ -30,7 +30,9 @@ export default function ArticlesPage() {
         animate={{ opacity: 1, y: 0 }}
         style={{ maxWidth: 600, margin: '0 auto 1.5rem' }}
       >
-        <h1>Market <span className="text-gradient">Insights</span></h1>
+        <h1>
+          Market <span className="text-gradient">Insights</span>
+        </h1>
         <p>Expert analysis on pre-IPO deals, unlisted valuations, and private market trends</p>
       </motion.div>
 
@@ -65,17 +67,13 @@ export default function ArticlesPage() {
             transition={{ delay: i * 0.08 }}
           >
             <Link to={`/articles/${a.slug}`} className="article-card">
-              {a.image_url ? (
-                <img src={mediaUrl(a.image_url)} alt={a.title} className="article-img" />
-              ) : (
-                <div className="article-img article-img-placeholder">
-                  <span>📰</span>
-                </div>
-              )}
+              <ArticleCoverImage path={a.image_url} alt={a.title} className="article-img" />
               <div className="article-body">
                 {a.category && <p className="article-card-category">{a.category}</p>}
                 <h3>{a.title}</h3>
-                <p className="article-meta">{a.author} · {formatDate(a.created_at)}</p>
+                <p className="article-meta">
+                  {a.author} · {formatDate(a.created_at)}
+                </p>
                 <span className="article-read-more">Read article →</span>
               </div>
             </Link>
@@ -84,11 +82,7 @@ export default function ArticlesPage() {
       </div>
 
       {!isLoading && filtered.length === 0 && (
-        <motion.div
-          className="empty-state"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
+        <motion.div className="empty-state" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <span style={{ fontSize: '3rem', display: 'block', marginBottom: '1rem' }}>📰</span>
           <h3 style={{ color: 'var(--white)', marginBottom: '0.5rem' }}>
             {search.trim() ? 'No matching articles' : 'No articles yet'}

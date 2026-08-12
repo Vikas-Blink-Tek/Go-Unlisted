@@ -2327,7 +2327,7 @@ switch ($action) {
         }
 
         $kyc_pan = strtoupper(trim((string) ($data['pan'] ?? '')));
-        $kyc_demat = preg_replace('/\D/', '', (string) ($data['demat'] ?? ''));
+        $kyc_demat = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) ($data['demat'] ?? '')));
         $bank_account = preg_replace('/\s+/', '', trim((string) ($data['bankAccount'] ?? $data['bank'] ?? '')));
         $bank_name = trim((string) ($data['bankName'] ?? $data['bank_name'] ?? ''));
         $ifsc = strtoupper(trim((string) ($data['ifsc'] ?? '')));
@@ -2341,9 +2341,9 @@ switch ($action) {
             sendResponse(['error' => 'Invalid PAN format (e.g. ABCDE1234F)']);
             break;
         }
-        if (!preg_match('/^\d{16}$/', $kyc_demat)) {
+        if (!preg_match('/^[A-Z0-9]{16}$/', $kyc_demat)) {
             http_response_code(400);
-            sendResponse(['error' => 'Demat account must be exactly 16 digits']);
+            sendResponse(['error' => 'Demat account must be exactly 16 letters/digits (CDSL/NSDL)']);
             break;
         }
         if (strlen($bank_name) < 2 || strlen($bank_name) > 100) {

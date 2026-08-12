@@ -123,8 +123,13 @@ export function validatePAN(pan: string) {
   return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
 }
 
+/** CDSL/NSDL client ID — exactly 16 alphanumeric (letters + digits). */
+export function normalizeDemat(demat: string) {
+  return demat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 16);
+}
+
 export function validateDemat(demat: string) {
-  return /^\d{16}$/.test(demat);
+  return /^[A-Z0-9]{16}$/.test(normalizeDemat(demat));
 }
 
 /** True only when Site Settings explicitly enable extra charges (`'1'`). Missing/`'0'` = off. */

@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder, getAdminOrders, attachOrderToClient } from '../../api/orders';
 import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
 import { useAdminPanel } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
-import { formatCurrency } from '../../utils/format';
+import { formatCurrency, getOrderDate, parseDbDateTime } from '../../utils/format';
 import { isPendingOrder, canMarkOrderComplete, ORDER_STATUS } from '../../utils/orderStatus';
 import { blockAutofillOnFocus, blockTextInput } from '../../utils/autofill';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
@@ -31,6 +31,26 @@ import AdminInventoryPanel from './panels/AdminInventoryPanel';
 import AdminInvoicesPanel from './panels/AdminInvoicesPanel';
 import AdminSignupsPanel from './panels/AdminSignupsPanel';
 
+type PeriodFilter = 'all' | 'this_month' | 'last_month';
+
+function dateInPeriod(iso: string | undefined | null, period: PeriodFilter): boolean {
+  if (period === 'all') return true;
+  const d = parseDbDateTime(iso);
+  if (!d) return false;
+  const now = new Date();
+  if (period === 'this_month') {
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  }
+  const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return d.getFullYear() === last.getFullYear() && d.getMonth() === last.getMonth();
+}
+
+function periodLabel(period: PeriodFilter): string {
+  if (period === 'this_month') return 'This month';
+  if (period === 'last_month') return 'Last month';
+  return 'All time';
+}
+
 export default function AdminDashboard() {
   const { activePanel, setActivePanel, can, canAccessPanel, isMaster } = useAdminPanel();
   const { showToast } = useToast();
@@ -43,6 +63,7 @@ export default function AdminDashboard() {
   const [newChargeName, setNewChargeName] = useState('');
   const [newChargePrice, setNewChargePrice] = useState('');
   const [newChargeType, setNewChargeType] = useState<'percentage' | 'flat'>('percentage');
+  const [dashPeriod, setDashPeriod] = useState<PeriodFilter>('all');
 
   const ordersQuery = useQuery({
     queryKey: ['admin-orders'],
@@ -81,16 +102,38 @@ export default function AdminDashboard() {
   const orders = allOrders.filter((o) => !o.deletedAt);
   const users = usersQuery.data || [];
   const initiated = initiatedQuery.data || [];
-  const pendingOrders = orders.filter((o) => isPendingOrder(o.status));
-  const confirmedOrders = orders.filter((o) => {
-    const s = o.status.toLowerCase();
-    return s.includes('confirm') || s.includes('transfer') || s.includes('completed');
-  });
-  const confirmedRevenue = confirmedOrders.reduce((s, o) => s + (o.totalPaid || 0), 0);
-  const totalOrderValue = orders.reduce((s, o) => s + (o.totalPaid || 0), 0);
-  const recentSignups = [...users]
-    .sort((a, b) => String(b.id).localeCompare(String(a.id)))
-    .slice(0, 5);
+
+  const dashStats = useMemo(() => {
+    const scopedOrders = orders.filter((o) => dateInPeriod(getOrderDate(o), dashPeriod));
+    const pendingOrders = scopedOrders.filter((o) => isPendingOrder(o.status));
+    const confirmedOrders = scopedOrders.filter((o) => {
+      const s = o.status.toLowerCase();
+      return s.includes('confirm') || s.includes('transfer') || s.includes('completed');
+    });
+    const confirmedRevenue = confirmedOrders.reduce((s, o) => s + (o.totalPaid || 0), 0);
+    const totalOrderValue = scopedOrders.reduce((s, o) => s + (o.totalPaid || 0), 0);
+    const scopedUsers = users.filter((u) => dateInPeriod(u.createdAt, dashPeriod));
+    const scopedInitiated = initiated.filter((i) => dateInPeriod(i.initiatedAt, dashPeriod));
+    const recentSignups = [...scopedUsers]
+      .sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)))
+      .slice(0, 5);
+    return {
+      orders: scopedOrders,
+      pendingOrders,
+      confirmedOrders,
+      confirmedRevenue,
+      totalOrderValue,
+      users: scopedUsers,
+      initiated: scopedInitiated,
+      recentSignups,
+    };
+  }, [orders, users, initiated, dashPeriod]);
+
+  const pendingOrders = dashStats.pendingOrders;
+  const confirmedOrders = dashStats.confirmedOrders;
+  const confirmedRevenue = dashStats.confirmedRevenue;
+  const totalOrderValue = dashStats.totalOrderValue;
+  const recentSignups = dashStats.recentSignups;
 
   const statusMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
@@ -230,18 +273,40 @@ export default function AdminDashboard() {
           <AdminSectionHeader
             compact
             title="Orders · Signups · Revenue"
-            subtitle="No order lists here — use Verify Payments or All Orders in the sidebar"
+            subtitle={`No order lists here — use Verify Payments or All Orders. Showing ${periodLabel(dashPeriod).toLowerCase()}.`}
           />
+          <div className="dashboard-period-filters admin-dash-period" role="group" aria-label="Dashboard period">
+            {(
+              [
+                { id: 'this_month', label: 'This month' },
+                { id: 'last_month', label: 'Last month' },
+                { id: 'all', label: 'All' },
+              ] as const
+            ).map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`filter-btn${dashPeriod === p.id ? ' active' : ''}`}
+                onClick={() => setDashPeriod(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <div className="stats-grid stats-grid--dashboard">
             <div className="stat-card stat-card-highlight">
-              <div className="stat-value">{orders.length}</div>
+              <div className="stat-value">{dashStats.orders.length}</div>
               <div className="stat-label">Orders</div>
-              <div className="stat-sub">{pendingOrders.length} pending · {confirmedOrders.length} confirmed</div>
+              <div className="stat-sub">
+                {pendingOrders.length} pending · {confirmedOrders.length} confirmed
+              </div>
             </div>
             <div className="stat-card">
-              <div className="stat-value">{users.length}</div>
+              <div className="stat-value">{dashStats.users.length}</div>
               <div className="stat-label">User Signups</div>
-              <div className="stat-sub">Registered investors</div>
+              <div className="stat-sub">
+                {dashPeriod === 'all' ? 'Registered investors' : `Signed up · ${periodLabel(dashPeriod).toLowerCase()}`}
+              </div>
             </div>
             <div className="stat-card">
               <div className="stat-value">{formatCurrency(confirmedRevenue)}</div>
@@ -267,7 +332,7 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <span>Initiate</span>
-                  <strong>{initiated.length}</strong>
+                  <strong>{dashStats.initiated.length}</strong>
                 </div>
               </div>
               <div className="dashboard-quick-actions">
@@ -288,7 +353,9 @@ export default function AdminDashboard() {
             <div className="dashboard-summary-card">
               <h3>Recent signups</h3>
               {!recentSignups.length ? (
-                <p className="dashboard-summary-note">No users yet.</p>
+                <p className="dashboard-summary-note">
+                  {dashPeriod === 'all' ? 'No users yet.' : `No signups in ${periodLabel(dashPeriod).toLowerCase()}.`}
+                </p>
               ) : (
                 <ul className="dashboard-signup-list">
                   {recentSignups.map((u) => (

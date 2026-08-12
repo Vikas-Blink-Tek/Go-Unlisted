@@ -9,7 +9,7 @@ type Props = {
 };
 
 function formatDemat(demat?: string): string {
-  const d = (demat || '').replace(/\D/g, '');
+  const d = (demat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (d.length !== 16) return demat?.trim() || '—';
   return `${d.slice(0, 4)} ${d.slice(4, 8)} ${d.slice(8, 12)} ${d.slice(12, 16)}`;
 }
@@ -86,7 +86,7 @@ export default function KycDetailsCard({ user, mode }: Props) {
                   {verified
                     ? formatDemat(user.kycDemat)
                     : user.kycDemat
-                      ? `•••• •••• •••• ${user.kycDemat.replace(/\D/g, '').slice(-4)}`
+                      ? `•••• •••• •••• ${user.kycDemat.replace(/[^a-zA-Z0-9]/g, '').slice(-4)}`
                       : '—'}
                 </dd>
               </div>

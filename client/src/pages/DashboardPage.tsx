@@ -5,7 +5,7 @@ import { updateKyc, uploadKycDematProof } from '../api/auth';
 import { getOrders } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { formatCurrency, formatDateTime, getOrderDate, validateDemat, validatePAN } from '../utils/format';
+import { formatCurrency, formatDateTime, getOrderDate, normalizeDemat, parseDbDateTime, validateDemat, validatePAN } from '../utils/format';
 import { getOrderStatusClass, getOrderStatusLabel, canViewInvoice } from '../utils/orderStatus';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
@@ -13,6 +13,27 @@ import { getInvoiceByOrder, type Invoice } from '../api/invoices';
 import InvoicePrintView from './admin/components/InvoicePrintView';
 import KycDetailsCard from '../components/kyc/KycDetailsCard';
 import { isPdfProof, kycProofViewUrl } from '../utils/kyc';
+import type { Order } from '../types';
+
+type PeriodFilter = 'all' | 'this_month' | 'last_month';
+
+function orderInPeriod(order: Order, period: PeriodFilter): boolean {
+  if (period === 'all') return true;
+  const d = parseDbDateTime(getOrderDate(order));
+  if (!d) return false;
+  const now = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  if (period === 'this_month') {
+    return y === now.getFullYear() && m === now.getMonth();
+  }
+  const last = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return y === last.getFullYear() && m === last.getMonth();
+}
+
+function orderTxnId(o: Order): string {
+  return (o.transactionId || o.utr || '').trim() || '—';
+}
 
 function validateIfsc(ifsc: string) {
   return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.toUpperCase());
@@ -63,6 +84,7 @@ export default function DashboardPage() {
 
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState<string | null>(null);
+  const [period, setPeriod] = useState<PeriodFilter>('all');
 
   const handleViewInvoice = async (orderId: string) => {
     setLoadingInvoice(orderId);
@@ -126,9 +148,11 @@ export default function DashboardPage() {
 
   // getOrders already returns only this buyer's rows (user_id / phone / email) — don't drop them again
   const myOrders = (ordersQuery.data || []).filter((o) => !o.deletedAt);
-  const holdings = myOrders.filter((o) => isPortfolioHolding(o));
-  const pendingOrders = myOrders.filter((o) => isPortfolioPendingVisible(o));
-  const portfolioVisible = holdings.length + pendingOrders.length > 0;
+  const holdingsAll = myOrders.filter((o) => isPortfolioHolding(o));
+  const pendingAll = myOrders.filter((o) => isPortfolioPendingVisible(o));
+  const holdings = holdingsAll.filter((o) => orderInPeriod(o, period));
+  const pendingOrders = pendingAll.filter((o) => orderInPeriod(o, period));
+  const portfolioVisible = holdingsAll.length + pendingAll.length > 0;
   const ordersError = ordersQuery.isError
     ? (ordersQuery.error instanceof Error ? ordersQuery.error.message : 'Could not load portfolio orders')
     : '';
@@ -146,7 +170,7 @@ export default function DashboardPage() {
       return;
     }
     if (!validateDemat(kycForm.demat)) {
-      setKycError('Demat account must be 16 digits');
+      setKycError('Demat account must be 16 letters/digits (CDSL/NSDL)');
       return;
     }
     if (kycForm.bankName.trim().length < 2) {
@@ -168,9 +192,10 @@ export default function DashboardPage() {
     }
     setKycSubmitting(true);
     try {
+      const demat = normalizeDemat(kycForm.demat);
       const res = await updateKyc({
         pan: kycForm.pan.toUpperCase(),
-        demat: kycForm.demat.replace(/\D/g, ''),
+        demat,
         bankAccount: accountDigits,
         bankName: kycForm.bankName.trim(),
         ifsc: kycForm.ifsc.toUpperCase(),
@@ -182,7 +207,7 @@ export default function DashboardPage() {
           kycStatus: res.kycStatus || 'Under Review',
           kycRejectReason: undefined,
           kycPan: kycForm.pan.toUpperCase(),
-          kycDemat: kycForm.demat.replace(/\D/g, ''),
+          kycDemat: demat,
           kycDematProof: kycForm.dematProof,
           bankName: kycForm.bankName.trim(),
           bankAccount: accountDigits,
@@ -268,7 +293,24 @@ export default function DashboardPage() {
 
           {myOrders.length > 0 && (
             <div className="dashboard-orders-toolbar">
-              <span style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>Auto-refreshes every minute</span>
+              <div className="dashboard-period-filters" role="group" aria-label="Filter by month">
+                {(
+                  [
+                    { id: 'this_month', label: 'This month' },
+                    { id: 'last_month', label: 'Last month' },
+                    { id: 'all', label: 'All' },
+                  ] as const
+                ).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`filter-btn${period === p.id ? ' active' : ''}`}
+                    onClick={() => setPeriod(p.id)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={refreshOrders} disabled={ordersQuery.isFetching}>
                 {ordersQuery.isFetching ? 'Refreshing…' : 'Refresh'}
               </button>
@@ -286,7 +328,11 @@ export default function DashboardPage() {
               <h3 style={{ margin: '1.5rem 0 0.75rem', color: 'var(--text)', fontSize: '1.1rem' }}>📈 My Holdings</h3>
               {holdings.length === 0 ? (
                 <div className="empty-state glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
-                  <p style={{ color: 'var(--muted)', margin: 0 }}>No confirmed holdings yet. After you pay and submit UTR, admin verifies payment — then shares appear here as confirmed.</p>
+                  <p style={{ color: 'var(--muted)', margin: 0 }}>
+                    {period !== 'all'
+                      ? 'No holdings in this period. Try “All” or another month.'
+                      : 'No confirmed holdings yet. After you pay and submit UTR, admin verifies payment — then shares appear here as confirmed.'}
+                  </p>
                 </div>
               ) : (
                 <>
@@ -298,6 +344,7 @@ export default function DashboardPage() {
                           <th>Company</th>
                           <th>Qty</th>
                           <th>Total</th>
+                          <th>Txn ID / UTR</th>
                           <th>Status</th>
                           <th>Date / Time</th>
                         </tr>
@@ -309,6 +356,7 @@ export default function DashboardPage() {
                             <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
                             <td>{o.qty}</td>
                             <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</td>
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.4rem' }}>
                                 <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
@@ -347,6 +395,7 @@ export default function DashboardPage() {
                           <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
                           <div><span>Qty</span><strong>{o.qty}</strong></div>
                           <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
+                          <div><span>Txn ID / UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
                           <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                           {canViewInvoice(o.status) && (
                             <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
@@ -381,6 +430,7 @@ export default function DashboardPage() {
                           <th>Qty</th>
                           <th>Total</th>
                           <th>Payment</th>
+                          <th>Txn ID / UTR</th>
                           <th>Status</th>
                           <th>Date / Time</th>
                         </tr>
@@ -393,6 +443,7 @@ export default function DashboardPage() {
                             <td>{o.qty}</td>
                             <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
                             <td>{o.method || o.paymentMethod || '—'}</td>
+                            <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</td>
                             <td>
                               <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
                                 {getOrderStatusLabel(o.status)}
@@ -419,6 +470,7 @@ export default function DashboardPage() {
                           <div><span>Qty</span><strong>{o.qty}</strong></div>
                           <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
                           <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
+                          <div><span>Txn ID / UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
                           <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                         </div>
                       </div>
@@ -473,16 +525,18 @@ export default function DashboardPage() {
               </div>
 
               <div className="form-group">
-                <label>Demat Account (16 digits) *</label>
+                <label>Demat Account (16 letters/digits) *</label>
                 <input
                   className="form-input"
-                  placeholder="1234567890123456"
+                  placeholder="e.g. 12081600XXXXXX12"
                   maxLength={16}
                   required
+                  inputMode="text"
                   value={kycForm.demat}
-                  onChange={(e) => setKycForm({ ...kycForm, demat: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                  onChange={(e) => setKycForm({ ...kycForm, demat: normalizeDemat(e.target.value) })}
                   {...blockTextInput({ name: 'kyc-demat' })}
                 />
+                <p className="kyc-field-hint">16-character CDSL/NSDL demat ID (letters and numbers allowed).</p>
               </div>
 
               <div className="form-group">

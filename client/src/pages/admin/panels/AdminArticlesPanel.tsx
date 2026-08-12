@@ -198,10 +198,22 @@ export default function AdminArticlesPanel() {
                 <td>
                   <div className="article-admin-title-cell">
                     {a.image_url ? (
-                      <img src={mediaUrl(a.image_url)} alt="" className="article-admin-thumb" />
-                    ) : (
-                      <span className="article-admin-thumb article-admin-thumb-empty" />
-                    )}
+                      <img
+                        src={mediaUrl(a.image_url)}
+                        alt=""
+                        className="article-admin-thumb"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          const sib = e.currentTarget.nextElementSibling as HTMLElement | null;
+                          if (sib) sib.hidden = false;
+                        }}
+                      />
+                    ) : null}
+                    <span
+                      className="article-admin-thumb article-admin-thumb-empty"
+                      hidden={Boolean(a.image_url)}
+                      title="Cover file missing — re-upload in Edit"
+                    />
                     <div>
                       <div>{a.title}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{a.slug}</div>

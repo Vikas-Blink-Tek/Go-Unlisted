@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -8,6 +9,7 @@ import { mediaUrl } from '../utils/mediaUrl';
 
 export default function ArticleDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const [heroFailed, setHeroFailed] = useState(false);
   const { data: article, isLoading, error } = useQuery({
     queryKey: ['article', slug],
     queryFn: () => getArticle(slug!),
@@ -27,11 +29,15 @@ export default function ArticleDetailPage() {
       <div className="page-pad text-center">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h2>Article not found</h2>
-          <Link to="/articles" className="btn btn-primary">Back to Articles</Link>
+          <Link to="/articles" className="btn btn-primary">
+            Back to Articles
+          </Link>
         </motion.div>
       </div>
     );
   }
+
+  const heroSrc = mediaUrl(article.image_url);
 
   return (
     <div className="page-pad" style={{ maxWidth: 800, margin: '0 auto' }}>
@@ -47,17 +53,30 @@ export default function ArticleDetailPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        {article.image_url && (
+        {heroSrc && !heroFailed ? (
           <motion.img
-            src={mediaUrl(article.image_url)}
+            src={heroSrc}
             alt={article.title}
             className="article-hero-img"
             initial={{ opacity: 0, scale: 1.02 }}
             animate={{ opacity: 1, scale: 1 }}
+            onError={() => setHeroFailed(true)}
           />
+        ) : (
+          <div className="article-hero-img article-img-placeholder" aria-hidden>
+            <span>📰</span>
+          </div>
         )}
         <div style={{ padding: '2rem' }}>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.5rem, 4vw, 2rem)', color: 'var(--white)', marginBottom: '0.75rem', lineHeight: 1.3 }}>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: 'clamp(1.5rem, 4vw, 2rem)',
+              color: 'var(--white)',
+              marginBottom: '0.75rem',
+              lineHeight: 1.3,
+            }}
+          >
             {article.title}
           </h1>
           <p className="article-meta" style={{ marginBottom: '0.75rem' }}>
@@ -71,7 +90,9 @@ export default function ArticleDetailPage() {
                 .map((t) => t.trim())
                 .filter(Boolean)
                 .map((tag) => (
-                  <span key={tag} className="article-chip article-chip-tag">{tag}</span>
+                  <span key={tag} className="article-chip article-chip-tag">
+                    {tag}
+                  </span>
                 ))}
             </div>
           )}

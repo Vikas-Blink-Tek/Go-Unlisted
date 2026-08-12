@@ -12,6 +12,9 @@ RewriteEngine On
 # API — pass through to PHP
 RewriteRule ^api/ - [L]
 
+# Missing files under uploads/ must 404 (never serve SPA index.html as a "image")
+RewriteRule ^uploads/ - [L]
+
 # React SPA — all other routes serve index.html
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

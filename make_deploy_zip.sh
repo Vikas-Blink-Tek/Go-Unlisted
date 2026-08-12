@@ -1,81 +1,99 @@
 #!/bin/bash
-set -e
+# Build React app + zip for Hostinger public_html upload.
+# Always runs `npm run build` first — never ships stale client/dist.
+set -euo pipefail
 
-WORKSPACE="/Users/ashwatisuvarna/Go-Unlisted"
-DIST="$WORKSPACE/client/dist"
-API_SRC="$WORKSPACE/api"
-UPLOADS_SRC="$WORKSPACE/uploads"
-SCRIPTS_SRC="$WORKSPACE/scripts"
-TEMP="$WORKSPACE/_deploy_temp"
-ZIP_OUT="$WORKSPACE/Go-Unlisted-hostinger.zip"
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+DIST="$ROOT/client/dist"
+API_SRC="$ROOT/api"
+UPLOADS_SRC="$ROOT/uploads"
+SCRIPTS_SRC="$ROOT/scripts"
+TEMP="$ROOT/_deploy_temp"
+ZIP_OUT="$ROOT/Go-Unlisted-hostinger.zip"
 
-echo "=== Creating deploy zip for Hostinger public_html ==="
+echo "=== Go-Unlisted deploy zip ==="
+echo ""
 
-# Clean old temp
+echo "→ Building React app (npm run build)..."
+cd "$ROOT/client"
+npm run build
+
+if [ ! -f "$DIST/index.html" ]; then
+  echo "ERROR: Build failed — $DIST/index.html not found"
+  exit 1
+fi
+
+JS_BUNDLE=$(basename "$DIST/assets"/index-*.js 2>/dev/null | head -1 || true)
+CSS_BUNDLE=$(basename "$DIST/assets"/index-*.css 2>/dev/null | head -1 || true)
+if [ -z "$JS_BUNDLE" ]; then
+  echo "ERROR: No JS bundle in $DIST/assets/"
+  exit 1
+fi
+echo "   ✓ Built: assets/$JS_BUNDLE"
+[ -n "$CSS_BUNDLE" ] && echo "   ✓ Built: assets/$CSS_BUNDLE"
+
+echo ""
+echo "→ Preparing package..."
 rm -rf "$TEMP"
 mkdir -p "$TEMP"
 
-# 1. Copy built client files (index.html, .htaccess, assets/, icons.svg, logo.png, QR.jpeg, robots.txt)
-echo "→ Copying built client files..."
-cp "$DIST/index.html" "$TEMP/"
-cp "$DIST/.htaccess" "$TEMP/"
-cp "$DIST/robots.txt" "$TEMP/"
-cp "$DIST/icons.svg" "$TEMP/"
-cp "$DIST/logo.png" "$TEMP/"
-cp "$DIST/QR.jpeg" "$TEMP/"
-cp -r "$DIST/assets" "$TEMP/assets"
+# Frontend — full dist output (catches new assets Vite may add)
+cp -r "$DIST/"* "$TEMP/"
+# Production .htaccess (SPA + uploads rules)
+if [ -f "$ROOT/deploy/public_html.htaccess" ]; then
+  cp "$ROOT/deploy/public_html.htaccess" "$TEMP/.htaccess"
+fi
 
-# 2. Copy API folder (exclude local config & logs)
-echo "→ Copying API with production credentials..."
+echo "→ Copying API..."
 mkdir -p "$TEMP/api"
 for f in "$API_SRC"/*; do
-    fname=$(basename "$f")
-    # Skip local-only files and logs
-    case "$fname" in
-        *.local.php|*.local.example.php|*.log|db_config.example.php|deploy.config.example.php|mail_config.example.php)
-            echo "   Skipping: $fname"
-            continue
-            ;;
-    esac
-    cp "$f" "$TEMP/api/"
+  [ -f "$f" ] || continue
+  fname=$(basename "$f")
+  case "$fname" in
+    *.local.php|*.local.example.php|*.log|db_config.example.php|deploy.config.example.php|mail_config.example.php|deploy.config.php)
+      echo "   Skipping: $fname"
+      continue
+      ;;
+  esac
+  cp "$f" "$TEMP/api/"
 done
 
-# 3. Copy uploads folder with .htaccess and subdirs (empty dirs preserved)
-echo "→ Copying uploads folder..."
-mkdir -p "$TEMP/uploads"
-cp "$UPLOADS_SRC/.htaccess" "$TEMP/uploads/"
-mkdir -p "$TEMP/uploads/articles"
-mkdir -p "$TEMP/uploads/kyc"
-mkdir -p "$TEMP/uploads/shares"
+# Bake live DB/SMTP credentials when deploy.config.php exists
+if [ -f "$API_SRC/deploy.config.php" ]; then
+  php "$SCRIPTS_SRC/render_deploy_configs.php" "$TEMP/api"
+  echo "   ✓ db_config.php + mail_config.php baked from deploy.config.php"
+fi
 
-# 4. Copy scripts folder (only production-needed files)
-echo "→ Copying scripts folder..."
+echo "→ Copying uploads scaffold (empty — do not wipe live uploads on server)..."
+mkdir -p "$TEMP/uploads/articles" "$TEMP/uploads/kyc" "$TEMP/uploads/shares"
+cp "$UPLOADS_SRC/.htaccess" "$TEMP/uploads/" 2>/dev/null || true
+printf '%s\n' \
+  'KEEP THIS FOLDER ON THE SERVER.' \
+  'Do not replace public_html/uploads with this empty package folder.' \
+  > "$TEMP/uploads/DO_NOT_OVERWRITE.txt"
+
+echo "→ Copying scripts..."
 mkdir -p "$TEMP/scripts"
 for f in "$SCRIPTS_SRC"/*.php; do
-    [ -f "$f" ] && cp "$f" "$TEMP/scripts/"
+  [ -f "$f" ] && cp "$f" "$TEMP/scripts/"
 done
 
-# 5. Copy root-level files
 echo "→ Copying root files..."
-cp "$WORKSPACE/schema.sql" "$TEMP/"
-cp "$WORKSPACE/setup.php" "$TEMP/"
+cp "$ROOT/schema.sql" "$TEMP/"
+cp "$ROOT/setup.php" "$TEMP/"
 
-# 6. Create the zip
 echo "→ Creating zip: $ZIP_OUT"
 rm -f "$ZIP_OUT"
-cd "$TEMP"
-zip -r "$ZIP_OUT" . -x "*.DS_Store"
-cd "$WORKSPACE"
-
-# 7. Cleanup
+(cd "$TEMP" && zip -rq "$ZIP_OUT" . -x "*.DS_Store")
 rm -rf "$TEMP"
 
 echo ""
 echo "=== Done! ==="
-echo "Zip: $ZIP_OUT"
+echo "Zip:  $ZIP_OUT"
+echo "Bundle: assets/$JS_BUNDLE"
 echo ""
-echo "Upload instructions:"
-echo "  1. Upload $ZIP_OUT to Hostinger File Manager → public_html"
-echo "  2. Extract it there — it will overwrite existing files"
-echo "  3. The uploads/ folder will keep your existing uploaded files"
+echo "After upload + extract on Hostinger:"
+echo "  1. Hard refresh (Ctrl+Shift+R) or open in incognito"
+echo "  2. View page source → confirm script is assets/$JS_BUNDLE"
+echo "  3. Do NOT overwrite server uploads/ (KYC, logos, article images)"
 echo ""

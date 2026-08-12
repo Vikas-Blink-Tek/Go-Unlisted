@@ -79,7 +79,6 @@ export default function WelcomeAuthModal({ pathname }: Props) {
             Continue browsing
           </button>
         </div>
-        <p className="welcome-auth-note">Payment requires login or signup.</p>
       </div>
     </div>
   );
