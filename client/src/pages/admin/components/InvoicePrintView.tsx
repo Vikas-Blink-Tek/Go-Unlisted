@@ -1,7 +1,7 @@
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { type Invoice } from '../../../api/invoices';
 import { useSiteSettings } from '../../../hooks/useSiteSettings';
-import { formatSitePhoneDisplay } from '../../../constants/siteContact';
+import { formatSitePhonesDisplay } from '../../../constants/siteContact';
 
 interface Props {
   invoice: Invoice;
@@ -12,7 +12,7 @@ interface Props {
 
 export default function InvoicePrintView({ invoice, onClose }: Props) {
   const { settings } = useSiteSettings();
-  const companyPhone = formatSitePhoneDisplay(settings.mobile);
+  const companyPhone = formatSitePhonesDisplay(settings.mobile);
   const companyAddress = settings.address;
   const companyEmail = settings.email;
   

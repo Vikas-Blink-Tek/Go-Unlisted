@@ -2,7 +2,13 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useSiteSettings } from '../../hooks/useSiteSettings';
 
-import { formatSitePhoneDisplay } from '../../constants/siteContact';
+import {
+  SITE_CONTACT_DEFAULTS,
+  formatSitePhoneDisplay,
+  parseSitePhones,
+  primarySitePhone,
+  sitePhoneTelHref,
+} from '../../constants/siteContact';
 import { whatsappUrl } from '../../utils/whatsapp';
 
 const PinIcon = () => (
@@ -30,8 +36,9 @@ export default function SiteFooter() {
   const { settings } = useSiteSettings();
 
   const email = settings.email;
-  const phone = formatSitePhoneDisplay(settings.mobile);
-  const whatsapp = settings.whatsapp || settings.mobile;
+  const phones = parseSitePhones(settings.mobile || SITE_CONTACT_DEFAULTS.mobile);
+  const primaryPhone = primarySitePhone(settings.mobile) || SITE_CONTACT_DEFAULTS.mobile;
+  const whatsapp = settings.whatsapp || primaryPhone;
   const address = settings.address;
 
   return (
@@ -74,9 +81,20 @@ export default function SiteFooter() {
               <a href={`mailto:${email}`} className="footer-link" style={{ color: 'inherit', textDecoration: 'none' }}>
                 {email}
               </a>
-              <a href={`tel:${phone.replace(/\s/g, '')}`} className="footer-link" style={{ color: 'inherit', textDecoration: 'none' }}>
-                {phone}
-              </a>
+              {phones.map((p) => {
+                const display = formatSitePhoneDisplay(p);
+                const tel = sitePhoneTelHref(p);
+                return (
+                  <a
+                    key={tel || display}
+                    href={tel ? `tel:${tel}` : undefined}
+                    className="footer-link"
+                    style={{ color: 'inherit', textDecoration: 'none' }}
+                  >
+                    {display}
+                  </a>
+                );
+              })}
               <span className="footer-link">{address}</span>
             </div>
           </div>
@@ -101,7 +119,16 @@ export default function SiteFooter() {
             <a href={`mailto:${email}`} style={{ color: 'inherit', textDecoration: 'none' }}>{email}</a>
             {' | '}
             <strong><PhoneIcon /></strong>{' '}
-            <a href={`tel:${phone.replace(/\s/g, '')}`} style={{ color: 'inherit', textDecoration: 'none' }}>{phone}</a>
+            {phones.map((p, i) => {
+              const display = formatSitePhoneDisplay(p);
+              const tel = sitePhoneTelHref(p);
+              return (
+                <span key={tel || display}>
+                  {i > 0 ? ' · ' : ''}
+                  <a href={tel ? `tel:${tel}` : undefined} style={{ color: 'inherit', textDecoration: 'none' }}>{display}</a>
+                </span>
+              );
+            })}
             {' · '}
             <a href={whatsappUrl(whatsapp)} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>WhatsApp</a>
           </div>

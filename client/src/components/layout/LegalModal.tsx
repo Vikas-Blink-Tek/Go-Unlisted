@@ -1,4 +1,4 @@
-import { SITE_CONTACT_DEFAULTS, formatSitePhoneDisplay } from '../../constants/siteContact';
+import { SITE_CONTACT_DEFAULTS, formatSitePhonesDisplay } from '../../constants/siteContact';
 import type { SiteSettings } from '../../types';
 
 export type LegalModalType = 'Privacy Policy' | 'Terms of Service' | 'Refund Policy' | 'Grievance';
@@ -24,7 +24,7 @@ export default function LegalModal({ type, settings, onClose }: Props) {
   if (!type) return null;
 
   const email = settings?.email || SITE_CONTACT_DEFAULTS.email;
-  const phone = formatSitePhoneDisplay(settings?.mobile || SITE_CONTACT_DEFAULTS.mobile);
+  const phone = formatSitePhonesDisplay(settings?.mobile || SITE_CONTACT_DEFAULTS.mobile);
   const address = settings?.address || SITE_CONTACT_DEFAULTS.address;
 
   let html = BASE_CONTENT[type];

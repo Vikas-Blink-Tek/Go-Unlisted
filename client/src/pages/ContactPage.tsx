@@ -6,7 +6,13 @@ import { useAuth } from '../context/AuthContext';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { useToast } from '../context/ToastContext';
 import { blockAutofillOnFocus, blockEmailInput, blockTextInput } from '../utils/autofill';
-import { formatSitePhoneDisplay } from '../constants/siteContact';
+import {
+  SITE_CONTACT_DEFAULTS,
+  formatSitePhoneDisplay,
+  parseSitePhones,
+  primarySitePhone,
+  sitePhoneTelHref,
+} from '../constants/siteContact';
 import { whatsappUrl } from '../utils/whatsapp';
 
 export default function ContactPage() {
@@ -17,8 +23,9 @@ export default function ContactPage() {
   const [sending, setSending] = useState(false);
 
   const email = settings.email;
-  const phone = formatSitePhoneDisplay(settings.mobile);
-  const whatsapp = settings.whatsapp || settings.mobile;
+  const phones = parseSitePhones(settings.mobile || SITE_CONTACT_DEFAULTS.mobile);
+  const primaryPhone = primarySitePhone(settings.mobile) || SITE_CONTACT_DEFAULTS.mobile;
+  const whatsapp = settings.whatsapp || primaryPhone;
   const address = settings.address;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -53,11 +60,21 @@ export default function ContactPage() {
           <div className="contact-item">
             <div className="contact-item-label">Phone</div>
             <div className="contact-item-value" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div>
-                <a href={`tel:${phone.replace(/\s/g, '')}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>{phone}</a>
-                {' · '}
-                <a href={whatsappUrl(whatsapp)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: '0.82rem' }}>WhatsApp</a>
-              </div>
+              {phones.map((p, i) => {
+                const display = formatSitePhoneDisplay(p);
+                const tel = sitePhoneTelHref(p);
+                return (
+                  <div key={tel || display}>
+                    <a href={tel ? `tel:${tel}` : undefined} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>{display}</a>
+                    {i === 0 && (
+                      <>
+                        {' · '}
+                        <a href={whatsappUrl(whatsapp)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--gold)', textDecoration: 'none', fontSize: '0.82rem' }}>WhatsApp</a>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 

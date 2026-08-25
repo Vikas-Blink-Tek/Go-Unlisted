@@ -1,10 +1,13 @@
-import { SITE_CONTACT_DEFAULTS } from '../../constants/siteContact';
+import { SITE_CONTACT_DEFAULTS, primarySitePhone } from '../../constants/siteContact';
 import { useSiteSettings } from '../../hooks/useSiteSettings';
 import { whatsappUrl } from '../../utils/whatsapp';
 
 export default function WhatsAppFloat() {
   const { settings } = useSiteSettings();
-  const number = settings.whatsapp || settings.mobile || SITE_CONTACT_DEFAULTS.whatsapp;
+  const number =
+    settings.whatsapp ||
+    primarySitePhone(settings.mobile) ||
+    SITE_CONTACT_DEFAULTS.whatsapp;
 
   return (
     <a

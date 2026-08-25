@@ -1305,7 +1305,9 @@ function recordIpAttempt($conn, $table) {
 }
 
 function normalizeIndianPhone($phone) {
-    $phone = preg_replace('/\D/', '', $phone);
+    // If multiple numbers stored (comma/newline), use the first
+    $first = preg_split('/[,;\n|]+/', (string) $phone)[0] ?? '';
+    $phone = preg_replace('/\D/', '', $first);
     if (strlen($phone) === 12 && str_starts_with($phone, '91')) {
         return substr($phone, 2);
     }

@@ -12,7 +12,10 @@ import { blockAutofillOnFocus, blockTextInput } from '../../utils/autofill';
 import AutofillBlocker from '../../components/forms/AutofillBlocker';
 import {
   SITE_CONTACT_DEFAULTS,
-  formatSitePhoneDisplay,
+  formatSitePhonesDisplay,
+  parseSitePhones,
+  primarySitePhone,
+  serializeSitePhones,
 } from '../../constants/siteContact';
 import { normalizeWhatsAppNumber } from '../../utils/whatsapp';
 import AdminEmployees from './AdminEmployees';
@@ -184,8 +187,16 @@ export default function AdminDashboard() {
 
   const saveSiteSettings = async () => {
     try {
-      await saveSettings({ ...settingsQuery.data, ...settingsForm });
+      const mobile = serializeSitePhones(
+        parseSitePhones(settingsForm.mobile || settingsQuery.data?.mobile || ''),
+      );
+      await saveSettings(buildSettingsPayload({ mobile: mobile || settingsForm.mobile || '' }));
       showToast('Settings saved', 'success');
+      setSettingsForm((prev) => {
+        const next = { ...prev };
+        delete next._mobileDraft;
+        return next;
+      });
       settingsQuery.refetch();
       queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
       queryClient.invalidateQueries({ queryKey: ['site-settings'] });
@@ -200,8 +211,61 @@ export default function AdminDashboard() {
     setSettingsForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  /** Settings form + loaded data, without the UI-only phone draft key. */
+  const buildSettingsPayload = (overrides: Record<string, string> = {}) => {
+    const { _mobileDraft: _draft, ...formWithoutDraft } = settingsForm;
+    return {
+      ...settingsQuery.data,
+      ...formWithoutDraft,
+      ...overrides,
+    };
+  };
+
+  const contactPhones = (() => {
+    const parsed = parseSitePhones(settingsVal('mobile'));
+    return parsed.length > 0 ? parsed : [''];
+  })();
+
+  const mobileDraftRows = (() => {
+    const draft = settingsForm._mobileDraft;
+    if (typeof draft === 'string') {
+      const rows = draft.split('\n');
+      return rows.length > 0 ? rows : [''];
+    }
+    return contactPhones;
+  })();
+
+  const updateMobileRow = (index: number, value: string) => {
+    const rows = [...mobileDraftRows];
+    rows[index] = value;
+    setSettingsForm((prev) => ({
+      ...prev,
+      mobile: serializeSitePhones(rows.map((p) => p.trim()).filter(Boolean)),
+      _mobileDraft: rows.join('\n'),
+    }));
+  };
+
+  const addMobileRow = () => {
+    const rows = [...mobileDraftRows, ''];
+    setSettingsForm((prev) => ({
+      ...prev,
+      mobile: serializeSitePhones(rows.map((p) => p.trim()).filter(Boolean)),
+      _mobileDraft: rows.join('\n'),
+    }));
+  };
+
+  const removeMobileRow = (index: number) => {
+    const rows = mobileDraftRows.filter((_, i) => i !== index);
+    const next = rows.length > 0 ? rows : [''];
+    setSettingsForm((prev) => ({
+      ...prev,
+      mobile: serializeSitePhones(next.map((p) => p.trim()).filter(Boolean)),
+      _mobileDraft: next.join('\n'),
+    }));
+  };
+
   const syncWhatsAppFromPhone = () => {
-    const phone = settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile;
+    const phone = primarySitePhone(settingsVal('mobile')) || SITE_CONTACT_DEFAULTS.mobile;
     setSettingField('whatsapp', normalizeWhatsAppNumber(phone));
   };
 
@@ -212,11 +276,12 @@ export default function AdminDashboard() {
       mobile: SITE_CONTACT_DEFAULTS.mobile,
       whatsapp: SITE_CONTACT_DEFAULTS.whatsapp,
       address: SITE_CONTACT_DEFAULTS.address,
+      _mobileDraft: SITE_CONTACT_DEFAULTS.mobile,
     }));
     showToast('Filled Malad West / 81694 49826 — click Save Settings to publish', 'success');
   };
 
-  const previewPhone = formatSitePhoneDisplay(settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile);
+  const previewPhone = formatSitePhonesDisplay(settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile);
   const previewAddress = settingsVal('address') || SITE_CONTACT_DEFAULTS.address;
   const previewEmail = settingsVal('email') || SITE_CONTACT_DEFAULTS.email;
 
@@ -236,12 +301,12 @@ export default function AdminDashboard() {
     setSettingField('invoice_custom_charges', newVal);
     if (newArr.length > 0) setSettingField('enable_invoice_charges', '1');
     try {
-      await saveSettings({
-        ...settingsQuery.data,
-        ...settingsForm,
-        invoice_custom_charges: newVal,
-        enable_invoice_charges: enableOn,
-      });
+      await saveSettings(
+        buildSettingsPayload({
+          invoice_custom_charges: newVal,
+          enable_invoice_charges: enableOn,
+        }),
+      );
       showToast(newArr.length > 0 ? 'Charges saved — now apply on checkout' : 'Charges updated', 'success');
       settingsQuery.refetch();
       queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
@@ -439,7 +504,8 @@ export default function AdminDashboard() {
 
           <div className="report-filter-title">Company contact (public website)</div>
           <p style={{ fontSize: '0.8rem', color: 'var(--muted)', margin: '0 0 0.75rem' }}>
-            Client can change these anytime. Use one mobile for now if only one number should show.
+            Add one or more phone numbers — all show on the public website (footer, Contact page, invoices).
+            WhatsApp uses the first number when you click Sync.
           </p>
           <div className="report-filter-grid">
             <div className="report-filter-group">
@@ -452,15 +518,35 @@ export default function AdminDashboard() {
                 {...blockTextInput({ name: 'settings-email' })}
               />
             </div>
-            <div className="report-filter-group">
-              <label className="report-filter-label">Phone (shown on website)</label>
-              <input
-                className="report-filter-input"
-                value={settingsVal('mobile')}
-                placeholder={SITE_CONTACT_DEFAULTS.mobile}
-                onChange={(e) => setSettingField('mobile', e.target.value)}
-                {...blockTextInput({ name: 'settings-mobile' })}
-              />
+            <div className="report-filter-group" style={{ gridColumn: 'span 2' }}>
+              <label className="report-filter-label">Phone numbers (shown on website)</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {mobileDraftRows.map((phone, idx) => (
+                  <div key={`mobile-row-${idx}`} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className="report-filter-input"
+                      style={{ flex: 1 }}
+                      value={phone}
+                      placeholder={idx === 0 ? SITE_CONTACT_DEFAULTS.mobile : '+91 9XXXX XXXXX'}
+                      onChange={(e) => updateMobileRow(idx, e.target.value)}
+                      {...blockTextInput({ name: `settings-mobile-${idx}` })}
+                    />
+                    {mobileDraftRows.length > 1 && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => removeMobileRow(idx)}
+                        aria-label={`Remove phone ${idx + 1}`}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button type="button" className="btn btn-ghost btn-sm" onClick={addMobileRow} style={{ alignSelf: 'flex-start' }}>
+                  + Add phone number
+                </button>
+              </div>
             </div>
             <div className="report-filter-group">
               <label className="report-filter-label">WhatsApp (digits, with 91)</label>
@@ -546,11 +632,9 @@ export default function AdminDashboard() {
                     const val = e.target.checked ? '1' : '0';
                     setSettingField('enable_invoice_charges', val);
                     // Turning OFF also clears the charge list so old fees (₹49 etc.) cannot sneak back on
-                    const payload: Record<string, string> = {
-                      ...settingsQuery.data,
-                      ...settingsForm,
+                    const payload: Record<string, string> = buildSettingsPayload({
                       enable_invoice_charges: val,
-                    };
+                    });
                     if (val === '0') {
                       payload.invoice_custom_charges = '[]';
                       setSettingField('invoice_custom_charges', '[]');
@@ -597,11 +681,7 @@ export default function AdminDashboard() {
                     onClick={async () => {
                       setSettingField('enable_invoice_charges', '1');
                       try {
-                        await saveSettings({
-                          ...settingsQuery.data,
-                          ...settingsForm,
-                          enable_invoice_charges: '1',
-                        });
+                        await saveSettings(buildSettingsPayload({ enable_invoice_charges: '1' }));
                         showToast('Extra charges enabled on checkout', 'success');
                         settingsQuery.refetch();
                         queryClient.invalidateQueries({ queryKey: ['siteSettings'] });
