@@ -4,6 +4,8 @@ import { getInventoryBadge, isShareUnavailable } from '../../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
 import ShareSparkline from './ShareSparkline';
 import CompanyLogo from './CompanyLogo';
+import BulkDiscountCallout from './BulkDiscountCallout';
+import { getBulkPricingSummary } from '../../utils/bulkPricing';
 import type { Share } from '../../types';
 
 interface ShareCardProps {
@@ -19,6 +21,7 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
   const unavailable = isShareUnavailable(share.inventoryStatus);
   const badge = getInventoryBadge(share.inventoryStatus);
   const sparkline = share.priceHistory?.['3M'] ?? [];
+  const bulk = getBulkPricingSummary(share);
 
   return (
     <div
@@ -55,6 +58,8 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
         {badge && <span className={`inventory-badge inventory-${badge.toLowerCase().replace(/\s+/g, '-')}`}>{badge}</span>}
       </div>
 
+      {bulk && <BulkDiscountCallout share={share} variant="card" />}
+
       <BlurredRatesLock className="share-card-rates">
         <div className="share-price-row">
           <div>
@@ -72,12 +77,6 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
           <span>Min: {share.minQty} shares</span>
           <span>Min Investment: {formatCurrency(share.price * share.minQty)}</span>
         </div>
-
-        {share.discountTiers && share.discountTiers.length > 0 && (
-          <div className="share-bulk-hint">
-            🏷️ Bulk rates from {formatCurrency(Math.min(...share.discountTiers.map((t) => t.price)))}
-          </div>
-        )}
 
         {sparkline.length > 0 ? (
           <div className="chart-mini">

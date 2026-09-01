@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
+import BulkDiscountCallout from '../components/shares/BulkDiscountCallout';
 import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 import { UPI_APPS, isMobileDevice, openUpiPay } from '../utils/upiPay';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
@@ -450,18 +451,14 @@ export default function CheckoutPage() {
               <span>Price per share</span>
               <strong>{formatCurrency(activePrice)}</strong>
             </div>
-            
+
             {share.discountTiers && share.discountTiers.length > 0 && (
-              <div style={{ marginTop: '0.25rem', marginBottom: '1rem', textAlign: 'center' }}>
-                <button 
-                  type="button" 
-                  className="btn btn-ghost" 
-                  style={{ color: 'var(--primary)', textDecoration: 'underline', padding: 0 }}
-                  onClick={() => setShowTiersModal(true)}
-                >
-                  Grab this opportunity at {formatCurrency(Math.min(...share.discountTiers.map(t => t.price)))}
-                </button>
-              </div>
+              <BulkDiscountCallout
+                share={share}
+                variant="checkout"
+                qty={safeQty}
+                onViewTiers={() => setShowTiersModal(true)}
+              />
             )}
 
             <div className="order-breakdown-box" style={{ background: 'var(--bg)', borderRadius: '8px', padding: '1rem', marginTop: '1.5rem', border: '1px solid var(--border)' }}>

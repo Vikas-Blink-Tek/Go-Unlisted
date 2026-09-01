@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useShares, useWatchlist } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
+import BulkDiscountCallout from '../components/shares/BulkDiscountCallout';
 import { formatCurrency } from '../utils/format';
 import { useCanViewShareRates } from '../utils/shareRates';
 import type { Share } from '../types';
@@ -83,6 +84,10 @@ export default function SharesPage() {
   }, [shares, sector, maxPrice, watchOnly, watched, q, top10Shares]);
 
   const totalMatchCount = filtered.length + top10Shares.length;
+  const bulkOfferCount = useMemo(
+    () => shares.filter((s) => s.discountTiers && s.discountTiers.length > 0).length,
+    [shares],
+  );
 
   useEffect(() => {
     setActiveIdx(0);
@@ -163,6 +168,8 @@ export default function SharesPage() {
 
       <div className="section" style={{ paddingTop: '2rem' }}>
         <div className="container">
+          <BulkDiscountCallout variant="banner" bulkCount={bulkOfferCount} />
+
           <div className="filter-bar">
             <div className="shares-search-row" ref={searchWrapRef}>
               <div className={`search-wrap shares-search-wrap${dropdownOpen && q ? ' has-dropdown' : ''}`}>

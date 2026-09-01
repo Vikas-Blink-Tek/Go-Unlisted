@@ -9,6 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
+import BulkDiscountCallout from '../components/shares/BulkDiscountCallout';
+import { getBulkPricingSummary } from '../utils/bulkPricing';
 import type { ChartPeriod } from '../types';
 
 export default function ShareDetailPage() {
@@ -75,6 +77,7 @@ export default function ShareDetailPage() {
   ];
 
   const chartData = share.priceHistory?.[period] ?? [];
+  const bulk = getBulkPricingSummary(share);
 
   return (
     <div className="view" id="view-detail">
@@ -116,6 +119,8 @@ export default function ShareDetailPage() {
             </div>
           </div>
         </div>
+
+        {bulk && <BulkDiscountCallout share={share} variant="detail" />}
 
         <p className="detail-desc">{share.description}</p>
 
