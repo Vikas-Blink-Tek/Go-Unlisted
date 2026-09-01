@@ -10,6 +10,7 @@ const ICONS: Partial<Record<AdminPanelId, string>> = {
   users: '◉',
   signups: '⊕',
   employees: '⊞',
+  franchises: '⊡',
   inventory: '▦',
   invoices: '▧',
   prices: '◈',

@@ -5,6 +5,9 @@ import AutofillBlocker from '../../components/forms/AutofillBlocker';
 import {
   DEFAULT_EMPLOYEE_PERMISSIONS,
   EMPLOYEE_PERMISSION_OPTIONS,
+  employeePermissionOptions,
+  filterEmployeePermissionsForFranchise,
+  useAdminPanel,
   type AdminPanelId,
 } from '../../context/AdminPanelContext';
 import { useToast } from '../../context/ToastContext';
@@ -39,6 +42,7 @@ function isMasterEmp(emp: Employee): boolean {
 
 export default function AdminEmployees() {
   const { showToast } = useToast();
+  const { isFranchiseMaster } = useAdminPanel();
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
   const [showModal, setShowModal] = useState(false);
@@ -97,8 +101,20 @@ export default function AdminEmployees() {
     onError: (e: Error) => showToast(e.message, 'error'),
   });
 
+  const assignableOptions = useMemo(
+    () => employeePermissionOptions(isFranchiseMaster),
+    [isFranchiseMaster],
+  );
+
+  const defaultPermissions = useMemo(
+    () => (isFranchiseMaster
+      ? filterEmployeePermissionsForFranchise([...DEFAULT_EMPLOYEE_PERMISSIONS])
+      : [...DEFAULT_EMPLOYEE_PERMISSIONS]),
+    [isFranchiseMaster],
+  );
+
   const openAdd = () => {
-    setForm({ ...emptyForm, permissions: [...DEFAULT_EMPLOYEE_PERMISSIONS] });
+    setForm({ ...emptyForm, permissions: [...defaultPermissions] });
     setShowPassword(false);
     setIsEdit(false);
     setShowModal(true);
@@ -106,8 +122,8 @@ export default function AdminEmployees() {
 
   const openEdit = (emp: Employee) => {
     const master = isMasterEmp(emp);
-    const perms = (emp.permissions || DEFAULT_EMPLOYEE_PERMISSIONS).filter(
-      (p): p is AdminPanelId => p !== '*' && EMPLOYEE_PERMISSION_OPTIONS.some((o) => o.id === p),
+    const perms = (emp.permissions || defaultPermissions).filter(
+      (p): p is AdminPanelId => p !== '*' && assignableOptions.some((o) => o.id === p),
     );
     setForm({
       id: emp.id,
@@ -117,7 +133,7 @@ export default function AdminEmployees() {
       employeeId: emp.employee_id || '',
       password: '',
       isMaster: master,
-      permissions: master ? EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.id) : perms,
+      permissions: master ? assignableOptions.map((o) => o.id) : perms,
     });
     setShowPassword(false);
     setIsEdit(true);
@@ -136,12 +152,12 @@ export default function AdminEmployees() {
 
   const selectAll = () => {
     if (form.isMaster) return;
-    setForm((f) => ({ ...f, permissions: EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.id) }));
+    setForm((f) => ({ ...f, permissions: assignableOptions.map((o) => o.id) }));
   };
 
   const selectDefault = () => {
     if (form.isMaster) return;
-    setForm((f) => ({ ...f, permissions: [...DEFAULT_EMPLOYEE_PERMISSIONS] }));
+    setForm((f) => ({ ...f, permissions: [...defaultPermissions] }));
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -168,19 +184,19 @@ export default function AdminEmployees() {
       email: form.email,
       phone: form.phone,
       employeeId: form.employeeId,
-      permissions: form.isMaster ? ['*'] : form.permissions,
+      permissions: form.isMaster ? ['*'] : filterEmployeePermissionsForFranchise(form.permissions),
     };
     if (form.password) payload.password = form.password;
     saveMutation.mutate(payload);
   };
 
   const permissionGroups = useMemo(() => {
-    const groups = [...new Set(EMPLOYEE_PERMISSION_OPTIONS.map((o) => o.group))];
+    const groups = [...new Set(assignableOptions.map((o) => o.group))];
     return groups.map((group) => ({
       group,
-      items: EMPLOYEE_PERMISSION_OPTIONS.filter((o) => o.group === group),
+      items: assignableOptions.filter((o) => o.group === group),
     }));
-  }, []);
+  }, [assignableOptions]);
 
   const siteOrigin = typeof window !== 'undefined' ? window.location.origin : '';
   const staffLoginUrl = `${siteOrigin}/staff/login`;
@@ -203,7 +219,7 @@ export default function AdminEmployees() {
     const perms = emp.permissions || [];
     if (!perms.length) return 'Orders pipeline (default)';
     return perms
-      .map((p) => EMPLOYEE_PERMISSION_OPTIONS.find((o) => o.id === p)?.label || p)
+      .map((p) => assignableOptions.find((o) => o.id === p)?.label || EMPLOYEE_PERMISSION_OPTIONS.find((o) => o.id === p)?.label || p)
       .join(', ');
   };
 
@@ -460,7 +476,11 @@ export default function AdminEmployees() {
                       <button type="button" className="btn btn-ghost btn-sm" onClick={selectAll}>Select all</button>
                     </div>
                   </div>
-                  <p className="emp-permissions-hint">Tick what this employee can access. Unticked areas are hidden and blocked.</p>
+                  <p className="emp-permissions-hint">
+                    {isFranchiseMaster
+                      ? 'Orders, clients & KYC only — catalog, content, reports and site settings are platform-only.'
+                      : 'Initiate = own code only. Data Scope toggles let this employee see all team codes for orders, KYC, or initiate.'}
+                  </p>
                   {permissionGroups.map(({ group, items }) => (
                     <div key={group} className="emp-perm-group">
                       <div className="emp-perm-group-label">{group}</div>

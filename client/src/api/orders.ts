@@ -10,6 +10,10 @@ export function getAdminOrders() {
   return apiRequest<Order[]>('getOrders', 'GET', undefined, { for: 'admin' });
 }
 
+export function getAdminOrdersByFranchise(franchiseId: string) {
+  return apiRequest<Order[]>('getOrders', 'GET', undefined, { for: 'admin', franchiseId });
+}
+
 /** Attach order to signup client by phone/name so it appears in their Portfolio. */
 export function attachOrderToClient(orderId: string) {
   return apiRequest<{ success: boolean; orderId: string; userId: string; buyerName?: string }>(

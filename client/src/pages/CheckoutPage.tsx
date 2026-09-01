@@ -7,7 +7,7 @@ import { useToast } from '../context/ToastContext';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
-import BulkDiscountCallout from '../components/shares/BulkDiscountCallout';
+import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 import { UPI_APPS, isMobileDevice, openUpiPay } from '../utils/upiPay';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
@@ -453,11 +453,11 @@ export default function CheckoutPage() {
             </div>
 
             {share.discountTiers && share.discountTiers.length > 0 && (
-              <BulkDiscountCallout
+              <SharePriceCompare
                 share={share}
                 variant="checkout"
                 qty={safeQty}
-                onViewTiers={() => setShowTiersModal(true)}
+                onViewAllTiers={() => setShowTiersModal(true)}
               />
             )}
 

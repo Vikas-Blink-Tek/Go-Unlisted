@@ -2271,6 +2271,22 @@
       margin-bottom: 0.75rem;
     }
 
+    .slm-bulk-preview {
+      margin-top: 0.85rem;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      font-size: 0.85rem;
+      color: #065f46;
+      line-height: 1.45;
+    }
+
+    .slm-bulk-preview span {
+      font-weight: 700;
+      color: #047857;
+    }
+
     .slm-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;

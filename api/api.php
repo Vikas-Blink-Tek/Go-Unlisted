@@ -69,6 +69,7 @@ require_once __DIR__ . '/db_config.php';
 require_once __DIR__ . '/share_helpers.php';
 require_once __DIR__ . '/mail_helpers.php';
 require_once __DIR__ . '/invoice_helpers.php';
+require_once __DIR__ . '/franchise_helpers.php';
 
 $conn = new mysqli($host, $db_user, $db_pass, $db_name);
 
@@ -374,6 +375,7 @@ function autoMigrateSchema($conn) {
     }
 
     seedDefaultSharesIfEmpty($conn);
+    migrateFranchiseSchema($conn);
 }
 try {
     autoMigrateSchema($conn);
@@ -695,7 +697,12 @@ function refreshAdminSession(mysqli $conn): bool {
         return false;
     }
     $adminId = (string) $_SESSION['admin_id'];
-    $stmt = $conn->prepare('SELECT name, is_master, permissions, employee_id FROM employees WHERE id = ? LIMIT 1');
+    $hasFmCol = employeeFranchiseMasterColumnReady($conn);
+    $stmt = employeeFranchiseColumnsReady($conn)
+        ? ($hasFmCol
+            ? $conn->prepare('SELECT name, is_master, is_franchise_master, franchise_id, permissions, employee_id FROM employees WHERE id = ? LIMIT 1')
+            : $conn->prepare('SELECT name, is_master, franchise_id, permissions, employee_id FROM employees WHERE id = ? LIMIT 1'))
+        : $conn->prepare('SELECT name, is_master, permissions, employee_id FROM employees WHERE id = ? LIMIT 1');
     if (!$stmt) {
         return false;
     }
@@ -703,7 +710,7 @@ function refreshAdminSession(mysqli $conn): bool {
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     if (!$row) {
-        unset($_SESSION['admin_id'], $_SESSION['is_master'], $_SESSION['admin_permissions'], $_SESSION['employee_id'], $_SESSION['admin_portal'], $_SESSION['admin_name']);
+        unset($_SESSION['admin_id'], $_SESSION['is_master'], $_SESSION['is_franchise_master'], $_SESSION['franchise_id'], $_SESSION['admin_permissions'], $_SESSION['employee_id'], $_SESSION['admin_portal'], $_SESSION['admin_name']);
         return false;
     }
     $isMaster = (int) ($row['is_master'] ?? 0) === 1;
@@ -715,12 +722,17 @@ function refreshAdminSession(mysqli $conn): bool {
         $isMaster = false;
     }
     $_SESSION['is_master'] = $isMaster ? 1 : 0;
+    $isFranchiseMaster = !$isMaster && (int) ($row['is_franchise_master'] ?? 0) === 1;
+    $_SESSION['is_franchise_master'] = $isFranchiseMaster ? 1 : 0;
+    $_SESSION['franchise_id'] = trim((string) ($row['franchise_id'] ?? ''));
     $_SESSION['admin_permissions'] = $isMaster
         ? ['*']
-        : parseEmployeePermissions($row['permissions'] ?? '');
+        : ($isFranchiseMaster
+            ? array_values(array_diff(defaultFranchiseMasterPermissions(), franchiseMasterBlockedPermissions()))
+            : parseEmployeePermissions($row['permissions'] ?? ''));
     $_SESSION['employee_id'] = strtoupper(trim((string) ($row['employee_id'] ?? '')));
     $_SESSION['admin_name'] = trim((string) ($row['name'] ?? ''));
-    $_SESSION['admin_portal'] = $isMaster ? 'master' : 'staff';
+    $_SESSION['admin_portal'] = ($isMaster || $isFranchiseMaster) ? 'master' : 'staff';
     return true;
 }
 
@@ -761,6 +773,9 @@ function parseEmployeePermissions($raw): array {
 function adminCan(string $permission): bool {
     if (!empty($_SESSION['is_master'])) {
         return true;
+    }
+    if (isFranchiseMasterSession()) {
+        return adminHasFranchiseMasterAccess($permission);
     }
     $perms = $_SESSION['admin_permissions'] ?? [];
     if (!is_array($perms)) {
@@ -1026,35 +1041,11 @@ function lookupEmployeeCodeForUser(mysqli $conn, string $userId): string {
 }
 
 function orderBelongsToEmployee(mysqli $conn, array $orderRow): bool {
-    if (isMasterAdminSession() || adminCan('view-all-orders')) {
-        return true;
-    }
-    $code = currentEmployeeCode($conn);
-    if ($code === '') {
-        return false;
-    }
-    if (strtoupper(trim((string) ($orderRow['employee_code'] ?? ''))) === $code) {
-        return true;
-    }
-    $userId = (string) ($orderRow['user_id'] ?? '');
-    if ($userId !== '' && lookupEmployeeCodeForUser($conn, $userId) === $code) {
-        return true;
-    }
-    if ($userId === 'admin:' . ($_SESSION['admin_id'] ?? '')) {
-        return true;
-    }
-    return false;
+    return orderBelongsToAdminScope($conn, $orderRow);
 }
 
 function initiatedBelongsToEmployee(mysqli $conn, array $row): bool {
-    if (isMasterAdminSession() || adminCan('view-all-orders')) {
-        return true;
-    }
-    $code = currentEmployeeCode($conn);
-    if ($code === '') {
-        return false;
-    }
-    return strtoupper(trim((string) ($row['employee_code'] ?? ''))) === $code;
+    return initiatedBelongsToAdminScope($conn, $row);
 }
 
 function mapInitiatedCheckoutRow(array $row): array {
@@ -1199,8 +1190,8 @@ function resolveBuyerEmployeeCode(mysqli $conn, string $userId, string $buyerPho
 function resolveOrderEmployeeCode(mysqli $conn, array $data, ?array $existingOrder, bool $isAdmin, bool $isUser, string $user_id, string $buyerPhone = '', string $buyerEmail = ''): string {
     $assigned = strtoupper(trim((string) ($data['assignEmployeeCode'] ?? $data['employeeCode'] ?? '')));
 
-    // Staff: always tag with the logged-in employee (never GU00)
-    if ($isAdmin && !isMasterAdminSession()) {
+    // Staff (not platform / franchise master): always tag with the logged-in employee
+    if ($isAdmin && !isPlatformMasterSession() && !isFranchiseMasterSession()) {
         $mine = sanitizeStoredUserCode(currentEmployeeCode($conn));
         return isRealEmployeeUserCode($mine) ? $mine : '';
     }
@@ -1638,21 +1629,34 @@ switch ($action) {
             $portal = 'master';
         }
 
-        $stmt = $conn->prepare("SELECT id, password, is_master, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?");
+        $hasFmCol = employeeFranchiseMasterColumnReady($conn);
+        $stmt = employeeFranchiseColumnsReady($conn)
+            ? ($hasFmCol
+                ? $conn->prepare("SELECT id, password, is_master, is_franchise_master, franchise_id, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?")
+                : $conn->prepare("SELECT id, password, is_master, franchise_id, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?"))
+            : $conn->prepare("SELECT id, password, is_master, name, employee_id, permissions FROM employees WHERE email = ? OR employee_id = ?");
+        if (!$stmt) {
+            http_response_code(500);
+            sendResponse(['error' => 'Login unavailable. Please try again in a moment.']);
+            break;
+        }
         $stmt->bind_param("ss", $email, $email);
         $stmt->execute();
         $result = $stmt->get_result();
 
         if ($row = $result->fetch_assoc()) {
+            $row['is_franchise_master'] = (int) ($row['is_franchise_master'] ?? 0);
+            $row['franchise_id'] = (string) ($row['franchise_id'] ?? '');
             $isMasterRow = (int) ($row['is_master'] ?? 0) === 1 && $row['id'] === 'master-admin';
-            if ($portal === 'master' && !$isMasterRow) {
+            $isFranchiseMasterRow = !$isMasterRow && $hasFmCol && (int) ($row['is_franchise_master'] ?? 0) === 1;
+            if ($portal === 'master' && !$isMasterRow && !$isFranchiseMasterRow) {
                 http_response_code(401);
                 sendResponse(['error' => 'Employee accounts must sign in at /staff/login']);
                 break;
             }
-            if ($portal === 'staff' && $isMasterRow) {
+            if ($portal === 'staff' && ($isMasterRow || $isFranchiseMasterRow)) {
                 http_response_code(401);
-                sendResponse(['error' => 'Master Admin must sign in at /admin/login']);
+                sendResponse(['error' => 'Master / Franchise Admin must sign in at /admin/login']);
                 break;
             }
             if (password_verify($password, $row['password'])) {
@@ -1660,18 +1664,26 @@ switch ($action) {
                 $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                 $_SESSION['admin_id'] = $row['id'];
                 $_SESSION['is_master'] = $isMasterRow ? 1 : 0;
+                $_SESSION['is_franchise_master'] = $isFranchiseMasterRow ? 1 : 0;
+                $_SESSION['franchise_id'] = trim((string) ($row['franchise_id'] ?? ''));
                 $_SESSION['admin_portal'] = $portal;
                 $_SESSION['employee_id'] = $row['employee_id'] ?? '';
                 $_SESSION['admin_name'] = trim((string) ($row['name'] ?? ''));
                 $perms = $isMasterRow
                     ? ['*']
-                    : parseEmployeePermissions($row['permissions'] ?? '');
+                    : ($isFranchiseMasterRow
+                        ? array_values(array_diff(defaultFranchiseMasterPermissions(), franchiseMasterBlockedPermissions()))
+                        : parseEmployeePermissions($row['permissions'] ?? ''));
                 $_SESSION['admin_permissions'] = $perms;
-                logAudit($conn, 'Admin Login', $row['id'], ['portal' => $portal]);
+                $franchiseName = $_SESSION['franchise_id'] !== '' ? lookupFranchiseName($conn, $_SESSION['franchise_id']) : '';
+                logAudit($conn, 'Admin Login', $row['id'], ['portal' => $portal, 'franchiseId' => $_SESSION['franchise_id']]);
                 sendResponse([
                     "success" => true,
                     "id" => $row['id'],
                     "isMaster" => $isMasterRow,
+                    "isFranchiseMaster" => $isFranchiseMasterRow,
+                    "franchiseId" => $_SESSION['franchise_id'],
+                    "franchiseName" => $franchiseName,
                     "portal" => $portal,
                     "name" => $row['name'],
                     "employeeId" => $row['employee_id'] ?? '',
@@ -1725,17 +1737,24 @@ switch ($action) {
                 sendResponse(['authenticated' => false]);
                 break;
             }
+            $franchiseId = currentFranchiseId();
+            $isFranchiseMaster = isFranchiseMasterSession();
             $perms = !empty($_SESSION['is_master'])
                 ? ['*']
-                : (is_array($_SESSION['admin_permissions'] ?? null)
-                    ? $_SESSION['admin_permissions']
-                    : defaultEmployeePermissions());
-            $portal = $_SESSION['admin_portal'] ?? (!empty($_SESSION['is_master']) ? 'master' : 'staff');
+                : ($isFranchiseMaster
+                    ? array_values(array_diff(defaultFranchiseMasterPermissions(), franchiseMasterBlockedPermissions()))
+                    : (is_array($_SESSION['admin_permissions'] ?? null)
+                        ? $_SESSION['admin_permissions']
+                        : defaultEmployeePermissions()));
+            $portal = $_SESSION['admin_portal'] ?? (!empty($_SESSION['is_master']) || $isFranchiseMaster ? 'master' : 'staff');
             sendResponse([
                 "authenticated" => true,
                 "type" => "admin",
                 "id" => $_SESSION['admin_id'],
                 "isMaster" => !empty($_SESSION['is_master']),
+                "isFranchiseMaster" => $isFranchiseMaster,
+                "franchiseId" => $franchiseId,
+                "franchiseName" => $franchiseId !== '' ? lookupFranchiseName($conn, $franchiseId) : '',
                 "portal" => $portal,
                 "name" => $_SESSION['admin_name'] ?? '',
                 "employeeId" => $_SESSION['employee_id'] ?? '',
@@ -1773,15 +1792,123 @@ switch ($action) {
         break;
 
     // -----------------------------------------
+    // FRANCHISES (Platform master only)
+    // -----------------------------------------
+    case 'getFranchises':
+        requireMasterAdmin();
+        $res = $conn->query(
+            "SELECT f.*, e.name AS master_name, e.email AS master_email, e.employee_id AS master_employee_id
+             FROM franchises f
+             LEFT JOIN employees e ON e.franchise_id = f.id AND e.is_franchise_master = 1
+             ORDER BY f.created_at DESC"
+        );
+        $rows = [];
+        while ($row = $res->fetch_assoc()) {
+            $rows[] = mapFranchiseRow($row);
+        }
+        sendResponse($rows);
+        break;
+
+    case 'saveFranchise':
+        requireMasterAdmin();
+        validateCsrfToken();
+        $data = getPostData();
+        $id = trim((string) ($data['id'] ?? ''));
+        if ($id === '') {
+            $id = 'fr-' . uniqid();
+        }
+        $name = trim((string) ($data['name'] ?? ''));
+        $code = strtoupper(trim((string) ($data['code'] ?? '')));
+        $masterName = trim((string) ($data['masterName'] ?? ''));
+        $masterEmail = strtolower(trim((string) ($data['masterEmail'] ?? '')));
+        $masterPassword = (string) ($data['masterPassword'] ?? '');
+        $masterPhone = trim((string) ($data['masterPhone'] ?? ''));
+        if ($name === '' || $masterName === '' || $masterEmail === '' || !isValidEmail($masterEmail)) {
+            http_response_code(400);
+            sendResponse(['error' => 'Franchise name, master name and valid master email are required']);
+            break;
+        }
+        if ($code === '') {
+            $code = nextFranchiseCode($conn);
+        }
+        $existsFr = $conn->prepare('SELECT id FROM franchises WHERE id = ? LIMIT 1');
+        $existsFr->bind_param('s', $id);
+        $existsFr->execute();
+        $frExists = (bool) $existsFr->get_result()->fetch_assoc();
+        if ($frExists) {
+            $upd = $conn->prepare('UPDATE franchises SET name = ?, code = ?, contact_email = ? WHERE id = ?');
+            $upd->bind_param('ssss', $name, $code, $masterEmail, $id);
+            $upd->execute();
+            $empUpd = $conn->prepare("UPDATE employees SET name = ?, email = ?, phone = ? WHERE franchise_id = ? AND is_franchise_master = 1");
+            $phone = $masterPhone !== '' ? normalizeIndianPhone($masterPhone) : '';
+            $empUpd->bind_param('ssss', $masterName, $masterEmail, $phone, $id);
+            $empUpd->execute();
+            if ($masterPassword !== '' && strlen($masterPassword) >= 6) {
+                $hash = password_hash($masterPassword, PASSWORD_DEFAULT);
+                $pw = $conn->prepare("UPDATE employees SET password = ? WHERE franchise_id = ? AND is_franchise_master = 1");
+                $pw->bind_param('ss', $hash, $id);
+                $pw->execute();
+            }
+        } else {
+            if ($masterPassword === '' || strlen($masterPassword) < 6) {
+                http_response_code(400);
+                sendResponse(['error' => 'Master password must be at least 6 characters']);
+                break;
+            }
+            $ins = $conn->prepare('INSERT INTO franchises (id, name, code, contact_email, is_active) VALUES (?, ?, ?, ?, 1)');
+            $ins->bind_param('ssss', $id, $name, $code, $masterEmail);
+            if (!$ins->execute()) {
+                http_response_code(400);
+                sendResponse(['error' => 'Could not create franchise. Code may already exist.']);
+                break;
+            }
+            $empId = 'emp-fr-' . substr(uniqid(), -8);
+            $employee_id = canonicalizeEmployeeUserCode((string) ($data['masterEmployeeId'] ?? ''));
+            if ($employee_id === '' || $employee_id === 'GU00') {
+                $employee_id = $code . '-M';
+            }
+            $hash = password_hash($masterPassword, PASSWORD_DEFAULT);
+            $perms = json_encode(defaultFranchiseMasterPermissions());
+            $phone = $masterPhone !== '' ? normalizeIndianPhone($masterPhone) : '';
+            $empIns = $conn->prepare(
+                'INSERT INTO employees (id, name, email, phone, employee_id, password, permissions, franchise_id, is_franchise_master, is_master)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0)'
+            );
+            $empIns->bind_param('ssssssss', $empId, $masterName, $masterEmail, $phone, $employee_id, $hash, $perms, $id);
+            if (!$empIns->execute()) {
+                $conn->query("DELETE FROM franchises WHERE id = '" . $conn->real_escape_string($id) . "'");
+                http_response_code(400);
+                sendResponse(['error' => 'Franchise created but master login failed. Email or employee ID may already exist.']);
+                break;
+            }
+        }
+        sendResponse(['success' => true, 'id' => $id, 'code' => $code]);
+        break;
+
+    // -----------------------------------------
     // EMPLOYEES (Admin Only)
     // -----------------------------------------
     case 'getEmployees':
-        requireMasterAdmin();
-        // Master Admin first, then employees by name
-        $res = $conn->query("SELECT id, employee_id, name, email, phone, is_master, permissions, created_at FROM employees ORDER BY is_master DESC, name ASC");
+        requireAdmin();
+        if (!isPlatformMasterSession() && !isFranchiseMasterSession()) {
+            http_response_code(403);
+            sendResponse(['error' => 'Forbidden']);
+            break;
+        }
+        if (isPlatformMasterSession()) {
+            $res = $conn->query("SELECT id, employee_id, name, email, phone, is_master, is_franchise_master, franchise_id, permissions, created_at FROM employees ORDER BY is_master DESC, is_franchise_master DESC, name ASC");
+        } else {
+            $fid = currentFranchiseId();
+            $stmt = $conn->prepare("SELECT id, employee_id, name, email, phone, is_master, is_franchise_master, franchise_id, permissions, created_at FROM employees WHERE franchise_id = ? AND is_franchise_master = 0 ORDER BY name ASC");
+            $stmt->bind_param('s', $fid);
+            $stmt->execute();
+            $res = $stmt->get_result();
+        }
         $data = [];
         while ($row = $res->fetch_assoc()) {
             $row['is_master'] = (int) ($row['is_master'] ?? 0);
+            $row['is_franchise_master'] = (int) ($row['is_franchise_master'] ?? 0);
+            $row['franchiseName'] = lookupFranchiseName($conn, $row['franchise_id'] ?? '');
             $row['permissions'] = !empty($row['is_master'])
                 ? ['*']
                 : parseEmployeePermissions($row['permissions'] ?? '');
@@ -1791,7 +1918,12 @@ switch ($action) {
         break;
 
     case 'saveEmployee':
-        requireMasterAdmin();
+        requireAdmin();
+        if (!isPlatformMasterSession() && !isFranchiseMasterSession()) {
+            http_response_code(403);
+            sendResponse(['error' => 'Forbidden']);
+            break;
+        }
         $data = getPostData();
         rejectPrivilegedEmployeeFields($data);
         $id = !empty($data['id']) ? $data['id'] : 'emp-' . uniqid();
@@ -1800,9 +1932,14 @@ switch ($action) {
         $employee_id = canonicalizeEmployeeUserCode(htmlspecialchars($data['employeeId'] ?? ''));
         $phoneRaw = trim((string) ($data['phone'] ?? ''));
         $phone = $phoneRaw !== '' ? htmlspecialchars(normalizeIndianPhone($phoneRaw)) : '';
-        $permissionsJson = json_encode(parseEmployeePermissions($data['permissions'] ?? defaultEmployeePermissions()));
+        $perms = parseEmployeePermissions($data['permissions'] ?? defaultEmployeePermissions());
+        if (isFranchiseMasterSession()) {
+            $perms = sanitizeFranchiseEmployeePermissions($perms);
+        }
+        $permissionsJson = json_encode($perms);
+        $franchiseId = isFranchiseMasterSession() ? currentFranchiseId() : trim((string) ($data['franchiseId'] ?? ''));
 
-        $stmtCheck = $conn->prepare("SELECT id, is_master FROM employees WHERE id=?");
+        $stmtCheck = $conn->prepare("SELECT id, is_master, is_franchise_master, franchise_id FROM employees WHERE id=?");
         $stmtCheck->bind_param("s", $id);
         $stmtCheck->execute();
         $existingEmp = $stmtCheck->get_result()->fetch_assoc();
@@ -1811,6 +1948,13 @@ switch ($action) {
         // Never change master permissions via this form
         if ($exists && !empty($existingEmp['is_master'])) {
             $permissionsJson = null;
+        }
+        if ($exists && isFranchiseMasterSession()) {
+            if (trim((string) ($existingEmp['franchise_id'] ?? '')) !== currentFranchiseId() || !empty($existingEmp['is_franchise_master'])) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only edit employees in your franchise']);
+                break;
+            }
         }
 
         if ($exists) {
@@ -1842,8 +1986,14 @@ switch ($action) {
                 sendResponse(["error" => "Password must be at least 6 characters"]);
             }
             $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
-            $stmt = $conn->prepare("INSERT INTO employees (id, name, email, phone, employee_id, password, permissions, is_master) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
-            $stmt->bind_param("sssssss", $id, $name, $email, $phone, $employee_id, $hashed, $permissionsJson);
+            if (isFranchiseMasterSession()) {
+                $stmt = $conn->prepare("INSERT INTO employees (id, name, email, phone, employee_id, password, permissions, franchise_id, is_franchise_master, is_master) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)");
+                $stmt->bind_param("ssssssss", $id, $name, $email, $phone, $employee_id, $hashed, $permissionsJson, $franchiseId);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO employees (id, name, email, phone, employee_id, password, permissions, franchise_id, is_franchise_master, is_master) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)");
+                $franchiseParam = $franchiseId !== '' ? $franchiseId : null;
+                $stmt->bind_param("ssssssss", $id, $name, $email, $phone, $employee_id, $hashed, $permissionsJson, $franchiseParam);
+            }
             if (!$stmt->execute()) {
                 http_response_code(400);
                 sendResponse(["error" => "Failed to add employee. Email or Employee ID may already exist."]);
@@ -1853,11 +2003,31 @@ switch ($action) {
         break;
 
     case 'deleteEmployee':
-        requireMasterAdmin();
+        requireAdmin();
+        if (!isPlatformMasterSession() && !isFranchiseMasterSession()) {
+            http_response_code(403);
+            sendResponse(['error' => 'Forbidden']);
+            break;
+        }
         $data = getPostData();
         $id = $data['id'];
-        $stmt = $conn->prepare("DELETE FROM employees WHERE id=? AND is_master=0");
-        $stmt->bind_param("s", $id);
+        if (isFranchiseMasterSession()) {
+            $chk = $conn->prepare('SELECT franchise_id, is_franchise_master FROM employees WHERE id = ? LIMIT 1');
+            $chk->bind_param('s', $id);
+            $chk->execute();
+            $emp = $chk->get_result()->fetch_assoc();
+            if (!$emp || trim((string) ($emp['franchise_id'] ?? '')) !== currentFranchiseId() || !empty($emp['is_franchise_master'])) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only delete employees in your franchise']);
+                break;
+            }
+            $stmt = $conn->prepare("DELETE FROM employees WHERE id=? AND is_master=0 AND is_franchise_master=0 AND franchise_id = ?");
+            $fid = currentFranchiseId();
+            $stmt->bind_param('ss', $id, $fid);
+        } else {
+            $stmt = $conn->prepare("DELETE FROM employees WHERE id=? AND is_master=0 AND is_franchise_master=0");
+            $stmt->bind_param('s', $id);
+        }
         $stmt->execute();
         sendResponse(["success" => true]);
         break;
@@ -2098,8 +2268,18 @@ switch ($action) {
     // -----------------------------------------
     case 'getUsers':
         requireAnyPermission(['users', 'signups', 'manual-order']);
-        if (isMasterAdminSession() || adminCan('view-all-kyc')) {
-            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users ORDER BY created_at DESC");
+        $scope = resolveAdminFranchiseScopeId($conn);
+        if ($scope === null) {
+            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, franchise_id, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users ORDER BY created_at DESC");
+        } elseif ($scope !== '') {
+            $res = fetchUsersForFranchise($conn, $scope);
+            if ($res === false) {
+                http_response_code(500);
+                sendResponse(['error' => 'Could not load franchise users']);
+                break;
+            }
+        } elseif (adminCan('view-all-kyc') && !isFranchiseMasterSession()) {
+            $res = $conn->query("SELECT id, name, phone, email, role, referral_code, franchise_id, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users ORDER BY created_at DESC");
         } else {
             $code = currentEmployeeCode($conn);
             $stmt = $conn->prepare("SELECT id, name, phone, email, role, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, created_at FROM users WHERE UPPER(referral_code) = ? ORDER BY created_at DESC");
@@ -2138,14 +2318,10 @@ switch ($action) {
             $u = $chk->get_result()->fetch_assoc();
             $existingReferral = strtoupper(trim((string) ($u['referral_code'] ?? '')));
             if (!isMasterAdminSession()) {
-                // Employees may edit KYC for their clients, but never reassign (transfer) to another employee
-                if (!adminCan('view-all-kyc')) {
-                    $code = currentEmployeeCode($conn);
-                    if ($existingReferral !== $code) {
-                        http_response_code(403);
-                        sendResponse(['error' => 'You can only edit users signed up with your employee code']);
-                        break;
-                    }
+                if (!adminCanViewPlatformWideUsers($conn) && !adminUserInScope($conn, $id)) {
+                    http_response_code(403);
+                    sendResponse(['error' => 'You can only edit users in your franchise or employee code']);
+                    break;
                 }
                 $referral_code = $existingReferral;
             }
@@ -2269,6 +2445,7 @@ switch ($action) {
             $stmt = $conn->prepare("INSERT INTO users (id, name, phone, email, password, role, referral_code, kyc_status, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->bind_param("ssssssssssssss", $id, $name, $phone, $email, $hashed, $role, $referral_code, $kyc_status, $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc);
             $stmt->execute();
+            syncUserFranchiseFromReferral($conn, $id, $referral_code);
 
             session_regenerate_id(true);
             $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -2286,14 +2463,13 @@ switch ($action) {
         $data = getPostData();
         $email = $data['email'] ?? '';
         if (!isMasterAdminSession()) {
-            $code = currentEmployeeCode($conn);
-            $chk = $conn->prepare('SELECT referral_code FROM users WHERE email = ? LIMIT 1');
+            $chk = $conn->prepare('SELECT id, referral_code FROM users WHERE email = ? LIMIT 1');
             $chk->bind_param('s', $email);
             $chk->execute();
             $u = $chk->get_result()->fetch_assoc();
-            if (!$u || strtoupper(trim((string) ($u['referral_code'] ?? ''))) !== $code) {
+            if (!$u || !adminUserInScope($conn, (string) $u['id'])) {
                 http_response_code(403);
-                sendResponse(['error' => 'You can only delete users signed up with your employee code']);
+                sendResponse(['error' => 'You can only delete users in your franchise or employee code']);
                 break;
             }
         }
@@ -2429,13 +2605,10 @@ switch ($action) {
             sendResponse(['error' => 'User not found']);
             break;
         }
-        if (!isMasterAdminSession() && !adminCan('view-all-kyc')) {
-            $code = currentEmployeeCode($conn);
-            if (strtoupper(trim((string) ($urow['referral_code'] ?? ''))) !== $code) {
-                http_response_code(403);
-                sendResponse(['error' => 'You can only upload proofs for your referral clients']);
-                break;
-            }
+        if (!isMasterAdminSession() && !adminUserInScope($conn, $targetUserId)) {
+            http_response_code(403);
+            sendResponse(['error' => 'You can only upload proofs for your referral clients']);
+            break;
         }
         $stored = storeUploadedKycProofFile($targetUserId);
         if (empty($stored['ok'])) {
@@ -2489,35 +2662,21 @@ switch ($action) {
                 sendResponse(['error' => 'Forbidden']);
                 break;
             }
-            if ($isAdmin && !isMasterAdminSession() && !adminCan('view-all-kyc')) {
-                $chk = $conn->prepare('SELECT referral_code, kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
-                $chk->bind_param('s', $targetUserId);
-                $chk->execute();
-                $urow = $chk->get_result()->fetch_assoc();
-                if (!$urow) {
-                    http_response_code(404);
-                    sendResponse(['error' => 'User not found']);
-                    break;
-                }
-                $code = currentEmployeeCode($conn);
-                if (strtoupper(trim((string) ($urow['referral_code'] ?? ''))) !== $code) {
-                    http_response_code(403);
-                    sendResponse(['error' => 'You can only view proofs for your referral clients']);
-                    break;
-                }
-                $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
-            } else {
-                $chk = $conn->prepare('SELECT kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
-                $chk->bind_param('s', $targetUserId);
-                $chk->execute();
-                $urow = $chk->get_result()->fetch_assoc();
-                if (!$urow) {
-                    http_response_code(404);
-                    sendResponse(['error' => 'User not found']);
-                    break;
-                }
-                $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
+            if ($isAdmin && !adminUserInScope($conn, $targetUserId)) {
+                http_response_code(403);
+                sendResponse(['error' => 'You can only view proofs for your referral clients']);
+                break;
             }
+            $chk = $conn->prepare('SELECT kyc_demat_proof FROM users WHERE id = ? LIMIT 1');
+            $chk->bind_param('s', $targetUserId);
+            $chk->execute();
+            $urow = $chk->get_result()->fetch_assoc();
+            if (!$urow) {
+                http_response_code(404);
+                sendResponse(['error' => 'User not found']);
+                break;
+            }
+            $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
         } elseif ($fileParam !== '') {
             // Preview right after upload (path not yet saved on user row)
             if (!preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $fileParam)) {
@@ -2653,21 +2812,51 @@ switch ($action) {
         // If user is not admin, only return their own orders
         if ($asAdmin) {
             requireAnyPermission(['dashboard', 'pending', 'initiated', 'orders', 'manual-order', 'cancel-refund']);
-            if (isMasterAdminSession() || adminCan('view-all-orders')) {
-                $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
+            $franchiseFilter = trim((string) ($_GET['franchiseId'] ?? ''));
+            if (isPlatformMasterSession()) {
+                if ($franchiseFilter === 'direct') {
+                    $stmt = $conn->prepare("SELECT * FROM orders WHERE (franchise_id IS NULL OR franchise_id = '') ORDER BY created_at DESC");
+                } elseif ($franchiseFilter !== '') {
+                    $stmt = $conn->prepare("SELECT * FROM orders WHERE franchise_id = ? ORDER BY created_at DESC");
+                    $stmt->bind_param('s', $franchiseFilter);
+                } else {
+                    $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
+                }
             } else {
+                $scope = resolveAdminFranchiseScopeId($conn);
+                if ($scope !== '') {
+                    $stmt = $conn->prepare("SELECT * FROM orders WHERE franchise_id = ? ORDER BY created_at DESC");
+                    $stmt->bind_param('s', $scope);
+                } elseif (adminCan('view-all-orders') && !isFranchiseMasterSession()) {
+                    $stmt = $conn->prepare("SELECT * FROM orders ORDER BY created_at DESC");
+                } else {
                 // Employee: only their referral / tagged orders (including Verify Payments)
                 $code = currentEmployeeCode($conn);
                 $adminUser = 'admin:' . $_SESSION['admin_id'];
-                $stmt = $conn->prepare(
-                    "SELECT o.* FROM orders o
-                     LEFT JOIN users u ON u.id = o.user_id AND o.user_id NOT LIKE 'admin:%'
-                     WHERE UPPER(o.employee_code) = ?
-                        OR UPPER(u.referral_code) = ?
-                        OR o.user_id = ?
-                     ORDER BY o.created_at DESC"
-                );
-                $stmt->bind_param('sss', $code, $code, $adminUser);
+                $fid = currentFranchiseId();
+                if ($fid !== '') {
+                    $stmt = $conn->prepare(
+                        "SELECT o.* FROM orders o
+                         LEFT JOIN users u ON u.id = o.user_id AND o.user_id NOT LIKE 'admin:%'
+                         WHERE o.franchise_id = ?
+                           AND (UPPER(o.employee_code) = ?
+                            OR UPPER(u.referral_code) = ?
+                            OR o.user_id = ?)
+                         ORDER BY o.created_at DESC"
+                    );
+                    $stmt->bind_param('ssss', $fid, $code, $code, $adminUser);
+                } else {
+                    $stmt = $conn->prepare(
+                        "SELECT o.* FROM orders o
+                         LEFT JOIN users u ON u.id = o.user_id AND o.user_id NOT LIKE 'admin:%'
+                         WHERE UPPER(o.employee_code) = ?
+                            OR UPPER(u.referral_code) = ?
+                            OR o.user_id = ?
+                         ORDER BY o.created_at DESC"
+                    );
+                    $stmt->bind_param('sss', $code, $code, $adminUser);
+                }
+                }
             }
         } else {
             if (!isset($_SESSION['user_id'])) {
@@ -2858,6 +3047,8 @@ switch ($action) {
                 }
             }
             $employeeCode = normalizeUserCode($employeeCode);
+            $franchiseId = trim((string) ($row['franchise_id'] ?? ''));
+            $franchiseName = $franchiseId !== '' ? lookupFranchiseName($conn, $franchiseId) : 'Direct / Platform';
             // BUG 3 FIX: Return ALL fields the frontend expects (cast nulls — PHP 8.1+ htmlspecialchars)
             $data[] = [
                 "orderId" => htmlspecialchars((string) ($row['order_id'] ?? '')),
@@ -2882,6 +3073,8 @@ switch ($action) {
                 "utr" => htmlspecialchars((string) ($row['transaction_id'] ?? '')),
                 "orderSource" => htmlspecialchars((string) ($row['order_source'] ?? 'Online')),
                 "employeeCode" => htmlspecialchars((string) $employeeCode),
+                "franchiseId" => htmlspecialchars($franchiseId),
+                "franchiseName" => htmlspecialchars($franchiseName),
                 "opsNote" => htmlspecialchars((string) ($row['ops_note'] ?? '')),
                 "date" => orderRowDate($row),
                 "createdAt" => orderRowDate($row),
@@ -3764,9 +3957,11 @@ switch ($action) {
             }
         }
         // Staff creating order: never allow blank — force their code again
-        if ($isAdmin && !isMasterAdminSession() && !isRealEmployeeUserCode($employee_code)) {
+        if ($isAdmin && !isPlatformMasterSession() && !isFranchiseMasterSession() && !isRealEmployeeUserCode($employee_code)) {
             $employee_code = sanitizeStoredUserCode(currentEmployeeCode($conn));
         }
+
+        $franchise_id = resolveFranchiseIdForOrder($conn, $employee_code, $user_id ?? '');
 
         if ($order_id === '') {
             $order_id = allocateNextOrderId($conn);
@@ -3814,8 +4009,8 @@ switch ($action) {
             );
         } else {
             $stmt = $conn->prepare(
-                "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, created_at, custom_charges_json)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO orders (order_id, user_id, buyer_name, buyer_email, buyer_phone, share_id, share_name, share_ticker, price_per_share, quantity, total_amount, method, transaction_id, status, order_source, employee_code, franchise_id, created_at, custom_charges_json)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             if (!$stmt) {
                 error_log('saveOrder INSERT prepare failed: ' . $conn->error);
@@ -3824,7 +4019,7 @@ switch ($action) {
                 break;
             }
             $stmt->bind_param(
-                "ssssssssdidsssssss",
+                "ssssssssdidssssssss",
                 $order_id,
                 $user_id,
                 $buyer_name,
@@ -3841,6 +4036,7 @@ switch ($action) {
                 $status,
                 $order_source,
                 $employee_code,
+                $franchise_id,
                 $purchasedAt,
                 $custom_charges_json
             );
@@ -3903,30 +4099,75 @@ switch ($action) {
             }
         }
         $employee_code = sanitizeStoredUserCode($employee_code);
-        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status, employee_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated', ?) ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), employee_code=IF(employee_code IS NULL OR employee_code = '', VALUES(employee_code), employee_code)");
-        $stmt->bind_param("sssssssiddss", $session_id, $share_id, $share_name, $share_ticker, $buyer_name, $buyer_email, $buyer_phone, $qty, $price, $total, $mode, $employee_code);
+        $franchise_id = lookupFranchiseIdForEmployeeCode($conn, $employee_code);
+        if ($franchise_id === '' && !empty($_SESSION['user_id'])) {
+            $uStmt = $conn->prepare('SELECT franchise_id FROM users WHERE id = ? LIMIT 1');
+            $uStmt->bind_param('s', $_SESSION['user_id']);
+            $uStmt->execute();
+            $uRow = $uStmt->get_result()->fetch_assoc();
+            $franchise_id = trim((string) ($uRow['franchise_id'] ?? ''));
+        }
+        $stmt = $conn->prepare("INSERT INTO initiated_checkouts (session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone, qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Initiated', ?, ?) ON DUPLICATE KEY UPDATE share_id=VALUES(share_id), share_name=VALUES(share_name), qty=VALUES(qty), price_per_share=VALUES(price_per_share), total_amount=VALUES(total_amount), payment_mode=VALUES(payment_mode), employee_code=IF(employee_code IS NULL OR employee_code = '', VALUES(employee_code), employee_code), franchise_id=IF(franchise_id IS NULL OR franchise_id = '', VALUES(franchise_id), franchise_id)");
+        $stmt->bind_param("sssssssiddsss", $session_id, $share_id, $share_name, $share_ticker, $buyer_name, $buyer_email, $buyer_phone, $qty, $price, $total, $mode, $employee_code, $franchise_id);
         $stmt->execute();
         sendResponse(["success" => true]);
         break;
 
     case 'getInitiatedCheckouts':
         requirePermission('initiated');
-        if (isMasterAdminSession() || adminCan('view-all-orders')) {
+        if (isPlatformMasterSession()) {
             $res = $conn->query(
                 "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
-                        qty, price_per_share, total_amount, payment_mode, status, employee_code, created_at
+                        qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
                  FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC"
             );
-        } else {
-            $code = currentEmployeeCode($conn);
+        } elseif (isFranchiseMasterSession()) {
+            $fid = currentFranchiseId();
             $stmt = $conn->prepare(
                 "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
-                        qty, price_per_share, total_amount, payment_mode, status, employee_code, created_at
-                 FROM initiated_checkouts WHERE status = 'Initiated' AND UPPER(employee_code) = ? ORDER BY created_at DESC"
+                        qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
+                 FROM initiated_checkouts WHERE status = 'Initiated' AND franchise_id = ? ORDER BY created_at DESC"
             );
-            $stmt->bind_param('s', $code);
+            $stmt->bind_param('s', $fid);
             $stmt->execute();
             $res = $stmt->get_result();
+        } else {
+            $scope = resolveAdminFranchiseScopeId($conn);
+            $code = currentEmployeeCode($conn);
+            if (adminCan('view-all-initiated') && $scope !== '') {
+                $stmt = $conn->prepare(
+                    "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                            qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
+                     FROM initiated_checkouts WHERE status = 'Initiated' AND franchise_id = ? ORDER BY created_at DESC"
+                );
+                $stmt->bind_param('s', $scope);
+                $stmt->execute();
+                $res = $stmt->get_result();
+            } elseif (adminCan('view-all-initiated')) {
+                $res = $conn->query(
+                    "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                            qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
+                     FROM initiated_checkouts WHERE status = 'Initiated' ORDER BY created_at DESC"
+                );
+            } elseif ($scope !== '') {
+                $stmt = $conn->prepare(
+                    "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                            qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
+                     FROM initiated_checkouts WHERE status = 'Initiated' AND franchise_id = ? AND UPPER(employee_code) = ? ORDER BY created_at DESC"
+                );
+                $stmt->bind_param('ss', $scope, $code);
+                $stmt->execute();
+                $res = $stmt->get_result();
+            } else {
+                $stmt = $conn->prepare(
+                    "SELECT session_id, share_id, share_name, share_ticker, buyer_name, buyer_email, buyer_phone,
+                            qty, price_per_share, total_amount, payment_mode, status, employee_code, franchise_id, created_at
+                     FROM initiated_checkouts WHERE status = 'Initiated' AND UPPER(employee_code) = ? ORDER BY created_at DESC"
+                );
+                $stmt->bind_param('s', $code);
+                $stmt->execute();
+                $res = $stmt->get_result();
+            }
         }
         $rows = [];
         while ($row = $res->fetch_assoc()) {

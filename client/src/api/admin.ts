@@ -31,6 +31,26 @@ export function demoteEmployee(id: string) {
   return apiRequest<{ success: boolean; message?: string }>('demoteEmployee', 'POST', { id });
 }
 
+export interface FranchiseRow {
+  id: string;
+  name: string;
+  code: string;
+  contactEmail?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  masterName?: string;
+  masterEmail?: string;
+  masterEmployeeId?: string;
+}
+
+export function getFranchises() {
+  return apiRequest<FranchiseRow[]>('getFranchises', 'GET');
+}
+
+export function saveFranchise(payload: Record<string, unknown>) {
+  return apiRequest<{ success: boolean; id?: string; code?: string }>('saveFranchise', 'POST', payload);
+}
+
 /** Master: move user to another employee; optionally reassign their orders / initiate rows. */
 export function transferUser(
   userId: string,

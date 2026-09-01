@@ -12,7 +12,16 @@ import { clearAdminPortal, portalFromAuth, readAdminPortal, storeAdminPortal } f
 import { adminNavIcon } from './adminNavIcons';
 
 function AdminShell() {
-  const { activePanel, setActivePanel, isMaster, allowedPanels, adminName, employeeCode } = useAdminPanel();
+  const {
+    activePanel,
+    setActivePanel,
+    isMaster,
+    isFranchiseMaster,
+    franchiseName,
+    allowedPanels,
+    adminName,
+    employeeCode,
+  } = useAdminPanel();
   const navigate = useNavigate();
   const current = allowedPanels.find((p) => p.id === activePanel);
   const groups = [...new Set(allowedPanels.map((p) => p.group))];
@@ -42,7 +51,9 @@ function AdminShell() {
           <img src="/logo.png" alt="Go-Unlisted Logo" className="sidebar-logo-img" />
           <div>
             <div className="sidebar-logo-text"><span className="logo-go">GO</span> <span className="logo-unlisted">UNLISTED</span></div>
-            <span className="sidebar-logo-badge">{isMaster ? 'Master Admin' : 'Employee Panel'}</span>
+            <span className="sidebar-logo-badge">
+              {isMaster ? 'Master Admin' : isFranchiseMaster ? 'Franchise Admin' : 'Employee Panel'}
+            </span>
           </div>
         </div>
 
@@ -83,6 +94,14 @@ function AdminShell() {
           <div className="admin-topbar-right">
             {isMaster ? (
               <span className="admin-badge">Master Admin</span>
+            ) : isFranchiseMaster ? (
+              <div className="admin-user-chip" title={franchiseName || 'Franchise'}>
+                <div className="admin-user-chip-text">
+                  <span className="admin-user-chip-name">{franchiseName || adminName || 'Franchise'}</span>
+                  {employeeCode && <span className="admin-user-chip-code">{employeeCode}</span>}
+                </div>
+                <span className="emp-badge">Franchise Admin</span>
+              </div>
             ) : (
               <div className="admin-user-chip" title={employeeCode ? `${adminName || 'Employee'} · ${employeeCode}` : (adminName || 'Employee')}>
                 <div className="admin-user-chip-text">
@@ -130,6 +149,9 @@ export default function AdminLayout() {
           const auth: VerifiedAdminAuth = {
             id: res.id,
             isMaster: !!res.isMaster,
+            isFranchiseMaster: !!res.isFranchiseMaster,
+            franchiseId: res.franchiseId || '',
+            franchiseName: res.franchiseName || '',
             permissions: res.permissions || [],
             name: res.name || '',
             employeeCode: res.employeeCode || res.employeeId || '',
@@ -137,10 +159,13 @@ export default function AdminLayout() {
           sessionStorage.setItem('gu_admin', JSON.stringify({
             id: auth.id,
             isMaster: auth.isMaster,
+            isFranchiseMaster: auth.isFranchiseMaster,
+            franchiseId: auth.franchiseId,
+            franchiseName: auth.franchiseName,
             name: auth.name,
             employeeCode: auth.employeeCode,
           }));
-          storeAdminPortal(portalFromAuth(auth.isMaster, res.portal));
+          storeAdminPortal(portalFromAuth(auth.isMaster || !!auth.isFranchiseMaster, res.portal));
           setVerifiedAuth(auth);
           setAuthState('ok');
         } else {

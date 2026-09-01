@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShares } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
@@ -8,15 +8,20 @@ import ListingComparison from '../components/home/ListingComparison';
 import { formatCurrency } from '../utils/format';
 import type { Share } from '../types';
 
-/** Homepage Market Activity — rates always public (track-record teaser). */
-function MarketActivityCard({ share }: { share: Share }) {
+/** Homepage Market Activity — sample track record; tap any card to browse live listings. */
+function MarketActivityCard({ share, onBrowse }: { share: Share; onBrowse: () => void }) {
   const listingPrice =
     share.listingPrice != null && share.listingPrice > 0 ? share.listingPrice : null;
   const hasComparison = listingPrice != null && share.price > 0;
   const gainPct = hasComparison ? ((listingPrice - share.price) / share.price) * 100 : null;
 
   return (
-    <Link to={`/shares/${share.id}`} className="hero-card market-scroll-card market-compare-card">
+    <button
+      type="button"
+      className="hero-card market-scroll-card market-compare-card market-scroll-card--cta"
+      onClick={onBrowse}
+      aria-label={`View live share listings — ${share.name} track record`}
+    >
       <div className="hero-card-top">
         <div className="hero-card-company">
           <CompanyLogo share={share} className="hero-logo-sm" />
@@ -51,14 +56,16 @@ function MarketActivityCard({ share }: { share: Share }) {
           {gainPct.toFixed(0)}% · {(listingPrice / share.price).toFixed(1)}x
         </div>
       ) : (
-        <div className="market-compare-hint">Set listing price in admin to show IPO comparison</div>
+        <div className="market-compare-hint">Tap to explore live listings →</div>
       )}
-    </Link>
+    </button>
   );
 }
 
 /** Continuous upward scroll — always 2 cards visible, slower rotation. */
 function MarketActivityScroller({ items }: { items: Share[] }) {
+  const navigate = useNavigate();
+  const browseShares = () => navigate('/shares');
   const trackRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(false);
   const [paused, setPaused] = useState(false);
@@ -114,7 +121,7 @@ function MarketActivityScroller({ items }: { items: Share[] }) {
     >
       <div ref={trackRef} className={`market-scroll-track${shouldScroll ? ' is-moving' : ''}`}>
         {scrollItems.map((share, i) => (
-          <MarketActivityCard key={`${share.id}-${i}`} share={share} />
+          <MarketActivityCard key={`${share.id}-${i}`} share={share} onBrowse={browseShares} />
         ))}
       </div>
     </div>
@@ -206,6 +213,7 @@ export default function HomePage() {
               </span>
               <div className="hero-ticker-live">LIVE</div>
             </div>
+            <p className="market-activity-cta-hint">Sample IPO track record — tap any card to browse &amp; buy live listings</p>
 
             {starred.length === 0 ? (
               <div className="market-scroll-empty">

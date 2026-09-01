@@ -21,8 +21,9 @@ export function resolveAdminPanel(
   requested: AdminPanelId | null,
   isMaster: boolean,
   permissions: string[],
+  isFranchiseMaster = false,
 ): AdminPanelId {
-  const allowed = panelsForRole(isMaster, permissions);
+  const allowed = panelsForRole(isMaster, permissions, isFranchiseMaster);
   const target = requested || 'dashboard';
   return allowed.some((p) => p.id === target) ? target : (allowed[0]?.id ?? 'dashboard');
 }
@@ -31,8 +32,9 @@ export function isPanelAllowed(
   panelId: AdminPanelId,
   isMaster: boolean,
   permissions: string[],
+  isFranchiseMaster = false,
 ): boolean {
-  return panelsForRole(isMaster, permissions).some((p) => p.id === panelId);
+  return panelsForRole(isMaster, permissions, isFranchiseMaster).some((p) => p.id === panelId);
 }
 
 export function adminLoginPath(panel?: string | null): string {
@@ -75,10 +77,11 @@ export function adminPanelPath(
   panel?: AdminPanelId | null,
   isMaster?: boolean,
   permissions?: string[],
+  isFranchiseMaster = false,
 ): string {
   const resolved =
     isMaster !== undefined && permissions
-      ? resolveAdminPanel(panel || parseAdminPanelHash(), isMaster, permissions)
+      ? resolveAdminPanel(panel || parseAdminPanelHash(), isMaster, permissions, isFranchiseMaster)
       : panel || parseAdminPanelHash() || 'dashboard';
   return `/admin#${resolved}`;
 }

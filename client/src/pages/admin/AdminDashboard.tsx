@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder, getAdminOrders, attachOrderToClient } from '../../api/orders';
-import { getEmployees, getUsers, mapApiUser } from '../../api/admin';
+import { updateOrderStatus, transferOrder, updateOrderPaymentRef, adjustOrderTotal, softDeleteOrder, restoreOrder, getAdminOrders, getAdminOrdersByFranchise, attachOrderToClient } from '../../api/orders';
+import { getEmployees, getFranchises, getUsers, mapApiUser } from '../../api/admin';
 import { getInitiatedCheckouts } from '../../api/initiated';
 import { getSettings, getMailStatus, saveSettings, testSmtp, uploadQr } from '../../api/content';
 import { useAdminPanel } from '../../context/AdminPanelContext';
@@ -33,6 +33,7 @@ import AdminSharePricesPanel from './panels/AdminSharePricesPanel';
 import AdminInventoryPanel from './panels/AdminInventoryPanel';
 import AdminInvoicesPanel from './panels/AdminInvoicesPanel';
 import AdminSignupsPanel from './panels/AdminSignupsPanel';
+import AdminFranchisesPanel from './panels/AdminFranchisesPanel';
 
 type PeriodFilter = 'all' | 'this_month' | 'last_month';
 
@@ -55,7 +56,7 @@ function periodLabel(period: PeriodFilter): string {
 }
 
 export default function AdminDashboard() {
-  const { activePanel, setActivePanel, can, canAccessPanel, isMaster } = useAdminPanel();
+  const { activePanel, setActivePanel, can, canAccessPanel, isMaster, isFranchiseMaster } = useAdminPanel();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
@@ -67,10 +68,15 @@ export default function AdminDashboard() {
   const [newChargePrice, setNewChargePrice] = useState('');
   const [newChargeType, setNewChargeType] = useState<'percentage' | 'flat'>('percentage');
   const [dashPeriod, setDashPeriod] = useState<PeriodFilter>('all');
+  const [ordersFranchiseFilter, setOrdersFranchiseFilter] = useState('all');
 
   const ordersQuery = useQuery({
-    queryKey: ['admin-orders'],
-    queryFn: getAdminOrders,
+    queryKey: ['admin-orders', ordersFranchiseFilter],
+    queryFn: () => (
+      ordersFranchiseFilter === 'all'
+        ? getAdminOrders()
+        : getAdminOrdersByFranchise(ordersFranchiseFilter)
+    ),
     enabled: can('orders') || can('pending') || can('dashboard') || can('manual-order') || can('cancel-refund'),
   });
   const usersQuery = useQuery({
@@ -87,6 +93,11 @@ export default function AdminDashboard() {
   const employeesQuery = useQuery({
     queryKey: ['admin-employees'],
     queryFn: getEmployees,
+    enabled: isMaster || isFranchiseMaster,
+  });
+  const franchisesQuery = useQuery({
+    queryKey: ['admin-franchises'],
+    queryFn: getFranchises,
     enabled: isMaster,
   });
   const settingsQuery = useQuery({
@@ -329,6 +340,7 @@ export default function AdminDashboard() {
   if (activePanel === 'inventory') return <AdminInventoryPanel />;
   if (activePanel === 'invoices') return <AdminInvoicesPanel />;
   if (activePanel === 'employees') return <AdminEmployees />;
+  if (activePanel === 'franchises') return <AdminFranchisesPanel />;
   if (activePanel === 'signups') return <AdminSignupsPanel />;
 
   return (
@@ -448,6 +460,10 @@ export default function AdminDashboard() {
             orders={allOrders}
             users={users}
             showActions={can('pending')}
+            showFranchiseColumn={isMaster}
+            franchiseFilter={isMaster ? ordersFranchiseFilter : undefined}
+            onFranchiseFilterChange={isMaster ? setOrdersFranchiseFilter : undefined}
+            franchiseOptions={franchisesQuery.data || []}
             employees={employeesQuery.data || []}
             onTransferOrder={isMaster ? (orderId, employeeCode) => transferMutation.mutateAsync({ orderId, employeeCode }) : undefined}
             onVerify={(id) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING })}

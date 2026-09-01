@@ -38,11 +38,20 @@ function persistAdminSession(
   id: string,
   isMaster: boolean,
   portal: AdminPortal,
-  extra?: { name?: string; employeeCode?: string },
+  extra?: {
+    name?: string;
+    employeeCode?: string;
+    isFranchiseMaster?: boolean;
+    franchiseId?: string;
+    franchiseName?: string;
+  },
 ) {
   sessionStorage.setItem('gu_admin', JSON.stringify({
     id,
     isMaster,
+    isFranchiseMaster: extra?.isFranchiseMaster || false,
+    franchiseId: extra?.franchiseId || '',
+    franchiseName: extra?.franchiseName || '',
     name: extra?.name || '',
     employeeCode: extra?.employeeCode || '',
   }));
@@ -89,14 +98,18 @@ export default function AdminLoginPage({ portal }: Props) {
       .then((res) => {
         if (res.authenticated && res.type === 'admin') {
           const isMaster = !!res.isMaster;
-          const sessionPortal = portalFromAuth(isMaster, res.portal);
+          const isFranchiseMaster = !!res.isFranchiseMaster && !isMaster;
+          const sessionPortal = portalFromAuth(isMaster || isFranchiseMaster, res.portal);
           const perms = normalizeAdminPermissions(isMaster, res.permissions);
           persistAdminSession(res.id!, isMaster, sessionPortal, {
             name: res.name || '',
             employeeCode: res.employeeCode || res.employeeId || '',
+            isFranchiseMaster,
+            franchiseId: res.franchiseId,
+            franchiseName: res.franchiseName,
           });
-          const panel = resolveAdminPanel(returnPanel, isMaster, perms);
-          navigate(adminPanelPath(panel, isMaster, perms), { replace: true });
+          const panel = resolveAdminPanel(returnPanel, isMaster, perms, isFranchiseMaster);
+          navigate(adminPanelPath(panel, isMaster, perms, isFranchiseMaster), { replace: true });
         }
       })
       .finally(() => setCheckingSession(false));
@@ -109,24 +122,30 @@ export default function AdminLoginPage({ portal }: Props) {
       const res = await loginAdmin(email, password, portal);
       if (res.success) {
         const isMaster = !!res.isMaster;
-        const sessionPortal = portalFromAuth(isMaster, res.portal ?? portal);
+        const isFranchiseMaster = !!res.isFranchiseMaster && !isMaster;
+        const sessionPortal = portalFromAuth(isMaster || isFranchiseMaster, res.portal ?? portal);
         const perms = normalizeAdminPermissions(isMaster, res.permissions);
         persistAdminSession(res.id!, isMaster, sessionPortal, {
           name: res.name || '',
           employeeCode: res.employeeId || '',
+          isFranchiseMaster,
+          franchiseId: res.franchiseId,
+          franchiseName: res.franchiseName,
         });
         const auth = await checkAuth();
         if (auth.csrfToken) setCsrfToken(auth.csrfToken);
-        // Prefer fresh checkAuth identity if present
         if (auth.authenticated && auth.type === 'admin') {
           persistAdminSession(res.id!, isMaster, sessionPortal, {
             name: auth.name || res.name || '',
             employeeCode: auth.employeeCode || auth.employeeId || res.employeeId || '',
+            isFranchiseMaster: !!auth.isFranchiseMaster && !isMaster,
+            franchiseId: auth.franchiseId,
+            franchiseName: auth.franchiseName,
           });
         }
         showToast(copy.toast, 'success');
-        const panel = resolveAdminPanel(returnPanel, isMaster, perms);
-        navigate(adminPanelPath(panel, isMaster, perms));
+        const panel = resolveAdminPanel(returnPanel, isMaster, perms, isFranchiseMaster);
+        navigate(adminPanelPath(panel, isMaster, perms, isFranchiseMaster));
       } else {
         showToast(res.error || 'Login failed', 'error');
       }

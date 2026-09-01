@@ -33,6 +33,11 @@ type Props = {
   onTransferOrder?: (orderId: string, employeeCode: string) => void | Promise<unknown>;
   onSavePaymentRef?: (orderId: string, transactionId: string) => void | Promise<unknown>;
   onAdjustTotal?: (orderId: string, totalAmount: number) => void | Promise<unknown>;
+  /** Platform master: show franchise column + filter */
+  showFranchiseColumn?: boolean;
+  franchiseFilter?: string;
+  onFranchiseFilterChange?: (value: string) => void;
+  franchiseOptions?: Array<{ id: string; name: string }>;
 };
 
 function isSoftDeleted(o: Order) {
@@ -56,6 +61,10 @@ export default function AdminOrdersSection({
   onTransferOrder,
   onSavePaymentRef,
   onAdjustTotal,
+  showFranchiseColumn,
+  franchiseFilter,
+  onFranchiseFilterChange,
+  franchiseOptions = [],
 }: Props) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(verifyMode ? 'pending' : 'all');
@@ -217,6 +226,19 @@ export default function AdminOrdersSection({
             ))}
           </select>
         )}
+        {showFranchiseColumn && onFranchiseFilterChange && (
+          <select
+            className="report-filter-input"
+            value={franchiseFilter || 'all'}
+            onChange={(e) => onFranchiseFilterChange(e.target.value)}
+          >
+            <option value="all">All franchises</option>
+            <option value="direct">Direct / Platform</option>
+            {franchiseOptions.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        )}
         <input type="date" className="report-filter-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
         <input type="date" className="report-filter-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
       </div>
@@ -239,6 +261,7 @@ export default function AdminOrdersSection({
               <tr>
                 <th>Order ID</th>
                 <th>Date / Time</th>
+                {showFranchiseColumn && <th>Franchise</th>}
                 <th>User Code</th>
                 <th>Buyer</th>
                 <th>Share</th>
@@ -268,6 +291,11 @@ export default function AdminOrdersSection({
                       </div>
                     </td>
                     <td className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</td>
+                    {showFranchiseColumn && (
+                      <td className="admin-orders-col-franchise" title={o.franchiseName || 'Direct / Platform'}>
+                        {o.franchiseName || 'Direct / Platform'}
+                      </td>
+                    )}
                     <td className="admin-orders-col-code">{displayUserCode(o.employeeCode)}</td>
                     <td className="admin-orders-col-buyer">
                       <div className="admin-orders-buyer-name">{formatPersonName(o.buyerName)}</div>

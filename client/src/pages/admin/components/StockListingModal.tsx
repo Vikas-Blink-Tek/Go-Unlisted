@@ -336,19 +336,24 @@ export default function StockListingModal({
               <div className="slm-card slm-card--highlight" style={{ marginTop: '1.5rem' }}>
                 <div className="slm-card-title">Bulk Discounts</div>
                 <div style={{ marginBottom: '1rem', fontSize: '0.9rem', color: 'var(--muted)' }}>
-                  Set discounted prices for buyers purchasing large quantities.
+                  Set bulk rates below the sell price ({preIpo > 0 ? `₹${preIpo.toLocaleString('en-IN')}` : 'set sell price first'}).
+                  Buyers see regular vs bulk price comparison on the website.
                 </div>
-                
+
                 {form.discountTiers.length > 0 && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
                     <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Min Quantity</div>
-                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Rate / Share (₹)</div>
-                    <div></div>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Bulk rate / share (₹)</div>
+                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>Buyer saves</div>
+                    <div />
                   </div>
                 )}
-                
-                {form.discountTiers.map((tier, idx) => (
-                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem' }}>
+
+                {form.discountTiers.map((tier, idx) => {
+                  const save = preIpo > 0 && tier.price > 0 ? preIpo - tier.price : 0;
+                  const savePct = preIpo > 0 && save > 0 ? Math.round((save / preIpo) * 100) : 0;
+                  return (
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
                     <input
                       type="number"
                       className="slm-input"
@@ -371,6 +376,9 @@ export default function StockListingModal({
                         set({ discountTiers: newTiers });
                       }}
                     />
+                    <div style={{ fontSize: '0.82rem', fontWeight: 600, color: save > 0 ? 'var(--green, #16a34a)' : 'var(--muted)' }}>
+                      {save > 0 ? `₹${save.toLocaleString('en-IN')} (${savePct}%)` : tier.price > 0 && preIpo > 0 ? 'No discount' : '—'}
+                    </div>
                     <button
                       type="button"
                       className="btn btn-outline"
@@ -385,7 +393,24 @@ export default function StockListingModal({
                       ×
                     </button>
                   </div>
-                ))}
+                  );
+                })}
+
+                {form.discountTiers.length > 0 && preIpo > 0 && (() => {
+                  const prices = form.discountTiers.map((t) => t.price).filter((p) => p > 0);
+                  if (!prices.length) return null;
+                  const best = Math.min(...prices);
+                  const pct = best < preIpo ? Math.round(((preIpo - best) / preIpo) * 100) : 0;
+                  return (
+                    <div className="slm-bulk-preview">
+                      <strong>Website preview:</strong>{' '}
+                      Regular <span>₹{preIpo.toLocaleString('en-IN')}</span>
+                      {' → '}
+                      Bulk from <span>₹{best.toLocaleString('en-IN')}</span>
+                      {pct > 0 ? ` (save up to ${pct}%)` : ''}
+                    </div>
+                  );
+                })()}
                 
                 <button
                   type="button"

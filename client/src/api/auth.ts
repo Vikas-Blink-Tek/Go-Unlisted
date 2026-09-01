@@ -14,6 +14,9 @@ export function loginAdmin(email: string, password: string, portal: 'master' | '
     success: boolean;
     id?: string;
     isMaster?: boolean;
+    isFranchiseMaster?: boolean;
+    franchiseId?: string;
+    franchiseName?: string;
     portal?: 'master' | 'staff';
     name?: string;
     employeeId?: string;
@@ -32,6 +35,9 @@ export function checkAuth() {
     type?: 'admin' | 'user';
     id?: string;
     isMaster?: boolean;
+    isFranchiseMaster?: boolean;
+    franchiseId?: string;
+    franchiseName?: string;
     portal?: 'master' | 'staff';
     name?: string;
     employeeId?: string;

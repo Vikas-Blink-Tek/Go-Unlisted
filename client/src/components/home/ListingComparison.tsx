@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useMemo, useRef } from 'react';
 import CompanyLogo from '../shares/CompanyLogo';
 import { formatCurrency } from '../../utils/format';
@@ -53,7 +54,12 @@ export default function ListingComparison({ shares }: ListingComparisonProps) {
           </button>
           <div className="listing-compare-track" ref={trackRef}>
             {items.map(({ share, invest, list, gainPct, multiplier }) => (
-              <article key={share.id} className="listing-compare-card">
+              <Link
+                key={share.id}
+                to="/shares"
+                className="listing-compare-card listing-compare-card--link"
+                aria-label={`Browse live listings — ${share.name} track record`}
+              >
                 <div className="listing-compare-head">
                   <CompanyLogo share={share} className="listing-compare-logo" />
                   <div>
@@ -73,7 +79,7 @@ export default function ListingComparison({ shares }: ListingComparisonProps) {
                   {gainPct >= 0 ? '+' : ''}
                   {gainPct.toFixed(0)}% · {multiplier.toFixed(1)}x
                 </div>
-              </article>
+              </Link>
             ))}
           </div>
           <button type="button" className="listing-compare-nav next" onClick={() => scrollBy(1)} aria-label="Next">

@@ -99,6 +99,8 @@ export interface Order {
   opsNote?: string;
   orderSource?: string;
   employeeCode?: string;
+  franchiseId?: string;
+  franchiseName?: string;
   date?: string;
   createdAt?: string;
   created_at?: string;

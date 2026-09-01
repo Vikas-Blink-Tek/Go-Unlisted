@@ -4,7 +4,7 @@ import { getInventoryBadge, isShareUnavailable } from '../../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
 import ShareSparkline from './ShareSparkline';
 import CompanyLogo from './CompanyLogo';
-import BulkDiscountCallout from './BulkDiscountCallout';
+import SharePriceCompare from './SharePriceCompare';
 import { getBulkPricingSummary } from '../../utils/bulkPricing';
 import type { Share } from '../../types';
 
@@ -58,25 +58,33 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
         {badge && <span className={`inventory-badge inventory-${badge.toLowerCase().replace(/\s+/g, '-')}`}>{badge}</span>}
       </div>
 
-      {bulk && <BulkDiscountCallout share={share} variant="card" />}
-
       <BlurredRatesLock className="share-card-rates">
-        <div className="share-price-row">
-          <div>
-            <div className="share-price">{formatCurrency(share.price)}</div>
-            <div className="share-price-sub">per share</div>
-          </div>
-          {share.growth ? (
-            <div className={`share-change ${share.changePositive ? 'pos' : 'neg'}`}>
-              {changeSign} {share.growth}
+        {bulk ? (
+          <SharePriceCompare share={share} variant="card" />
+        ) : (
+          <div className="share-price-row">
+            <div>
+              <div className="share-price">{formatCurrency(share.price)}</div>
+              <div className="share-price-sub">per share</div>
             </div>
-          ) : null}
-        </div>
+            {share.growth ? (
+              <div className={`share-change ${share.changePositive ? 'pos' : 'neg'}`}>
+                {changeSign} {share.growth}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         <div className="share-meta">
           <span>Min: {share.minQty} shares</span>
           <span>Min Investment: {formatCurrency(share.price * share.minQty)}</span>
         </div>
+
+        {share.growth && bulk ? (
+          <div className={`share-change share-change--below ${share.changePositive ? 'pos' : 'neg'}`}>
+            {changeSign} {share.growth}
+          </div>
+        ) : null}
 
         {sparkline.length > 0 ? (
           <div className="chart-mini">
