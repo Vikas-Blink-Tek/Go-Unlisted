@@ -1,6 +1,8 @@
 import { Link, Outlet, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { checkAuth, logout } from '../../api/auth';
+import { getUsers, mapApiUser } from '../../api/admin';
 import {
   AdminPanelProvider,
   useAdminPanel,
@@ -21,11 +23,20 @@ function AdminShell() {
     allowedPanels,
     adminName,
     employeeCode,
+    can,
   } = useAdminPanel();
   const navigate = useNavigate();
   const current = allowedPanels.find((p) => p.id === activePanel);
   const groups = [...new Set(allowedPanels.map((p) => p.group))];
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const usersQuery = useQuery({
+    queryKey: ['admin-users'],
+    queryFn: async () => (await getUsers()).map(mapApiUser),
+    enabled: can('users') || can('dashboard'),
+    refetchInterval: 60_000,
+  });
+  const pendingKycCount = (usersQuery.data || []).filter((u) => u.kycStatus === 'Under Review').length;
 
   const handleLogout = async () => {
     const portal = readAdminPortal();
@@ -71,6 +82,11 @@ function AdminShell() {
                 >
                   <span className="sidebar-link-icon" aria-hidden>{adminNavIcon(item.id)}</span>
                   <span className="sidebar-link-label">{item.label}</span>
+                  {item.id === 'users' && pendingKycCount > 0 && (
+                    <span className="sidebar-nav-badge" aria-label={`${pendingKycCount} KYC pending`}>
+                      {pendingKycCount > 99 ? '99+' : pendingKycCount}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

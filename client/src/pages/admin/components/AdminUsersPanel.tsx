@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { adminUploadKycDematProof, saveUser, transferUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { useAdminPanel } from '../../../context/AdminPanelContext';
@@ -46,6 +46,18 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const [search, setSearch] = useState('');
   const [kycFilter, setKycFilter] = useState('all');
   const [detail, setDetail] = useState<User | null>(null);
+
+  useEffect(() => {
+    try {
+      const preset = sessionStorage.getItem('gu_kyc_filter');
+      if (preset === 'review' || preset === 'verified' || preset === 'rejected' || preset === 'not' || preset === 'all') {
+        setKycFilter(preset);
+        sessionStorage.removeItem('gu_kyc_filter');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [transferTarget, setTransferTarget] = useState<User | null>(null);
   const [transferCode, setTransferCode] = useState('');
   const [orderScope, setOrderScope] = useState<OrderTransferScope>('all');
@@ -72,6 +84,11 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
     }
     return list.sort((a, b) => a.code.localeCompare(b.code));
   }, [employees]);
+  const pendingKycCount = useMemo(
+    () => users.filter((u) => u.kycStatus === 'Under Review').length,
+    [users],
+  );
+
   const filtered = useMemo(() => {
     return users.filter((u) => {
       if (kycFilter === 'review' && u.kycStatus !== 'Under Review') return false;
@@ -223,8 +240,20 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
         compact
         title="Users & KYC"
         subtitle="Check KYC details, edit if needed, then approve or reject"
-        badge={`${users.length} users`}
+        badge={pendingKycCount > 0 ? `${pendingKycCount} pending approval` : `${users.length} users`}
       />
+
+      {pendingKycCount > 0 && kycFilter !== 'review' && (
+        <div className="dashboard-kyc-alert" role="status" style={{ marginBottom: '1rem' }}>
+          <div className="dashboard-kyc-alert-text">
+            <strong>{pendingKycCount} KYC awaiting approval</strong>
+            <span>Filter to Under Review to approve submitted details.</span>
+          </div>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setKycFilter('review')}>
+            Show pending
+          </button>
+        </div>
+      )}
 
       <div className="stock-list-toolbar">
         <input
@@ -239,7 +268,7 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
         <select className="report-filter-input" value={kycFilter} onChange={(e) => setKycFilter(e.target.value)}>
           <option value="all">All KYC statuses</option>
           <option value="not">Not Submitted</option>
-          <option value="review">Under Review</option>
+          <option value="review">Under Review{pendingKycCount > 0 ? ` (${pendingKycCount})` : ''}</option>
           <option value="verified">Verified</option>
           <option value="rejected">Rejected</option>
         </select>

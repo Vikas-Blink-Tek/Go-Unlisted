@@ -128,6 +128,8 @@ export default function AdminDashboard() {
     const totalOrderValue = scopedOrders.reduce((s, o) => s + (o.totalPaid || 0), 0);
     const scopedUsers = users.filter((u) => dateInPeriod(u.createdAt, dashPeriod));
     const scopedInitiated = initiated.filter((i) => dateInPeriod(i.initiatedAt, dashPeriod));
+    // Approval queue is always all-time — do not hide older pending KYCs when period filter changes
+    const pendingKyc = users.filter((u) => u.kycStatus === 'Under Review');
     const recentSignups = [...scopedUsers]
       .sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)))
       .slice(0, 5);
@@ -139,6 +141,7 @@ export default function AdminDashboard() {
       totalOrderValue,
       users: scopedUsers,
       initiated: scopedInitiated,
+      pendingKyc,
       recentSignups,
     };
   }, [orders, users, initiated, dashPeriod]);
@@ -147,7 +150,17 @@ export default function AdminDashboard() {
   const confirmedOrders = dashStats.confirmedOrders;
   const confirmedRevenue = dashStats.confirmedRevenue;
   const totalOrderValue = dashStats.totalOrderValue;
+  const pendingKyc = dashStats.pendingKyc;
   const recentSignups = dashStats.recentSignups;
+
+  const openPendingKyc = () => {
+    try {
+      sessionStorage.setItem('gu_kyc_filter', 'review');
+    } catch {
+      /* ignore */
+    }
+    setActivePanel('users');
+  };
 
   const statusMutation = useMutation({
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) => updateOrderStatus(orderId, status),
@@ -395,6 +408,22 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {pendingKyc.length > 0 && (
+            <div className="dashboard-kyc-alert" role="status">
+              <div className="dashboard-kyc-alert-text">
+                <strong>{pendingKyc.length} KYC awaiting approval</strong>
+                <span>
+                  {pendingKyc.length === 1
+                    ? `${pendingKyc[0].name || 'An investor'} submitted details — review & approve.`
+                    : 'Investors submitted KYC details — review & approve in Users & KYC.'}
+                </span>
+              </div>
+              <button type="button" className="btn btn-primary btn-sm" onClick={openPendingKyc}>
+                Review KYC
+              </button>
+            </div>
+          )}
+
           <div className="dashboard-summary-grid">
             <div className="dashboard-summary-card">
               <h3>At a glance</h3>
@@ -408,6 +437,12 @@ export default function AdminDashboard() {
                   <strong>{formatCurrency(pendingOrders.reduce((s, o) => s + (o.totalPaid || 0), 0))}</strong>
                 </div>
                 <div>
+                  <span>Pending KYC</span>
+                  <strong className={pendingKyc.length > 0 ? 'dashboard-stat-alert' : undefined}>
+                    {pendingKyc.length}
+                  </strong>
+                </div>
+                <div>
                   <span>Initiate</span>
                   <strong>{dashStats.initiated.length}</strong>
                 </div>
@@ -419,8 +454,12 @@ export default function AdminDashboard() {
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('orders')}>
                   All Orders
                 </button>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('users')}>
-                  KYC
+                <button
+                  type="button"
+                  className={`btn btn-sm ${pendingKyc.length > 0 ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={openPendingKyc}
+                >
+                  KYC{pendingKyc.length > 0 ? ` (${pendingKyc.length})` : ''}
                 </button>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActivePanel('signups')}>
                   User Signups
@@ -428,8 +467,17 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="dashboard-summary-card">
-              <h3>Recent signups</h3>
-              {!recentSignups.length ? (
+              <h3>{pendingKyc.length > 0 ? 'Pending KYC approvals' : 'Recent signups'}</h3>
+              {pendingKyc.length > 0 ? (
+                <ul className="dashboard-signup-list">
+                  {pendingKyc.slice(0, 5).map((u) => (
+                    <li key={u.id}>
+                      <strong>{u.name || 'Investor'}</strong>
+                      <span>{u.email || u.phone || 'Under Review'}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : !recentSignups.length ? (
                 <p className="dashboard-summary-note">
                   {dashPeriod === 'all' ? 'No users yet.' : `No signups in ${periodLabel(dashPeriod).toLowerCase()}.`}
                 </p>
@@ -442,6 +490,11 @@ export default function AdminDashboard() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {pendingKyc.length > 5 && (
+                <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: '0.5rem' }} onClick={openPendingKyc}>
+                  View all {pendingKyc.length} pending
+                </button>
               )}
             </div>
           </div>
