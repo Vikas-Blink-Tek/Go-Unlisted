@@ -6,7 +6,6 @@ import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, formatCurrency, invoiceChargesEnabled } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
-import { useToast } from '../context/ToastContext';
 import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
@@ -20,7 +19,6 @@ export default function ShareDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canViewRates = useCanViewShareRates();
-  const { showToast } = useToast();
   const [period, setPeriod] = useState<ChartPeriod>('3M');
 
   const share = shareId ? getShareById(shareId) : null;
@@ -42,11 +40,6 @@ export default function ShareDetailPage() {
     if (isShareUnavailable(share.inventoryStatus)) return;
     if (!user) {
       navigate('/login', { state: { from: `/shares/${share.id}` } });
-      return;
-    }
-    if (user.kycStatus !== 'Verified') {
-      showToast('KYC Verification is required to purchase stocks.', 'error');
-      navigate('/dashboard?tab=kyc');
       return;
     }
     navigate(`/checkout/${share.id}`);

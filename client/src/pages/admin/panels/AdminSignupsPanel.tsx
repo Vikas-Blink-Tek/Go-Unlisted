@@ -57,6 +57,15 @@ export default function AdminSignupsPanel() {
     }).length;
   }, [users]);
 
+  const thisMonthCount = useMemo(() => {
+    const now = new Date();
+    return users.filter((u) => {
+      if (!u.createdAt) return false;
+      const d = new Date(u.createdAt);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    }).length;
+  }, [users]);
+
   if (usersQuery.isLoading) {
     return <p style={{ color: 'var(--muted)', padding: '2rem' }}>Loading signups...</p>;
   }
@@ -83,6 +92,10 @@ export default function AdminSignupsPanel() {
         <div className="stat-card" style={{ flex: '1 1 180px', minWidth: '160px' }}>
           <div className="stat-value">{thisWeekCount}</div>
           <div className="stat-label">This Week (7 days)</div>
+        </div>
+        <div className="stat-card" style={{ flex: '1 1 180px', minWidth: '160px' }}>
+          <div className="stat-value">{thisMonthCount}</div>
+          <div className="stat-label">This Month</div>
         </div>
         <div className="stat-card" style={{ flex: '1 1 180px', minWidth: '160px' }}>
           <div className="stat-value">

@@ -3758,7 +3758,7 @@ switch ($action) {
             }
         }
 
-        // Online security: login + KYC already required below; also rate-limit spam "I've paid" claims
+        // Online security: login required below; also rate-limit spam "I've paid" claims
         if (!$isManualAdmin && $isUser) {
             $uid = (string) $_SESSION['user_id'];
             $hourStmt = $conn->prepare(
@@ -3799,18 +3799,9 @@ switch ($action) {
             $custom_charges_json = '';
         }
 
-        // Online checkout requires a logged-in user and KYC verification
+        // Online checkout requires login; KYC can be completed later (ops verifies before demat transfer)
         if ($isUser) {
             $user_id = $_SESSION['user_id'];
-            $kycStmt = $conn->prepare("SELECT kyc_status FROM users WHERE id = ? LIMIT 1");
-            $kycStmt->bind_param("s", $user_id);
-            $kycStmt->execute();
-            $kycRow = $kycStmt->get_result()->fetch_assoc();
-            if (!$kycRow || strcasecmp(trim((string)$kycRow['kyc_status']), 'Verified') !== 0) {
-                http_response_code(403);
-                sendResponse(["error" => "KYC Verification is required to place an order"]);
-                break;
-            }
         } elseif ($isAdmin) {
             requirePermission('manual-order');
             $linkedUserId = trim((string) ($data['userId'] ?? $data['linkedUserId'] ?? ''));

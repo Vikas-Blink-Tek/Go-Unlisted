@@ -73,13 +73,6 @@ export default function CheckoutPage() {
     if (share?.minQty) setQty(share.minQty);
   }, [share?.id, share?.minQty]);
 
-  useEffect(() => {
-    if (!loading && user && (user.kycStatus || '').trim().toLowerCase() !== 'verified') {
-      showToast('KYC Verification is required to proceed with checkout.', 'error');
-      navigate('/dashboard?tab=kyc', { replace: true });
-    }
-  }, [user, loading, navigate, showToast]);
-
   const requireLoginForPayment = () => {
     const returnTo = `/checkout/${share?.id || shareId || ''}`;
     showToast('Login or sign up to continue payment', 'info');
@@ -491,6 +484,20 @@ export default function CheckoutPage() {
                 <button type="button" className="btn btn-outline btn-full" onClick={requireLoginForPayment}>
                   Login / Sign up to continue
                 </button>
+              </div>
+            )}
+
+            {user && (user.kycStatus || '').trim().toLowerCase() !== 'verified' && (
+              <div className="checkout-login-required">
+                <p>
+                  You can pay now. Complete KYC in your dashboard before share transfer
+                  {(user.kycStatus || '').trim().toLowerCase() === 'under review'
+                    ? ' — your details are already under review.'
+                    : '.'}
+                </p>
+                <Link to="/dashboard?tab=kyc" className="btn btn-ghost btn-full">
+                  Complete KYC later
+                </Link>
               </div>
             )}
 

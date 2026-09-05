@@ -60,7 +60,7 @@ export default function WelcomeAuthModal({ pathname }: Props) {
         <img src="/logo.png" alt="" className="welcome-auth-logo" />
         <h2 id="welcome-auth-title">Welcome to GO UNLISTED</h2>
         <p className="welcome-auth-text">
-          Login or create an account to track orders, complete KYC, and buy Pre-IPO shares.
+          Login or create an account to buy Pre-IPO shares and track orders. KYC can be completed anytime in your dashboard.
           You can browse listings without signing in.
         </p>
         <div className="welcome-auth-actions">
