@@ -398,10 +398,7 @@ function getPostData() {
 // AUTHENTICATION & SECURITY HELPERS
 // -----------------------------------------
 function getClientIP() {
-    if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
-        $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
-        return trim($ips[0]);
-    }
+    // Do not trust X-Forwarded-For — clients can spoof it and bypass IP rate limits.
     return $_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN';
 }
 
@@ -1406,6 +1403,13 @@ switch ($action) {
             break;
         }
 
+        if (checkIpRateLimit($conn, 'otp_ip_attempts', 10, 60)
+            || checkRateLimit($conn, 'otp_attempts', 'identifier', $email, 3, 60)) {
+            http_response_code(429);
+            sendResponse(['error' => 'Too many OTP requests. Please try again later.']);
+            break;
+        }
+
         $dupEmail = $conn->prepare('SELECT id FROM users WHERE email = ? LIMIT 1');
         $dupEmail->bind_param('s', $email);
         $dupEmail->execute();
@@ -1414,6 +1418,9 @@ switch ($action) {
             sendResponse(['error' => 'This email is already registered. Try logging in instead.']);
             break;
         }
+
+        recordIpAttempt($conn, 'otp_ip_attempts');
+        recordAttempt($conn, 'otp_attempts', 'identifier', $email);
 
         $otpResult = issueOtpForEmail($conn, $email);
         if (($otpResult['success'] ?? true) === false) {
@@ -1429,6 +1436,12 @@ switch ($action) {
         if (empty($loginId)) {
             http_response_code(400);
             sendResponse(['error' => 'Email or phone number is required']);
+            break;
+        }
+
+        if (checkIpRateLimit($conn, 'otp_ip_attempts', 10, 60)) {
+            http_response_code(429);
+            sendResponse(['error' => 'Too many OTP requests. Please try again later.']);
             break;
         }
 
@@ -1448,16 +1461,24 @@ switch ($action) {
                 ]);
                 break;
             }
+            recordIpAttempt($conn, 'otp_ip_attempts');
             sleep(1);
             sendResponse([
                 'success' => false,
                 'email_sent' => false,
-                'error' => 'No investor account found with this email or phone. Check spelling or register first.',
+                'error' => 'If this email or phone is registered, try again with the exact details on your account.',
             ]);
             break;
         }
 
         $email = strtolower(trim((string) $userRow['email']));
+        if (checkRateLimit($conn, 'otp_attempts', 'identifier', $email, 3, 60)) {
+            http_response_code(429);
+            sendResponse(['error' => 'Too many OTP requests. Please try again later.']);
+            break;
+        }
+        recordIpAttempt($conn, 'otp_ip_attempts');
+        recordAttempt($conn, 'otp_attempts', 'identifier', $email);
 
         $response = issueOtpForEmail($conn, $email);
         $response['email'] = $email;
@@ -1593,6 +1614,14 @@ switch ($action) {
             break;
         }
 
+        $verifyKey = 'verify:' . $email;
+        if (checkRateLimit($conn, 'otp_attempts', 'identifier', $verifyKey, 8, 15)
+            || checkIpRateLimit($conn, 'otp_ip_attempts', 30, 15)) {
+            http_response_code(429);
+            sendResponse(['success' => false, 'error' => 'Too many OTP attempts. Please try again later.']);
+            break;
+        }
+
         $stmt = $conn->prepare("SELECT id, otp_code FROM otps WHERE identifier = ? AND expires_at > NOW() ORDER BY id DESC LIMIT 1");
         $stmt->bind_param("s", $email);
         $stmt->execute();
@@ -1613,6 +1642,8 @@ switch ($action) {
                 break;
             }
         }
+        recordAttempt($conn, 'otp_attempts', 'identifier', $verifyKey);
+        recordIpAttempt($conn, 'otp_ip_attempts');
         http_response_code(400);
         sendResponse(["success" => false, "error" => "Invalid or expired OTP"]);
         break;
@@ -1701,6 +1732,18 @@ switch ($action) {
         $loginId = trim($data['email'] ?? $data['loginId'] ?? '');
         $password = $data['password'] ?? '';
 
+        if (checkIpRateLimit($conn, 'login_attempts', 10, 15)) {
+            http_response_code(429);
+            sendResponse(['error' => 'Too many login attempts. Please try again later.']);
+            break;
+        }
+        $loginKey = strtolower($loginId);
+        if ($loginKey !== '' && checkRateLimit($conn, 'otp_attempts', 'identifier', 'login:' . $loginKey, 8, 15)) {
+            http_response_code(429);
+            sendResponse(['error' => 'Too many login attempts for this account. Please try again later.']);
+            break;
+        }
+
         $userRow = resolveUserByLoginId($conn, $loginId);
         if ($userRow) {
             $uid = $userRow['id'];
@@ -1722,6 +1765,12 @@ switch ($action) {
                 'user' => mapUserRow($row),
             ]);
         }
+        recordIpAttempt($conn, 'login_attempts');
+        if ($loginKey !== '') {
+            recordAttempt($conn, 'otp_attempts', 'identifier', 'login:' . $loginKey);
+        }
+        // Constant-ish delay to slow online MPIN guessing
+        usleep(250000);
         http_response_code(401);
         sendResponse(['error' => 'Invalid email/phone or MPIN']);
         break;
@@ -2345,11 +2394,10 @@ switch ($action) {
                 $referral_code = $empCode;
             }
         }
+        $isAdminSave = isset($_SESSION['admin_id']);
+        $allowedKyc = ['Not Submitted', 'Under Review', 'Verified', 'Rejected'];
         $kyc_status = htmlspecialchars($data['kycStatus'] ?? 'Not Submitted');
         $kyc_reject_reason = htmlspecialchars($data['kycRejectReason'] ?? $data['kyc_reject_reason'] ?? '');
-        if ($kyc_status === 'Verified') {
-            $kyc_reject_reason = '';
-        }
         $kyc_pan = htmlspecialchars($data['kycPan'] ?? '');
         $kyc_demat = htmlspecialchars($data['kycDemat'] ?? '');
         $bank_account = htmlspecialchars($data['bankAccount'] ?? $data['bank_account'] ?? '');
@@ -2362,7 +2410,7 @@ switch ($action) {
             $kyc_demat_proof = '';
         }
         if ($exists) {
-            $prev = $conn->prepare('SELECT kyc_demat_proof, bank_name FROM users WHERE id = ? LIMIT 1');
+            $prev = $conn->prepare('SELECT kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc FROM users WHERE id = ? LIMIT 1');
             $prev->bind_param('s', $id);
             $prev->execute();
             $prevRow = $prev->get_result()->fetch_assoc() ?: [];
@@ -2371,6 +2419,46 @@ switch ($action) {
             }
             if ($bank_name === '' && array_key_exists('bankName', $data) === false && array_key_exists('bank_name', $data) === false) {
                 $bank_name = htmlspecialchars(trim((string) ($prevRow['bank_name'] ?? '')));
+            }
+        } else {
+            $prevRow = [];
+        }
+
+        // SEC: Only admin may set KYC status / PII via saveUser. Investors use updateKyc → Under Review.
+        if (!$isAdminSave) {
+            if (!$exists) {
+                $kyc_status = 'Not Submitted';
+                $kyc_reject_reason = '';
+                $kyc_pan = '';
+                $kyc_demat = '';
+                $bank_account = '';
+                $bank_name = '';
+                $ifsc = '';
+                $kyc_demat_proof = '';
+            } else {
+                $kyc_status = htmlspecialchars((string) ($prevRow['kyc_status'] ?? 'Not Submitted'));
+                $kyc_reject_reason = htmlspecialchars((string) ($prevRow['kyc_reject_reason'] ?? ''));
+                $kyc_pan = htmlspecialchars((string) ($prevRow['kyc_pan'] ?? ''));
+                $kyc_demat = htmlspecialchars((string) ($prevRow['kyc_demat'] ?? ''));
+                $bank_account = htmlspecialchars((string) ($prevRow['bank_account'] ?? ''));
+                if ($bank_name === '') {
+                    $bank_name = htmlspecialchars(trim((string) ($prevRow['bank_name'] ?? '')));
+                }
+                $ifsc = htmlspecialchars((string) ($prevRow['ifsc'] ?? ''));
+                $kyc_demat_proof = (string) ($prevRow['kyc_demat_proof'] ?? $kyc_demat_proof);
+                // Block MPIN change via saveUser — use OTP reset flow instead
+                if (!empty($data['password'])) {
+                    http_response_code(403);
+                    sendResponse(['error' => 'Use Forgot MPIN to change your MPIN']);
+                    break;
+                }
+            }
+        } else {
+            if (!in_array($kyc_status, $allowedKyc, true)) {
+                $kyc_status = (string) ($prevRow['kyc_status'] ?? 'Not Submitted');
+            }
+            if ($kyc_status === 'Verified') {
+                $kyc_reject_reason = '';
             }
         }
 
@@ -2865,85 +2953,39 @@ switch ($action) {
                 break;
             }
             $uid = (string) $_SESSION['user_id'];
-            $uStmt = $conn->prepare('SELECT email, phone, name FROM users WHERE id = ? LIMIT 1');
-            if (!$uStmt) {
-                http_response_code(500);
-                sendResponse(['error' => 'Could not load portfolio']);
-                break;
-            }
-            $uStmt->bind_param('s', $uid);
-            $uStmt->execute();
-            $uRow = $uStmt->get_result()->fetch_assoc() ?: [];
-            $email = strtolower(trim((string) ($uRow['email'] ?? '')));
-            $buyerName = trim((string) ($uRow['name'] ?? ''));
-            $buyerNameKey = preg_replace('/\s+/', '', strtolower($buyerName));
-            $phone10 = preg_replace('/\D/', '', (string) ($uRow['phone'] ?? ''));
-            if (strlen($phone10) > 10) {
-                $phone10 = substr($phone10, -10);
-            }
-            $phone8 = strlen($phone10) >= 8 ? substr($phone10, -8) : '';
 
-            // Load recent orders then match in PHP — avoids brittle SQL (deleted_at / phone format)
+            // SEC: Portfolio is strictly scoped to session user_id (no phone/name fuzzy claim).
             $hasDeletedCol = false;
             $colChk = $conn->query("SHOW COLUMNS FROM orders LIKE 'deleted_at'");
             if ($colChk && $colChk->num_rows > 0) {
                 $hasDeletedCol = true;
             }
             $sql = $hasDeletedCol
-                ? 'SELECT * FROM orders WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 500'
-                : 'SELECT * FROM orders ORDER BY created_at DESC LIMIT 500';
-            $resAll = $conn->query($sql);
+                ? 'SELECT * FROM orders WHERE user_id = ? AND deleted_at IS NULL ORDER BY created_at DESC'
+                : 'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC';
+            $buyerStmt = $conn->prepare($sql);
+            if (!$buyerStmt) {
+                error_log('getOrders buyer prepare failed: ' . $conn->error);
+                http_response_code(500);
+                sendResponse(['error' => 'Could not load orders']);
+                break;
+            }
+            $buyerStmt->bind_param('s', $uid);
+            if (!$buyerStmt->execute()) {
+                error_log('getOrders buyer execute failed: ' . $buyerStmt->error);
+                http_response_code(500);
+                sendResponse(['error' => 'Could not load orders']);
+                break;
+            }
+            $resAll = $buyerStmt->get_result();
             if (!$resAll) {
-                error_log('getOrders buyer query failed: ' . $conn->error);
                 http_response_code(500);
                 sendResponse(['error' => 'Could not load orders']);
                 break;
             }
 
-            $matched = [];
-            while ($row = $resAll->fetch_assoc()) {
-                if ($hasDeletedCol && !empty($row['deleted_at'])) {
-                    continue;
-                }
-                $rowUid = (string) ($row['user_id'] ?? '');
-                $rowPhone = preg_replace('/\D/', '', (string) ($row['buyer_phone'] ?? ''));
-                if (strlen($rowPhone) > 10) {
-                    $rowPhone = substr($rowPhone, -10);
-                }
-                $rowEmail = strtolower(trim((string) ($row['buyer_email'] ?? '')));
-                $rowNameKey = preg_replace('/\s+/', '', strtolower(trim((string) ($row['buyer_name'] ?? ''))));
-
-                $isMine = false;
-                if ($rowUid !== '' && $rowUid === $uid) {
-                    $isMine = true;
-                } elseif ($phone10 !== '' && $rowPhone !== '' && ($rowPhone === $phone10 || substr($rowPhone, -8) === $phone8)) {
-                    $isMine = true;
-                } elseif ($email !== '' && $rowEmail !== '' && $rowEmail === $email) {
-                    $isMine = true;
-                } elseif ($buyerNameKey !== '' && strlen($buyerNameKey) >= 6 && $rowNameKey === $buyerNameKey) {
-                    $isMine = true;
-                }
-
-                if (!$isMine) {
-                    continue;
-                }
-
-                // Permanently attach to this account for next loads
-                if ($rowUid === '' || str_starts_with($rowUid, 'admin:') || $rowUid !== $uid) {
-                    $oid = (string) $row['order_id'];
-                    $link = $conn->prepare('UPDATE orders SET user_id = ? WHERE order_id = ?');
-                    if ($link) {
-                        $link->bind_param('ss', $uid, $oid);
-                        $link->execute();
-                    }
-                    $row['user_id'] = $uid;
-                }
-                $matched[] = $row;
-            }
-
-            // Build response from matched rows (reuse loop below via fake result set)
             $data = [];
-            foreach ($matched as $row) {
+            while ($row = $resAll->fetch_assoc()) {
                 $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
                 $employeeCode = canonicalizeEmployeeUserCode($employeeCode);
                 if (!isRealEmployeeUserCode($employeeCode)) {
@@ -3014,19 +3056,6 @@ switch ($action) {
             // Buyers never see soft-deleted; admins get deletedAt for Undo UI
             if (!isset($_SESSION['admin_id']) && !empty($row['deleted_at'])) {
                 continue;
-            }
-            // Auto-heal: if buyer order is still tagged admin:/blank, attach to this account
-            if (!isset($_SESSION['admin_id']) && isset($uid)) {
-                $rowUid = (string) ($row['user_id'] ?? '');
-                if ($rowUid === '' || str_starts_with($rowUid, 'admin:')) {
-                    $oid = (string) $row['order_id'];
-                    $heal = $conn->prepare('UPDATE orders SET user_id = ? WHERE order_id = ? AND (user_id IS NULL OR user_id = \'\' OR user_id LIKE \'admin:%\') AND deleted_at IS NULL');
-                    if ($heal) {
-                        $heal->bind_param('ss', $uid, $oid);
-                        $heal->execute();
-                    }
-                    $row['user_id'] = $uid;
-                }
             }
             $employeeCode = strtoupper(trim((string) ($row['employee_code'] ?? '')));
             $employeeCode = canonicalizeEmployeeUserCode($employeeCode);
@@ -3630,6 +3659,29 @@ switch ($action) {
         $buyer_phone = preg_replace('/\D/', '', $data['buyerPhone'] ?? '');
         if (strlen($buyer_phone) > 10) {
             $buyer_phone = substr($buyer_phone, -10);
+        }
+        // Prefer authenticated investor profile over client-supplied identity fields
+        if (!empty($_SESSION['user_id']) && empty($_SESSION['admin_id'])) {
+            $sessUid = (string) $_SESSION['user_id'];
+            $sessUser = $conn->prepare('SELECT name, email, phone FROM users WHERE id = ? LIMIT 1');
+            if ($sessUser) {
+                $sessUser->bind_param('s', $sessUid);
+                $sessUser->execute();
+                $su = $sessUser->get_result()->fetch_assoc();
+                if ($su) {
+                    if ($buyer_name === '' || strcasecmp($buyer_name, 'Guest') === 0) {
+                        $buyer_name = trim((string) ($su['name'] ?? ''));
+                    }
+                    $buyer_email = strtolower(trim((string) ($su['email'] ?? '')));
+                    $phoneFromProfile = preg_replace('/\D/', '', (string) ($su['phone'] ?? ''));
+                    if (strlen($phoneFromProfile) > 10) {
+                        $phoneFromProfile = substr($phoneFromProfile, -10);
+                    }
+                    if ($phoneFromProfile !== '') {
+                        $buyer_phone = $phoneFromProfile;
+                    }
+                }
+            }
         }
         $share_id = trim($data['shareId'] ?? '');
         $share_name = trim($data['companyName'] ?? $data['shareName'] ?? '');
@@ -4256,11 +4308,12 @@ switch ($action) {
         if ($adminOk) {
             $includeInternal = adminCan('prices') || adminCan('inventory');
         }
-        // Rates included for everyone — guest UI blurs until login (avoids ₹0 looking fake).
+        // Product rule: rates only after investor login (or admin). Guest UI blur alone is not enough.
+        $includeRates = $adminOk || isset($_SESSION['user_id']);
         $res = $conn->query("SELECT * FROM shares WHERE is_active = 1 ORDER BY is_featured DESC, is_builtin DESC, name ASC");
         $shares = [];
         while ($row = $res->fetch_assoc()) {
-            $shares[] = mapShareRow($row, $includeInternal, true);
+            $shares[] = mapShareRow($row, $includeInternal, $includeRates);
         }
         sendResponse($shares);
         break;

@@ -35,7 +35,7 @@ export default function ForgotMpinModal({ onClose, onSuccess }: Props) {
       const res = await sendResetOtp(loginId.trim());
       if (!res.success) throw new Error(res.error || 'Failed to send OTP');
       if (!res.email) {
-        throw new Error(res.error || 'No account found with this email or phone.');
+        throw new Error(res.error || 'Could not start MPIN reset. Check your details and try again.');
       }
       if (res.email_sent === false && !res.dev_otp) {
         throw new Error(res.error || 'Could not deliver OTP email. Please try again in a minute or contact support.');
