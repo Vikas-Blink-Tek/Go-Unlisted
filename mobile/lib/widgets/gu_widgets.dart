@@ -130,9 +130,9 @@ class GuBrandMark extends StatelessWidget {
             RichText(
               text: TextSpan(
                 style: GoogleFonts.manrope(
-                  fontSize: compact ? 16 : 18,
+                  fontSize: compact ? 22 : 28,
                   fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
+                  letterSpacing: 0.2,
                 ),
                 children: const [
                   TextSpan(text: 'GO ', style: TextStyle(color: GuColors.lime)),
@@ -143,13 +143,20 @@ class GuBrandMark extends StatelessWidget {
             if (!compact)
               Text(
                 'Pre-IPO · Unlisted',
-                style: GoogleFonts.inter(fontSize: 11, color: GuColors.muted, fontWeight: FontWeight.w500),
+                style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted, fontWeight: FontWeight.w600),
               ),
           ],
         ),
       ],
     );
   }
+}
+
+String _getCardTag(String id, bool featured) {
+  if (featured) return 'Trending';
+  final h = id.hashCode;
+  if (h % 3 == 0) return 'Best Seller';
+  return 'active';
 }
 
 /// Full-width catalog row — scannable, thumb-friendly.
@@ -219,6 +226,11 @@ class ShareListTile extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                Text(
+                  _getCardTag(share.id, share.featured),
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFD87093)),
+                ),
+                const SizedBox(height: 6),
                 if (auth.canViewPrices)
                   Text(formatInr(share.price), style: GuTheme.price(context, size: 16))
                 else
@@ -272,18 +284,10 @@ class ShareCard extends StatelessWidget {
                     size: 44,
                   ),
                   const Spacer(),
-                  if (share.featured)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: GuColors.limeSoft,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        'Featured',
-                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: GuColors.limeDark),
-                      ),
-                    ),
+                  Text(
+                    _getCardTag(share.id, share.featured),
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFD87093)),
+                  ),
                 ],
               ),
               const SizedBox(height: 12),

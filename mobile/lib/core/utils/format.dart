@@ -14,3 +14,9 @@ String initials(String name) {
   if (parts.length == 1) return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
+
+final _numFmt = NumberFormat.decimalPattern('en_IN');
+
+String formatNumber(num value) {
+  return _numFmt.format(value);
+}

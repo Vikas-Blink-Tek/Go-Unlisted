@@ -101,7 +101,25 @@ class GuShare {
     this.highlights = const [],
     this.valuation,
     this.ipoTimeline,
-  });
+    this.week52High,
+    this.week52Low,
+    this.marketCap,
+    this.peRatio,
+    this.pbRatio,
+    this.debtEquity,
+    this.roe,
+    this.bookValue,
+    this.faceValue,
+    this.isin,
+    this.growth,
+    bool changePositive = true,
+    Map<String, List<double>> priceHistory = const {},
+    Map<String, List<String>> chartLabels = const {},
+    List<GuDiscountTier> discountTiers = const [],
+  })  : _changePositive = changePositive,
+        _priceHistory = priceHistory,
+        _chartLabels = chartLabels,
+        _discountTiers = discountTiers;
 
   final String id;
   final String name;
@@ -119,6 +137,29 @@ class GuShare {
   final List<String> highlights;
   final String? valuation;
   final String? ipoTimeline;
+  final String? week52High;
+  final String? week52Low;
+  final String? marketCap;
+  final String? peRatio;
+  final String? pbRatio;
+  final String? debtEquity;
+  final String? roe;
+  final String? bookValue;
+  final String? faceValue;
+  final String? isin;
+  final String? growth;
+  
+  final bool? _changePositive;
+  bool get changePositive => _changePositive ?? true;
+
+  final Map<String, List<double>>? _priceHistory;
+  Map<String, List<double>> get priceHistory => _priceHistory ?? const {};
+
+  final Map<String, List<String>>? _chartLabels;
+  Map<String, List<String>> get chartLabels => _chartLabels ?? const {};
+
+  final List<GuDiscountTier>? _discountTiers;
+  List<GuDiscountTier> get discountTiers => _discountTiers ?? const [];
 
   factory GuShare.fromJson(Map<String, dynamic> j) {
     final highlightsRaw = j['highlights'] ?? j['keyHighlights'];
@@ -152,12 +193,78 @@ class GuShare {
       highlights: highlights,
       valuation: (j['valuation'] ?? j['marketCap'])?.toString(),
       ipoTimeline: (j['ipoTimeline'] ?? j['ipo_timeline'])?.toString(),
+      week52High: j['week52High']?.toString(),
+      week52Low: j['week52Low']?.toString(),
+      marketCap: j['marketCap']?.toString(),
+      peRatio: j['peRatio']?.toString(),
+      pbRatio: j['pbRatio']?.toString(),
+      debtEquity: j['debtEquity']?.toString(),
+      roe: j['roe']?.toString(),
+      bookValue: j['bookValue']?.toString(),
+      faceValue: j['faceValue']?.toString(),
+      isin: j['isin']?.toString(),
+      growth: j['growth']?.toString(),
+      changePositive: j['changePositive'] ?? j['change_positive'] ?? true,
+      priceHistory: _parsePriceHistory(j['priceHistory'] ?? j['price_history']),
+      chartLabels: _parseChartLabels(j['chartLabels'] ?? j['chart_labels']),
+      discountTiers: _parseDiscountTiers(j['discountTiers'] ?? j['discount_tiers']),
     );
+  }
+
+  static Map<String, List<double>> _parsePriceHistory(dynamic raw) {
+    if (raw == null) return {};
+    final map = <String, List<double>>{};
+    if (raw is Map) {
+      for (final e in raw.entries) {
+        if (e.value is List) {
+          map[e.key.toString()] = (e.value as List).map((v) => _toDouble(v)).toList();
+        }
+      }
+    }
+    return map;
+  }
+
+  static Map<String, List<String>> _parseChartLabels(dynamic raw) {
+    if (raw == null) return {};
+    final map = <String, List<String>>{};
+    if (raw is Map) {
+      for (final e in raw.entries) {
+        if (e.value is List) {
+          map[e.key.toString()] = (e.value as List).map((v) => v.toString()).toList();
+        }
+      }
+    }
+    return map;
+  }
+
+  static List<GuDiscountTier> _parseDiscountTiers(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is List) {
+      return raw.map((e) => GuDiscountTier.fromJson(e as Map<String, dynamic>)).toList();
+    }
+    return [];
   }
 
   static double _toDouble(dynamic v) {
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '') ?? 0;
+  }
+}
+
+class GuDiscountTier {
+  const GuDiscountTier({
+    required this.minQty,
+    required this.price,
+  });
+
+  final int minQty;
+  final double price;
+
+  factory GuDiscountTier.fromJson(Map<String, dynamic> j) {
+    return GuDiscountTier(
+      minQty: int.tryParse((j['minQty'] ?? j['min_qty'] ?? 0).toString()) ?? 0,
+      price: GuShare._toDouble(j['price'] ?? 0),
+    );
   }
 }
 

@@ -345,18 +345,36 @@ function enrichOrderFranchiseFields(mysqli $conn, array $row): array {
 }
 
 function employeeOwnsOrderRow(mysqli $conn, array $orderRow): bool {
-    $code = currentEmployeeCode($conn);
-    if ($code === '') {
+    $code = canonicalizeEmployeeUserCode(currentEmployeeCode($conn));
+    if ($code === '' || $code === 'GU00') {
         return false;
     }
-    if (strtoupper(trim((string) ($orderRow['employee_code'] ?? ''))) === $code) {
+    $orderCode = canonicalizeEmployeeUserCode((string) ($orderRow['employee_code'] ?? ''));
+    if ($orderCode !== '' && $orderCode !== 'GU00' && $orderCode === $code) {
         return true;
     }
     $userId = (string) ($orderRow['user_id'] ?? '');
-    if ($userId !== '' && lookupEmployeeCodeForUser($conn, $userId) === $code) {
-        return true;
+    if ($userId !== '' && !str_starts_with($userId, 'admin:')) {
+        $fromUser = canonicalizeEmployeeUserCode(lookupEmployeeCodeForUser($conn, $userId));
+        if ($fromUser !== '' && $fromUser !== 'GU00' && $fromUser === $code) {
+            return true;
+        }
     }
-    if ($userId === 'admin:' . ($_SESSION['admin_id'] ?? '')) {
+    // Blank / GU00 on order — recover from buyer contact (same as portfolio heal)
+    if ($orderCode === '' || $orderCode === 'GU00') {
+        if (function_exists('resolveBuyerEmployeeCode')) {
+            $recovered = canonicalizeEmployeeUserCode(resolveBuyerEmployeeCode(
+                $conn,
+                $userId,
+                (string) ($orderRow['buyer_phone'] ?? ''),
+                (string) ($orderRow['buyer_email'] ?? '')
+            ));
+            if ($recovered !== '' && $recovered !== 'GU00' && $recovered === $code) {
+                return true;
+            }
+        }
+    }
+    if ($userId !== '' && $userId === 'admin:' . ($_SESSION['admin_id'] ?? '')) {
         return true;
     }
     return false;
@@ -366,21 +384,27 @@ function orderBelongsToAdminScope(mysqli $conn, array $orderRow): bool {
     if (isPlatformMasterSession()) {
         return true;
     }
+    // Own referral code always allowed (even if franchise_id missing on the loaded row)
+    if (employeeOwnsOrderRow($conn, $orderRow)) {
+        return true;
+    }
+    $orderFid = trim((string) ($orderRow['franchise_id'] ?? ''));
     if (isFranchiseMasterSession()) {
         $fid = currentFranchiseId();
         if ($fid === '') {
             return false;
         }
-        return trim((string) ($orderRow['franchise_id'] ?? '')) === $fid;
+        return $orderFid === $fid;
     }
     $fid = currentFranchiseId();
-    if ($fid !== '' && trim((string) ($orderRow['franchise_id'] ?? '')) !== $fid) {
+    // Different franchise → deny
+    if ($fid !== '' && $orderFid !== '' && $orderFid !== $fid) {
         return false;
     }
-    if (adminCan('view-all-orders') && $fid !== '') {
+    if (adminCan('view-all-orders')) {
         return true;
     }
-    return employeeOwnsOrderRow($conn, $orderRow);
+    return false;
 }
 
 function initiatedBelongsToAdminScope(mysqli $conn, array $row): bool {

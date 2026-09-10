@@ -3124,7 +3124,7 @@ switch ($action) {
             sendResponse(['error' => 'Invalid order ID']);
             break;
         }
-        $stmt = $conn->prepare('SELECT order_id, user_id, buyer_name, buyer_phone, buyer_email, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
+        $stmt = $conn->prepare('SELECT order_id, user_id, buyer_name, buyer_phone, buyer_email, employee_code, franchise_id, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
         $stmt->bind_param('s', $order_id);
         $stmt->execute();
         $ord = $stmt->get_result()->fetch_assoc();
@@ -3396,7 +3396,7 @@ switch ($action) {
             sendResponse(['error' => 'Invalid order ID']);
             break;
         }
-        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, total_amount, status, user_id, employee_code, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, total_amount, status, user_id, employee_code, franchise_id, buyer_phone, buyer_email, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
         $stmtCheck->bind_param('s', $order_id);
         $stmtCheck->execute();
         $orderRow = $stmtCheck->get_result()->fetch_assoc();
@@ -3445,7 +3445,7 @@ switch ($action) {
             sendResponse(['error' => 'Invalid order ID']);
             break;
         }
-        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, status, user_id, employee_code, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
+        $stmtCheck = $conn->prepare('SELECT order_id, buyer_name, share_name, status, user_id, employee_code, franchise_id, buyer_phone, buyer_email, deleted_at FROM orders WHERE order_id = ? LIMIT 1');
         $stmtCheck->bind_param('s', $order_id);
         $stmtCheck->execute();
         $orderRow = $stmtCheck->get_result()->fetch_assoc();
@@ -3569,7 +3569,7 @@ switch ($action) {
                 sendResponse(["error" => "Invalid Order ID format"]);
                 break;
             }
-            $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code, deleted_at FROM orders WHERE order_id=?");
+            $stmtCheck = $conn->prepare("SELECT order_id, transaction_id, status, user_id, employee_code, franchise_id, buyer_phone, buyer_email, deleted_at FROM orders WHERE order_id=?");
             $stmtCheck->bind_param("s", $order_id);
             $stmtCheck->execute();
             $existingOrder = $stmtCheck->get_result()->fetch_assoc();

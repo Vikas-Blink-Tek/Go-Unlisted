@@ -187,6 +187,56 @@ class HomeScreen extends StatelessWidget {
                       ),
               ),
             ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                child: TextField(
+                  onChanged: catalog.setQuery,
+                  decoration: InputDecoration(
+                    hintText: 'Search company, ticker, sector…',
+                    prefixIcon: const Icon(Icons.search_rounded, color: GuColors.limeDark),
+                    suffixIcon: catalog.query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () {
+                              catalog.setQuery('');
+                              FocusScope.of(context).unfocus();
+                            },
+                          ),
+                  ),
+                ).guFadeSlide(delayMs: 60),
+              ),
+            ),
+            if (catalog.query.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final items = catalog.filtered;
+                      if (items.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            children: [
+                              Icon(Icons.search_off_rounded, size: 48, color: GuColors.lime.withValues(alpha: 0.5)),
+                              const SizedBox(height: 12),
+                              Text('No matches', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 18)),
+                            ],
+                          ),
+                        );
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: ShareListTile(share: items[index]),
+                      );
+                    },
+                    childCount: catalog.filtered.isEmpty ? 1 : catalog.filtered.length,
+                  ),
+                ),
+              )
+            else ...[
             const SliverToBoxAdapter(
               child: SectionHeader(
                 title: 'How it works',
@@ -219,6 +269,7 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
+            ], // Close the else block
           ],
         ),
       ),
