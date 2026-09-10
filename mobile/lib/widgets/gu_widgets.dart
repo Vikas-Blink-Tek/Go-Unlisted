@@ -152,11 +152,28 @@ class GuBrandMark extends StatelessWidget {
   }
 }
 
-String _getCardTag(String id, bool featured) {
-  if (featured) return 'Trending';
-  final h = id.hashCode;
-  if (h % 3 == 0) return 'Best Seller';
-  return 'active';
+String getShareCardTag(GuShare share) {
+  if (share.featured) return 'Best Seller';
+  if (share.isTop10) return 'Trending';
+  final status = (share.inventoryStatus ?? 'In Stock').trim();
+  if (status == 'Out of Stock') return 'Out of Stock';
+  if (status == 'On Request') return 'On Request';
+  if (status == 'Limited') return 'Limited';
+  return 'Active';
+}
+
+Color shareCardTagColor(String label) {
+  switch (label) {
+    case 'Trending':
+      return const Color(0xFFDB2777);
+    case 'Limited':
+    case 'On Request':
+      return const Color(0xFFD97706);
+    case 'Out of Stock':
+      return const Color(0xFFDC2626);
+    default:
+      return const Color(0xFFE11D48);
+  }
 }
 
 /// Full-width catalog row — scannable, thumb-friendly.
@@ -168,6 +185,7 @@ class ShareListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final tag = getShareCardTag(share);
     return GuPressable(
       onTap: () => context.push('/shares/${share.id}'),
       borderRadius: BorderRadius.circular(20),
@@ -227,8 +245,12 @@ class ShareListTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _getCardTag(share.id, share.featured),
-                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFD87093)),
+                  tag,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: shareCardTagColor(tag),
+                  ),
                 ),
                 const SizedBox(height: 6),
                 if (auth.canViewPrices)
@@ -257,6 +279,7 @@ class ShareCard extends StatelessWidget {
     if (!horizontal) return ShareListTile(share: share);
 
     final auth = context.watch<AuthProvider>();
+    final tag = getShareCardTag(share);
     return SizedBox(
       width: 200,
       height: 188,
@@ -285,8 +308,12 @@ class ShareCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    _getCardTag(share.id, share.featured),
-                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFD87093)),
+                    tag,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: shareCardTagColor(tag),
+                    ),
                   ),
                 ],
               ),
@@ -298,7 +325,21 @@ class ShareCard extends StatelessWidget {
                 style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14, color: GuColors.ink, height: 1.25),
               ),
               const SizedBox(height: 6),
-              GuSectorChip(label: share.sector.isEmpty ? 'Unlisted' : share.sector),
+              Text(
+                'SECTOR',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: GuColors.muted,
+                ),
+              ),
+              Text(
+                share.sector.isEmpty ? 'Unlisted' : share.sector,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: GuColors.ink),
+              ),
               const Spacer(),
               Row(
                 children: [
@@ -308,10 +349,6 @@ class ShareCard extends StatelessWidget {
                         : const GuBlurredPrice(compact: true),
                   ),
                 ],
-              ),
-              Text(
-                'Min ${share.minQty}',
-                style: GoogleFonts.inter(fontSize: 11, color: GuColors.mutedSoft),
               ),
             ],
           ),

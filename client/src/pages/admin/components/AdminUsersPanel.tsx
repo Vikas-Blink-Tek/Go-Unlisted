@@ -16,6 +16,8 @@ type Props = {
 };
 
 type KycForm = {
+  name: string;
+  phone: string;
   kycPan: string;
   kycDemat: string;
   bankName: string;
@@ -29,6 +31,8 @@ type OrderTransferScope = 'all' | 'open' | 'none';
 
 function userToForm(u: User): KycForm {
   return {
+    name: u.name || '',
+    phone: (u.phone || '').replace(/\D/g, '').slice(-10),
     kycPan: u.kycPan || '',
     kycDemat: u.kycDemat || '',
     bankName: u.bankName || '',
@@ -64,6 +68,8 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const [proofUploading, setProofUploading] = useState(false);
   const [proofThumbKey, setProofThumbKey] = useState(0);
   const [form, setForm] = useState<KycForm>({
+    name: '',
+    phone: '',
     kycPan: '',
     kycDemat: '',
     bankName: '',
@@ -134,11 +140,19 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
       fields?: Partial<KycForm>;
     }) => {
       const f: KycForm = { ...form, ...payload.fields };
+      const phone = f.phone.replace(/\D/g, '').slice(-10);
+      if (!/^[6-9]\d{9}$/.test(phone)) {
+        throw new Error('Enter a valid 10-digit Indian mobile number');
+      }
+      const name = f.name.trim();
+      if (name.length < 2) {
+        throw new Error('Client name is required');
+      }
       return saveUser({
         id: payload.user.id,
-        name: payload.user.name,
+        name,
         email: payload.user.email,
-        phone: payload.user.phone,
+        phone,
         kycStatus: payload.kycStatus,
         kycRejectReason: payload.kycRejectReason || '',
         kycPan: f.kycPan.trim().toUpperCase(),
@@ -156,7 +170,7 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
           ? 'KYC approved'
           : vars.kycStatus === 'Rejected'
             ? 'KYC rejected'
-            : 'KYC details saved';
+            : 'Client details saved';
       showToast(msg, 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setDetail(null);
@@ -395,8 +409,33 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
               <p className="kyc-reject-note">Previous rejection: {detail.kycRejectReason}</p>
             )}
 
-            <p className="kyc-edit-hint">Edit fields if the user made a mistake, then Approve or Reject.</p>
+            <p className="kyc-edit-hint">
+              Edit phone, name, or KYC fields if the client made a mistake, then Approve, Reject, or Save details.
+            </p>
 
+            <div className="form-group">
+              <label className="form-label">Client name</label>
+              <input
+                className="form-input"
+                value={form.name}
+                onChange={(e) => setField({ name: e.target.value })}
+                placeholder="Full name"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Phone number</label>
+              <input
+                className="form-input"
+                inputMode="numeric"
+                value={form.phone}
+                onChange={(e) => setField({ phone: e.target.value.replace(/\D/g, '').slice(0, 10) })}
+                placeholder="10-digit mobile"
+                maxLength={10}
+              />
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+                Employees and admins can update the client mobile here. Must be a valid 10-digit Indian number.
+              </p>
+            </div>
             <div className="form-group">
               <label className="form-label">PAN</label>
               <input

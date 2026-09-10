@@ -2503,6 +2503,25 @@ switch ($action) {
                 sendResponse(["error" => "Valid 10-digit Indian mobile number is required"]);
             }
             $phone = $phoneNorm;
+        } elseif ($isAdminSave && $exists) {
+            // Admin / employee updating client contact (phone) from Users & KYC
+            $phoneNorm = normalizeIndianPhone($phone);
+            if ($phoneNorm === '' || !isValidIndianMobile($phoneNorm)) {
+                http_response_code(400);
+                sendResponse(['error' => 'Valid 10-digit Indian mobile number is required']);
+                break;
+            }
+            $phone = $phoneNorm;
+            $dupPhone = $conn->prepare('SELECT id FROM users WHERE phone = ? AND id <> ? LIMIT 1');
+            if ($dupPhone) {
+                $dupPhone->bind_param('ss', $phone, $id);
+                $dupPhone->execute();
+                if ($dupPhone->get_result()->num_rows > 0) {
+                    http_response_code(409);
+                    sendResponse(['error' => 'Another account already uses this phone number']);
+                    break;
+                }
+            }
         }
 
         if ($exists) {
@@ -2515,6 +2534,19 @@ switch ($action) {
                 $stmt->bind_param("ssssssssssssss", $name, $phone, $email, $role, $referral_code, $kyc_status, $kyc_reject_reason, $kyc_pan, $kyc_demat, $kyc_demat_proof, $bank_account, $bank_name, $ifsc, $id);
             }
             $stmt->execute();
+            // Keep open order buyer_phone in sync when admin corrects client mobile
+            if ($isAdminSave && $phone !== '') {
+                $sync = $conn->prepare(
+                    "UPDATE orders SET buyer_phone = ?
+                     WHERE user_id = ?
+                       AND (deleted_at IS NULL OR deleted_at = '')
+                       AND LOWER(TRIM(status)) NOT IN ('completed', 'cancelled', 'rejected', 'refunded')"
+                );
+                if ($sync) {
+                    $sync->bind_param('ss', $phone, $id);
+                    $sync->execute();
+                }
+            }
         } else {
             $hashed = password_hash($data['password'], PASSWORD_DEFAULT);
             if ($phone !== '') {

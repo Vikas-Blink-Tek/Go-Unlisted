@@ -234,7 +234,6 @@ button.footer-link {
 }
 
 .share-card-header {
-  padding-right: 5.5rem;
   align-items: flex-start;
 }
 
@@ -244,9 +243,7 @@ button.footer-link {
 }
 
 .share-watchlist-link {
-  position: absolute;
-  top: 14px;
-  right: 14px;
+  position: static;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -258,7 +255,7 @@ button.footer-link {
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
-  z-index: 2;
+  flex-shrink: 0;
   transition: var(--transition);
 }
 
@@ -968,11 +965,6 @@ button.footer-link {
   .share-card .sector-chip {
     margin-top: 0;
     align-self: flex-start;
-  }
-
-  .share-watchlist-link {
-    top: 12px;
-    right: 12px;
   }
 
   .detail-invest-cta {
@@ -1858,6 +1850,74 @@ button.footer-link {
 .inventory-out-of-stock { background: rgba(239, 68, 68, 0.15); color: #f87171; }
 .inventory-on-request { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .btn-buy-muted { opacity: 0.85; background: var(--surface-2); }
+
+/* UnlistedZone-style card: logo + tag row, then name, Sector, price */
+.share-card {
+  position: relative;
+}
+.share-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+.share-card-top .company-logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+.share-card-tag {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-align: right;
+  max-width: 48%;
+  color: #e11d48;
+  pointer-events: none;
+}
+.share-card-tag--best-seller { color: #e11d48; }
+.share-card-tag--trending { color: #db2777; }
+.share-card-tag--active { color: #e11d48; }
+.share-card-tag--limited { color: #d97706; }
+.share-card-tag--on-request { color: #ca8a04; }
+.share-card-tag--out-of-stock { color: #dc2626; }
+
+.share-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+.share-card-title-row .company-name {
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.share-card-sector {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 0.75rem;
+}
+.share-card-sector-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.share-card-sector-value {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+
 
 /* Dashboard: mobile order cards */
 .dashboard-orders-toolbar {

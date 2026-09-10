@@ -98,6 +98,7 @@ class GuShare {
     this.inventoryStatus,
     this.listingType,
     this.featured = false,
+    this.isTop10 = false,
     this.highlights = const [],
     this.valuation,
     this.ipoTimeline,
@@ -134,6 +135,7 @@ class GuShare {
   final String? inventoryStatus;
   final String? listingType;
   final bool featured;
+  final bool isTop10;
   final List<String> highlights;
   final String? valuation;
   final String? ipoTimeline;
@@ -190,6 +192,13 @@ class GuShare {
           j['isFeatured'] == '1' ||
           j['is_featured'] == 1 ||
           j['is_featured'] == '1',
+      isTop10: j['isTop10'] == true ||
+          j['isTop10'] == 1 ||
+          j['isTop10'] == '1' ||
+          j['is_top10'] == 1 ||
+          j['is_top10'] == '1' ||
+          j['top10'] == true ||
+          j['top10'] == 1,
       highlights: highlights,
       valuation: (j['valuation'] ?? j['marketCap'])?.toString(),
       ipoTimeline: (j['ipoTimeline'] ?? j['ipo_timeline'])?.toString(),
