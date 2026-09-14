@@ -7,6 +7,7 @@ import SiteFooter from './SiteFooter';
 
 import WhatsAppFloat from './WhatsAppFloat';
 import WelcomeAuthModal from '../auth/WelcomeAuthModal';
+import { ShareSearchProvider, useShareSearch } from '../shares/GlobalShareSearch';
 import { kycBadgeClass, kycBadgeLabel, userInitials } from '../../utils/kyc';
 
 const navLinks = [
@@ -57,13 +58,13 @@ const mobileIcons: Record<string, ReactNode> = {
   ),
 };
 
-export default function MainLayout() {
+function MainLayoutInner() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { openSearch } = useShareSearch();
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdown, setDropdown] = useState(false);
-
 
   useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
 
@@ -126,6 +127,19 @@ export default function MainLayout() {
           </ul>
 
           <div className="nav-actions">
+            <button
+              type="button"
+              className="nav-search-btn"
+              onClick={openSearch}
+              aria-label="Search shares"
+              title="Search shares (/ or ⌘K)"
+            >
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" aria-hidden>
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <kbd className="nav-search-kbd">/</kbd>
+            </button>
             <div id="nav-user-section">
               {user ? (
                 <div className="nav-user-dropdown-container">
@@ -191,6 +205,20 @@ export default function MainLayout() {
       </nav>
 
       <div className={`mobile-menu ${menuOpen ? 'open' : ''}`} id="mobile-menu">
+        <button
+          type="button"
+          className="nav-link"
+          onClick={() => {
+            setMenuOpen(false);
+            openSearch();
+          }}
+        >
+          <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          Search shares
+        </button>
         {navLinks.map((l) => {
           const isPortfolio = l.to === '/dashboard';
           const to = isPortfolio && !user ? '/login' : l.to;
@@ -216,8 +244,6 @@ export default function MainLayout() {
 
       <SiteFooter />
 
-
-
       <WhatsAppFloat />
       <WelcomeAuthModal pathname={location.pathname} />
 
@@ -226,6 +252,13 @@ export default function MainLayout() {
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
           <span>Home</span>
         </Link>
+        <button type="button" className="bottom-nav-item" onClick={openSearch}>
+          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+          <span>Search</span>
+        </button>
         <Link
           to={user ? '/dashboard' : '/login'}
           state={user ? undefined : { from: '/dashboard', reason: 'portfolio' }}
@@ -234,15 +267,19 @@ export default function MainLayout() {
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
           <span>Portfolio</span>
         </Link>
-        <Link to="/articles" className={`bottom-nav-item${location.pathname.startsWith('/articles') ? ' active' : ''}`}>
-          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
-          <span>Articles</span>
-        </Link>
         <Link to={profilePath} className={`bottom-nav-item${location.pathname === '/login' ? ' active' : ''}`}>
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
           <span>Profile</span>
         </Link>
       </nav>
     </>
+  );
+}
+
+export default function MainLayout() {
+  return (
+    <ShareSearchProvider>
+      <MainLayoutInner />
+    </ShareSearchProvider>
   );
 }

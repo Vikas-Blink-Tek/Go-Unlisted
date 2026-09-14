@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/gu_theme.dart';
+import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
@@ -15,7 +16,9 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final catalog = context.watch<CatalogProvider>();
-    final featured = catalog.featured.isNotEmpty ? catalog.featured : catalog.shares.take(8).toList();
+    // Featured = Market Activity / sample track record (not for purchase).
+    // Never fall back to buyable stocks under this heading.
+    final featured = catalog.featured;
     final firstName = auth.user?.name.isNotEmpty == true ? auth.user!.name.split(' ').first : null;
 
     return GuPageBackground(
@@ -164,29 +167,22 @@ class HomeScreen extends StatelessWidget {
                 ).guFadeSlide(delayMs: 80),
               ),
             ),
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                title: 'Featured shares',
-                subtitle: 'Curated picks from the live catalog',
-                actionLabel: 'See all',
-                onAction: () => context.go('/app/shares'),
+            if (featured.isNotEmpty || catalog.loading) ...[
+              const SliverToBoxAdapter(
+                child: SectionHeader(
+                  title: 'Market Activity',
+                  subtitle: 'Sample track record — not available to buy in app',
+                ),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: SizedBox(
-                height: 196,
-                child: catalog.loading && featured.isEmpty
-                    ? const Center(child: CircularProgressIndicator(color: GuColors.lime))
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: featured.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 12),
-                        itemBuilder: (_, i) => ShareCard(share: featured[i], horizontal: true)
-                            .guFadeSlide(delayMs: 40 * i),
-                      ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 196,
+                  child: catalog.loading && featured.isEmpty
+                      ? const Center(child: CircularProgressIndicator(color: GuColors.lime))
+                      : _FeaturedAutoMarquee(shares: featured),
+                ),
               ),
-            ),
+            ],
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
@@ -358,3 +354,153 @@ class _StepDivider extends StatelessWidget {
     );
   }
 }
+
+/// Website-style continuous ticker — cards auto-move right → left in a seamless loop.
+class _FeaturedAutoMarquee extends StatefulWidget {
+  const _FeaturedAutoMarquee({required this.shares});
+
+  final List<GuShare> shares;
+
+  @override
+  State<_FeaturedAutoMarquee> createState() => _FeaturedAutoMarqueeState();
+}
+
+class _FeaturedAutoMarqueeState extends State<_FeaturedAutoMarquee>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _anim;
+  bool _paused = false;
+
+  static const _cardW = 200.0;
+  static const _gap = 12.0;
+  static const _cardH = 188.0;
+  static const _pad = 20.0;
+  /// ~5.5s per card — same calm pace as website Market Activity.
+  static const _secPerCard = 5.5;
+
+  double get _setWidth {
+    final n = widget.shares.length;
+    if (n == 0) return 0;
+    return n * (_cardW + _gap);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final n = widget.shares.length;
+    _anim = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: (n * _secPerCard * 1000).round().clamp(8000, 180000)),
+    );
+    if (n > 1) {
+      _anim.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _FeaturedAutoMarquee oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shares.length != widget.shares.length) {
+      final n = widget.shares.length;
+      _anim.duration = Duration(
+        milliseconds: (n * _secPerCard * 1000).round().clamp(8000, 180000),
+      );
+      if (n > 1) {
+        if (!_paused) _anim.repeat();
+      } else {
+        _anim
+          ..stop()
+          ..value = 0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
+  }
+
+  void _pause() {
+    if (_paused) return;
+    _paused = true;
+    _anim.stop(canceled: false);
+  }
+
+  void _resume() {
+    if (!_paused) return;
+    _paused = false;
+    if (widget.shares.length > 1) _anim.repeat();
+  }
+
+  Widget _card(BuildContext context, GuShare share) {
+    return SizedBox(
+      width: _cardW,
+      height: _cardH,
+      child: ShareCard(
+        share: share,
+        horizontal: true,
+        // Sample / Market Activity → browse live share list (same as website).
+        onTap: () => context.go('/app/shares'),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shares = widget.shares;
+    if (shares.isEmpty) return const SizedBox.shrink();
+
+    if (shares.length == 1) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: _pad),
+        child: Align(alignment: Alignment.centerLeft, child: _card(context, shares.first)),
+      );
+    }
+
+    final loop = [...shares, ...shares];
+    final setW = _setWidth;
+    final trackW = loop.length * _cardW + (loop.length - 1) * _gap;
+
+    return SizedBox(
+      height: _cardH,
+      width: double.infinity,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => _pause(),
+        onPointerUp: (_) => _resume(),
+        onPointerCancel: (_) => _resume(),
+        child: ClipRect(
+          child: AnimatedBuilder(
+            animation: _anim,
+            builder: (context, child) {
+              // progress 0→1 moves exactly one set width left (seamless with duplicate track)
+              final dx = _pad - setW * _anim.value;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  Positioned(
+                    left: dx,
+                    top: 0,
+                    width: trackW,
+                    height: _cardH,
+                    child: child!,
+                  ),
+                ],
+              );
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < loop.length; i++) ...[
+                  if (i > 0) const SizedBox(width: _gap),
+                  _card(context, loop[i]),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

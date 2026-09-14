@@ -1305,6 +1305,25 @@ function normalizeIndianPhone($phone) {
     return $phone;
 }
 
+/** Split Site Settings `mobile` into unique 10-digit Indian numbers (order preserved). */
+function parseSitePhoneList($raw): array {
+    $parts = preg_split('/[,;\n|]+/', (string) $raw) ?: [];
+    $out = [];
+    $seen = [];
+    foreach ($parts as $part) {
+        $norm = normalizeIndianPhone(trim((string) $part));
+        if ($norm === '' || !preg_match('/^[6-9]\d{9}$/', $norm)) {
+            continue;
+        }
+        if (isset($seen[$norm])) {
+            continue;
+        }
+        $seen[$norm] = true;
+        $out[] = $norm;
+    }
+    return $out;
+}
+
 function resolveUserByLoginId(mysqli $conn, string $loginId): ?array {
     $loginId = trim($loginId);
     if ($loginId === '') {
@@ -2846,28 +2865,47 @@ switch ($action) {
         $userRow = $stmt->get_result()->fetch_assoc();
         $referralCode = normalizeUserCode((string) ($userRow['referral_code'] ?? ''));
 
-        $supportPhone = getSettingValue($conn, 'mobile', SITE_CONTACT_DEFAULTS['mobile']);
+        $supportPhoneRaw = getSettingValue($conn, 'mobile', SITE_CONTACT_DEFAULTS['mobile']);
         $supportEmail = getSettingValue($conn, 'email', SITE_CONTACT_DEFAULTS['email']);
-        $supportWhatsapp = getSettingValue($conn, 'whatsapp', SITE_CONTACT_DEFAULTS['whatsapp'] ?: $supportPhone);
+        $supportWhatsapp = getSettingValue($conn, 'whatsapp', SITE_CONTACT_DEFAULTS['whatsapp'] ?: $supportPhoneRaw);
+        $companyPhones = parseSitePhoneList($supportPhoneRaw);
+        // phones[0] = customer care, phones[1] = relationship desk (when no assigned RM)
+        $carePhone = $companyPhones[0] ?? normalizeIndianPhone($supportPhoneRaw);
+        $deskPhone = $companyPhones[1] ?? '';
 
         $rm = lookupRmForReferralCode($conn, $referralCode);
         $rmPayload = null;
         if ($rm) {
             $rmPhone = normalizeIndianPhone((string) ($rm['phone'] ?? ''));
+            // Prefer employee phone; if missing, fall back to company desk line (not care line)
+            if ($rmPhone === '' || $rmPhone === $carePhone) {
+                $rmPhone = $deskPhone !== '' ? $deskPhone : $rmPhone;
+            }
             $rmPayload = [
                 'name' => $rm['name'],
                 'email' => $rm['email'],
                 'phone' => $rmPhone,
                 'employeeId' => strtoupper(trim((string) ($rm['employee_id'] ?? ''))),
+                'isDesk' => false,
+            ];
+        } elseif ($deskPhone !== '') {
+            // No personal RM — use 2nd company number as relationship desk (never same as care)
+            $rmPayload = [
+                'name' => 'Relationship desk',
+                'email' => $supportEmail,
+                'phone' => $deskPhone,
+                'employeeId' => '',
+                'isDesk' => true,
             ];
         }
 
         sendResponse([
             'success' => true,
             'support' => [
-                'phone' => normalizeIndianPhone($supportPhone),
+                'phone' => $carePhone,
+                'phones' => $companyPhones,
                 'email' => $supportEmail,
-                'whatsapp' => normalizeIndianPhone($supportWhatsapp ?: $supportPhone),
+                'whatsapp' => normalizeIndianPhone($supportWhatsapp ?: $carePhone),
             ],
             'relationManager' => $rmPayload,
             'referralCode' => $referralCode,
@@ -3780,11 +3818,18 @@ switch ($action) {
         }
 
         // Server-side price from catalog when available (online checkout — manual keeps entered price)
-        $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty, discount_tiers FROM shares WHERE share_id = ? AND is_active = 1");
+        $priceStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty, discount_tiers, listing_type, listing_price, inventory_status, share_id FROM shares WHERE share_id = ? AND is_active = 1");
         $priceStmt->bind_param("s", $share_id);
         $priceStmt->execute();
         $priceRow = $priceStmt->get_result()->fetch_assoc();
         if ($priceRow) {
+            if (!$isManualAdmin && !shareIsPurchasable($priceRow)) {
+                http_response_code(400);
+                sendResponse([
+                    'error' => 'This company is not available for purchase. GO UNLISTED only deals in unlisted and pre-IPO shares.',
+                ]);
+                break;
+            }
             if (!$isManualAdmin) {
                 $price_per_share = (float) $priceRow['base_price'];
                 $tiersJson = $priceRow['discount_tiers'] ?? '[]';

@@ -44,6 +44,8 @@ export interface Share {
   faceValue?: string;
   isFeatured?: boolean;
   isTop10?: boolean;
+  /** False for exchange-listed / out-of-stock — no online purchase */
+  purchasable?: boolean;
   discountTiers?: { minQty: number; price: number }[];
   lastUpdated?: string | null;
   isBuiltin?: boolean;

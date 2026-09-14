@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import type { User } from '../../types';
 import { formatIndianPhoneDisplay } from '../../utils/format';
 import { isPdfProof, kycProofViewUrl } from '../../utils/kyc';
+import KycProofLightbox from './KycProofLightbox';
 
 type Props = {
   user: User;
@@ -24,6 +26,13 @@ function maskBank(account?: string): string {
 export default function KycDetailsCard({ user, mode }: Props) {
   const verified = mode === 'verified';
   const hasKycData = Boolean(user.kycPan || user.kycDemat || user.bankAccount || user.ifsc || user.bankName);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const proofSrc = kycProofViewUrl({ userId: user.id });
+  const proofIsPdf = isPdfProof(user.kycDematProof);
+
+  const openViewer = () => {
+    if (proofSrc) setViewerOpen(true);
+  };
 
   return (
     <div className={`kyc-details-card${verified ? ' kyc-details-card--verified' : ''}`}>
@@ -97,14 +106,9 @@ export default function KycDetailsCard({ user, mode }: Props) {
                     user.kycDematProofExists === false ? (
                       <span style={{ color: 'var(--danger, #dc2626)' }}>File missing — please re-upload</span>
                     ) : (
-                      <a
-                        href={kycProofViewUrl({ userId: user.id }) || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="kyc-proof-link"
-                      >
-                        {isPdfProof(user.kycDematProof) ? 'View PDF proof' : 'View uploaded proof'}
-                      </a>
+                      <button type="button" className="kyc-proof-open-btn" onClick={openViewer}>
+                        {proofIsPdf ? 'View PDF proof' : 'View uploaded proof'}
+                      </button>
                     )
                   ) : (
                     '—'
@@ -112,9 +116,22 @@ export default function KycDetailsCard({ user, mode }: Props) {
                 </dd>
               </div>
             </dl>
-            {user.kycDematProof && user.kycDematProofExists !== false && !isPdfProof(user.kycDematProof) && (
+            {user.kycDematProof && user.kycDematProofExists !== false && !proofIsPdf && (
               <div className="kyc-proof-preview">
-                <img src={kycProofViewUrl({ userId: user.id }) || undefined} alt="Demat / CMR proof" />
+                <img
+                  src={proofSrc || undefined}
+                  alt="Demat / CMR proof"
+                  role="button"
+                  tabIndex={0}
+                  title="Click to zoom"
+                  onClick={openViewer}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openViewer();
+                    }
+                  }}
+                />
               </div>
             )}
           </section>
@@ -145,6 +162,15 @@ export default function KycDetailsCard({ user, mode }: Props) {
         <p className="kyc-details-footnote">
           Need to change PAN, demat, or bank details? Contact support — edits after verification are done by our team only.
         </p>
+      )}
+
+      {viewerOpen && proofSrc && (
+        <KycProofLightbox
+          src={proofSrc}
+          isPdf={proofIsPdf}
+          title="CMR / Demat proof"
+          onClose={() => setViewerOpen(false)}
+        />
       )}
     </div>
   );

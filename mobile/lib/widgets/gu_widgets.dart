@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
@@ -34,19 +32,24 @@ class _GuPressableState extends State<GuPressable> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _pressed ? 0.972 : 1,
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
-        child: AnimatedOpacity(
-          opacity: _pressed ? 0.92 : 1,
+    // Listener for press feedback — does not compete with parent scroll gestures.
+    // GestureDetector with only onTap lets horizontal ListViews scroll smoothly.
+    return Listener(
+      onPointerDown: (_) => setState(() => _pressed = true),
+      onPointerUp: (_) => setState(() => _pressed = false),
+      onPointerCancel: (_) => setState(() => _pressed = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _pressed ? 0.972 : 1,
           duration: const Duration(milliseconds: 140),
-          child: widget.child,
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.92 : 1,
+            duration: const Duration(milliseconds: 140),
+            child: widget.child,
+          ),
         ),
       ),
     );
@@ -153,6 +156,7 @@ class GuBrandMark extends StatelessWidget {
 }
 
 String getShareCardTag(GuShare share) {
+  if (share.isTrackRecordOnly) return 'Sample';
   if (share.featured) return 'Best Seller';
   if (share.isTop10) return 'Trending';
   final status = (share.inventoryStatus ?? 'In Stock').trim();
@@ -171,6 +175,9 @@ Color shareCardTagColor(String label) {
       return const Color(0xFFD97706);
     case 'Out of Stock':
       return const Color(0xFFDC2626);
+    case 'Listed':
+    case 'Sample':
+      return const Color(0xFF64748B);
     default:
       return const Color(0xFFE11D48);
   }
@@ -269,10 +276,17 @@ class ShareListTile extends StatelessWidget {
 }
 
 class ShareCard extends StatelessWidget {
-  const ShareCard({super.key, required this.share, this.horizontal = false});
+  const ShareCard({
+    super.key,
+    required this.share,
+    this.horizontal = false,
+    this.onTap,
+  });
 
   final GuShare share;
   final bool horizontal;
+  /// Override default detail navigation (e.g. Market Activity → share list).
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -284,7 +298,7 @@ class ShareCard extends StatelessWidget {
       width: 200,
       height: 188,
       child: GuPressable(
-        onTap: () => context.push('/shares/${share.id}'),
+        onTap: onTap ?? () => context.push('/shares/${share.id}'),
         borderRadius: BorderRadius.circular(22),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -292,7 +306,14 @@ class ShareCard extends StatelessWidget {
             color: GuColors.surface,
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: GuColors.border),
-            boxShadow: GuColors.softCard,
+            // Single soft shadow — dual softCard is expensive while the marquee moves.
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x14003478),
+                blurRadius: 10,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -500,16 +521,17 @@ class GuBlurredPrice extends StatelessWidget {
   const GuBlurredPrice({super.key, this.compact = false});
   final bool compact;
 
+  /// Cheap locked-price affordance — avoids ImageFiltered blur (janky while scrolling).
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ImageFiltered(
-          imageFilter: ImageFilter.blur(sigmaX: 4.5, sigmaY: 4.5),
-          child: Text(
-            '₹12,345',
-            style: GuTheme.price(context, size: compact ? 14 : 18),
+        Text(
+          '₹ •••••',
+          style: GuTheme.price(context, size: compact ? 14 : 18).copyWith(
+            letterSpacing: 1.1,
+            color: GuColors.ink.withValues(alpha: 0.38),
           ),
         ),
         const SizedBox(width: 4),

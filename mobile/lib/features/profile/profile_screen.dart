@@ -3,17 +3,64 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/gu_api.dart';
 import '../../core/theme/gu_theme.dart';
+import '../../core/utils/format.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  Future<_AccountContacts?>? _contactsFuture;
+  String? _loadedForUserId;
+
+  Future<_AccountContacts?> _loadContacts() async {
+    try {
+      final res = await GuApi.instance.get('getAccountContacts');
+      return _AccountContacts.fromJson(res);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _ensureContacts(AuthProvider auth) {
+    if (!auth.isLoggedIn) {
+      _contactsFuture = null;
+      _loadedForUserId = null;
+      return;
+    }
+    final id = auth.user?.id;
+    if (id != null && id != _loadedForUserId) {
+      _loadedForUserId = id;
+      _contactsFuture = _loadContacts();
+    }
+  }
+
+  Future<void> _call(String? phone) async {
+    final uri = indianPhoneTelUri(phone);
+    if (uri == null) return;
+    await launchUrl(uri);
+  }
+
+  Future<void> _whatsapp(String? phone) async {
+    final uri = whatsappUri(phone, message: 'Hi, I need help with my Go-Unlisted account.');
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
+    final settings = context.watch<CatalogProvider>().settings;
+    _ensureContacts(auth);
 
     if (!auth.isLoggedIn) {
       return Center(
@@ -104,6 +151,68 @@ class ProfileScreen extends StatelessWidget {
             subtitle: 'Track payments & transfers',
             onTap: () => context.go('/app/portfolio'),
           ),
+          FutureBuilder<_AccountContacts?>(
+            future: _contactsFuture,
+            builder: (context, snap) {
+              final contacts = snap.data;
+              final settingsPhones = parseIndianPhoneList(settings?.phone);
+              final companyPhones = (contacts?.companyPhones.isNotEmpty == true)
+                  ? contacts!.companyPhones
+                  : settingsPhones;
+              final supportPhone = contacts?.supportPhone?.isNotEmpty == true
+                  ? contacts!.supportPhone!
+                  : (companyPhones.isNotEmpty ? companyPhones.first : settings?.whatsapp);
+              final rmPhone = contacts?.rmPhone;
+              final rmIsDesk = contacts?.rmIsDesk == true;
+              final waPhone = contacts?.whatsapp ?? supportPhone;
+              final extraPhones = companyPhones
+                  .where((p) => p.isNotEmpty && p != supportPhone && p != rmPhone)
+                  .toList();
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (rmPhone != null && rmPhone.isNotEmpty)
+                    _Tile(
+                      icon: Icons.support_agent_rounded,
+                      title: rmIsDesk ? 'Relationship desk' : 'Relationship Manager',
+                      subtitle: contacts?.rmName?.isNotEmpty == true && !rmIsDesk
+                          ? '${contacts!.rmName} · ${formatIndianPhone(rmPhone)}'
+                          : formatIndianPhone(rmPhone),
+                      onTap: () => _call(rmPhone),
+                    )
+                  else if (snap.connectionState == ConnectionState.done)
+                    _Tile(
+                      icon: Icons.support_agent_rounded,
+                      title: 'Relationship Manager',
+                      subtitle: 'Not assigned yet',
+                      onTap: () {},
+                    ),
+                  if (supportPhone != null && supportPhone.isNotEmpty)
+                    _Tile(
+                      icon: Icons.phone_in_talk_rounded,
+                      title: 'Customer care',
+                      subtitle: formatIndianPhone(supportPhone),
+                      onTap: () => _call(supportPhone),
+                    ),
+                  for (var i = 0; i < extraPhones.length; i++)
+                    _Tile(
+                      icon: Icons.business_rounded,
+                      title: 'Company line ${i + 2}',
+                      subtitle: formatIndianPhone(extraPhones[i]),
+                      onTap: () => _call(extraPhones[i]),
+                    ),
+                  if (waPhone != null && waPhone.isNotEmpty)
+                    _Tile(
+                      icon: Icons.chat_rounded,
+                      title: 'WhatsApp support',
+                      subtitle: 'Chat with us on WhatsApp',
+                      onTap: () => _whatsapp(waPhone),
+                    ),
+                ],
+              );
+            },
+          ),
           _Tile(
             icon: Icons.language_rounded,
             title: 'Open website',
@@ -122,6 +231,76 @@ class ProfileScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AccountContacts {
+  const _AccountContacts({
+    this.rmName,
+    this.rmPhone,
+    this.rmIsDesk = false,
+    this.supportPhone,
+    this.companyPhones = const [],
+    this.whatsapp,
+  });
+
+  final String? rmName;
+  final String? rmPhone;
+  final bool rmIsDesk;
+  final String? supportPhone;
+  final List<String> companyPhones;
+  final String? whatsapp;
+
+  factory _AccountContacts.fromJson(Map<String, dynamic> j) {
+    final rm = j['relationManager'];
+    final support = j['support'];
+
+    String? phoneOf(dynamic node) {
+      if (node is! Map) return null;
+      final p = (node['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+      if (p.length < 10) return null;
+      return p.length > 10 ? p.substring(p.length - 10) : p;
+    }
+
+    String? nameOf(dynamic node) {
+      if (node is! Map) return null;
+      final n = (node['name'] ?? '').toString().trim();
+      return n.isEmpty ? null : n;
+    }
+
+    String? waOf(dynamic node) {
+      if (node is! Map) return null;
+      final w = (node['whatsapp'] ?? node['phone'] ?? '').toString().replaceAll(RegExp(r'\D'), '');
+      if (w.length < 10) return null;
+      return w.length > 10 ? w.substring(w.length - 10) : w;
+    }
+
+    final phonesRaw = (support is Map) ? support['phones'] : null;
+    final companyPhones = <String>[];
+    if (phonesRaw is List) {
+      for (final item in phonesRaw) {
+        final d = item.toString().replaceAll(RegExp(r'\D'), '');
+        if (d.length < 10) continue;
+        final local = d.length > 10 ? d.substring(d.length - 10) : d;
+        if (!companyPhones.contains(local)) companyPhones.add(local);
+      }
+    }
+
+    final care = phoneOf(support);
+    if (care != null && !companyPhones.contains(care)) {
+      companyPhones.insert(0, care);
+    }
+
+    final isDesk = rm is Map && (rm['isDesk'] == true || rm['isDesk'] == 1 || rm['isDesk'] == '1');
+
+    return _AccountContacts(
+      rmName: nameOf(rm),
+      rmPhone: phoneOf(rm),
+      rmIsDesk: isDesk,
+      supportPhone: care,
+      companyPhones: companyPhones,
+      whatsapp: waOf(support),
     );
   }
 }

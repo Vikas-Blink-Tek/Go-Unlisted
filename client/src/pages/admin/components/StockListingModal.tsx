@@ -3,7 +3,7 @@ import CompanyLogo, { initialsFromName } from '../../../components/shares/Compan
 import { formatCurrency } from '../../../utils/format';
 import { trendFromGrowth } from '../../../utils/priceHistory';
 
-const LISTING_TYPES = ['Pre-IPO', 'Unlisted', 'Delisted', 'ESOP'];
+const LISTING_TYPES = ['Pre-IPO', 'Unlisted', 'Listed', 'Delisted', 'ESOP'];
 const INVENTORY_STATUSES = ['In Stock', 'Limited', 'On Request', 'Out of Stock'];
 
 const GRADIENTS = [

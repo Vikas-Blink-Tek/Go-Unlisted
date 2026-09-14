@@ -128,6 +128,49 @@ function maskShareRates(array $mapped): array {
     return $mapped;
 }
 
+/**
+ * Exchange-listed / IPO-done / Market Activity dummies — not sold as inventory.
+ */
+function isExchangeListedShare(array $row): bool {
+    $type = strtolower(trim((string) ($row['listing_type'] ?? '')));
+    if (in_array($type, ['listed', 'exchange listed', 'nse listed', 'bse listed'], true)) {
+        return true;
+    }
+    $listingPrice = $row['listing_price'] ?? null;
+    if ($listingPrice !== null && $listingPrice !== '' && (float) $listingPrice > 0) {
+        return true;
+    }
+    static $listedIds = [
+        'custom-adtech-systems-ltd-0ce13' => true,
+        'custom-anand-rathi-wealth-52a7d' => true,
+        'custom-bikaji-foods-c8739' => true,
+        'custom-just-dial-ltd-c9d32' => true,
+        'custom-nykaa-d23d5' => true,
+    ];
+    $id = (string) ($row['share_id'] ?? '');
+    return isset($listedIds[$id]);
+}
+
+/** True when investors may place an online / app purchase for this share. */
+function shareIsPurchasable(array $row): bool {
+    $inv = trim((string) ($row['inventory_status'] ?? 'In Stock'));
+    if ($inv === 'Out of Stock') {
+        return false;
+    }
+    // Featured = homepage Market Activity sample — not checkout inventory
+    if (((int) ($row['is_featured'] ?? 0)) === 1) {
+        return false;
+    }
+    if (isExchangeListedShare($row)) {
+        return false;
+    }
+    $price = (float) ($row['base_price'] ?? 0);
+    if ($price <= 0) {
+        return false;
+    }
+    return true;
+}
+
 function mapShareRow(array $row, bool $includeInternal = false, bool $includeRates = true): array {
     $price = (float) $row['base_price'];
     $history = json_decode($row['price_history'] ?? '', true);
@@ -168,12 +211,13 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
         'logoUrl' => trim($row['logo_url'] ?? ''),
         'priceHistory' => $history,
         'chartLabels' => $labels,
-        'listingType' => $row['listing_type'] ?? 'Pre-IPO',
+        'listingType' => isExchangeListedShare($row) ? 'Listed' : ($row['listing_type'] ?? 'Pre-IPO'),
         'ipoTimeline' => $row['ipo_timeline'] ?? '',
         'listingPrice' => isset($row['listing_price']) && $row['listing_price'] !== null && $row['listing_price'] !== ''
             ? (float) $row['listing_price']
             : null,
         'inventoryStatus' => $row['inventory_status'] ?? 'In Stock',
+        'purchasable' => shareIsPurchasable($row),
         'keyHighlights' => $highlights,
         'riskNotes' => $row['risk_notes'] ?? '',
         'lockInMonths' => isset($row['lock_in_months']) ? (int) $row['lock_in_months'] : 0,

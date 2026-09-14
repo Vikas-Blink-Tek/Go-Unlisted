@@ -12,6 +12,7 @@ import { blockTextInput } from '../utils/autofill';
 import { getInvoiceByOrder, type Invoice } from '../api/invoices';
 import InvoicePrintView from './admin/components/InvoicePrintView';
 import KycDetailsCard from '../components/kyc/KycDetailsCard';
+import { useKycProofViewer } from '../components/kyc/KycProofLightbox';
 import { isPdfProof, kycProofViewUrl } from '../utils/kyc';
 import type { Order } from '../types';
 
@@ -85,6 +86,7 @@ export default function DashboardPage() {
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [loadingInvoice, setLoadingInvoice] = useState<string | null>(null);
   const [period, setPeriod] = useState<PeriodFilter>('all');
+  const { openProof, lightbox: proofLightbox } = useKycProofViewer();
 
   const handleViewInvoice = async (orderId: string) => {
     setLoadingInvoice(orderId);
@@ -557,18 +559,40 @@ export default function DashboardPage() {
                 {kycForm.dematProof && !proofUploading && (
                   <div className="kyc-proof-uploaded">
                     <span>Proof uploaded</span>
-                    <a
-                      href={kycProofViewUrl({ path: kycForm.dematProof }) || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      className="kyc-proof-open-btn"
+                      onClick={() => {
+                        const src = kycProofViewUrl({ path: kycForm.dematProof });
+                        if (src) {
+                          openProof(src, {
+                            isPdf: isPdfProof(kycForm.dematProof),
+                            title: 'CMR / Demat proof',
+                          });
+                        }
+                      }}
                     >
                       Preview
-                    </a>
+                    </button>
                     {!isPdfProof(kycForm.dematProof) && (
                       <img
                         src={kycProofViewUrl({ path: kycForm.dematProof }) || undefined}
                         alt="Demat proof preview"
                         className="kyc-proof-thumb"
+                        role="button"
+                        tabIndex={0}
+                        title="Click to zoom"
+                        onClick={() => {
+                          const src = kycProofViewUrl({ path: kycForm.dematProof });
+                          if (src) openProof(src, { title: 'CMR / Demat proof' });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            const src = kycProofViewUrl({ path: kycForm.dematProof });
+                            if (src) openProof(src, { title: 'CMR / Demat proof' });
+                          }
+                        }}
                       />
                     )}
                   </div>
@@ -632,6 +656,7 @@ export default function DashboardPage() {
           onClose={() => setViewingInvoice(null)}
         />
       )}
+      {proofLightbox}
     </div>
   );
 }

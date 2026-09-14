@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../utils/format';
-import { isShareUnavailable } from '../../utils/inventory';
+import { isSharePurchasable, isShareUnavailable } from '../../utils/inventory';
 import { getShareCardTag } from '../../utils/shareCardTag';
 import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
 import ShareSparkline from './ShareSparkline';
@@ -20,6 +20,7 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
   const canViewRates = useCanViewShareRates();
   const changeSign = share.changePositive ? '▲' : '▼';
   const unavailable = isShareUnavailable(share.inventoryStatus);
+  const canPurchase = isSharePurchasable(share);
   const tag = getShareCardTag(share);
   const sparkline = share.priceHistory?.['3M'] ?? [];
   const bulk = getBulkPricingSummary(share);
@@ -99,9 +100,9 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
       </BlurredRatesLock>
 
       <div className="share-card-footer" onClick={(e) => e.stopPropagation()}>
-        {unavailable ? (
+        {!canPurchase ? (
           <Link to="/contact" className="btn-buy btn-buy-muted" onClick={(e) => e.stopPropagation()}>
-            Contact Us
+            {unavailable ? 'Contact Us' : 'Listed — Contact'}
           </Link>
         ) : canViewRates ? (
           <Link to={`/checkout/${share.id}`} className="btn-buy" onClick={(e) => e.stopPropagation()}>

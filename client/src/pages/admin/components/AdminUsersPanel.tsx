@@ -8,6 +8,7 @@ import { matchesAdminSearch } from '../../../utils/adminSearch';
 import { formatDate } from '../../../utils/format';
 import { displayUserCode } from '../../../utils/userCode';
 import { isPdfProof, kycProofViewUrl } from '../../../utils/kyc';
+import { useKycProofViewer } from '../../../components/kyc/KycProofLightbox';
 import AdminSectionHeader from './AdminSectionHeader';
 
 type Props = {
@@ -67,6 +68,7 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
   const [orderScope, setOrderScope] = useState<OrderTransferScope>('all');
   const [proofUploading, setProofUploading] = useState(false);
   const [proofThumbKey, setProofThumbKey] = useState(0);
+  const { openProof, lightbox: proofLightbox } = useKycProofViewer();
   const [form, setForm] = useState<KycForm>({
     name: '',
     phone: '',
@@ -466,18 +468,42 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
                 )}
                 {detail.kycDematProof && detail.kycDematProofExists !== false && (
                   <>
-                    <a
-                      href={`${kycProofViewUrl({ userId: detail.id }) || '#'}&t=${proofThumbKey}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      className="kyc-proof-open-btn"
+                      onClick={() => {
+                        const src = `${kycProofViewUrl({ userId: detail.id }) || ''}&t=${proofThumbKey}`;
+                        openProof(src, {
+                          isPdf: isPdfProof(detail.kycDematProof),
+                          title: `CMR / Demat proof — ${detail.name || detail.email || detail.id}`,
+                        });
+                      }}
                     >
                       Open proof
-                    </a>
+                    </button>
                     {!isPdfProof(detail.kycDematProof) && (
                       <img
                         key={proofThumbKey}
                         src={`${kycProofViewUrl({ userId: detail.id }) || ''}&t=${proofThumbKey}`}
                         alt="Demat proof"
+                        role="button"
+                        tabIndex={0}
+                        title="Click to zoom"
+                        onClick={() => {
+                          const src = `${kycProofViewUrl({ userId: detail.id }) || ''}&t=${proofThumbKey}`;
+                          openProof(src, {
+                            title: `CMR / Demat proof — ${detail.name || detail.email || detail.id}`,
+                          });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            const src = `${kycProofViewUrl({ userId: detail.id }) || ''}&t=${proofThumbKey}`;
+                            openProof(src, {
+                              title: `CMR / Demat proof — ${detail.name || detail.email || detail.id}`,
+                            });
+                          }
+                        }}
                         onError={(e) => {
                           e.currentTarget.style.display = 'none';
                         }}
@@ -686,6 +712,7 @@ export default function AdminUsersPanel({ users, employees = [] }: Props) {
           </div>
         </div>
       )}
+      {proofLightbox}
     </div>
   );
 }

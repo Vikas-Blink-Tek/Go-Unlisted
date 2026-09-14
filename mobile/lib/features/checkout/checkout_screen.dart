@@ -44,6 +44,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final share = context.read<CatalogProvider>().byId(widget.shareId);
     final user = context.read<AuthProvider>().user;
     if (share == null) return;
+    if (!share.isPurchasable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This share is not available for purchase')),
+      );
+      return;
+    }
     if (user == null) {
       context.push('/auth?redirect=/checkout/${widget.shareId}');
       return;
@@ -104,6 +110,32 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final share = context.watch<CatalogProvider>().byId(widget.shareId);
     if (share == null) {
       return const Scaffold(body: Center(child: Text('Share not found')));
+    }
+    if (!share.isPurchasable) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Checkout')),
+        body: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(share.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+              const SizedBox(height: 12),
+              Text(
+                share.isExchangeListed
+                    ? 'This company is exchange-listed. GO UNLISTED only offers unlisted & pre-IPO shares — purchase is not available.'
+                    : 'This share is not available for purchase right now.',
+                style: const TextStyle(color: GuColors.muted, height: 1.45),
+              ),
+              const SizedBox(height: 24),
+              GuPrimaryButton(
+                label: 'Back to shares',
+                onPressed: () => context.go('/app/shares'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     final total = share.price * _qty;
     final settings = context.watch<CatalogProvider>().settings;

@@ -108,12 +108,6 @@ export default function SharesPage() {
         setSectorOpen(true);
         setDropdownOpen(false);
         searchInputRef.current?.focus();
-        return;
-      }
-      if (!typing && e.key === '/') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        setDropdownOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);

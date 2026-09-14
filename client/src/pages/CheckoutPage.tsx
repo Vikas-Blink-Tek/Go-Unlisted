@@ -8,7 +8,7 @@ import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
-import { isShareOnRequest, isShareUnavailable } from '../utils/inventory';
+import { isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
 import { UPI_APPS, isMobileDevice, openUpiPay } from '../utils/upiPay';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 
@@ -104,13 +104,18 @@ export default function CheckoutPage() {
     );
   }
 
-  if (isShareUnavailable(share.inventoryStatus)) {
+  if (!isSharePurchasable(share)) {
+    const listed = !isShareUnavailable(share.inventoryStatus);
     return (
       <div className="view" id="view-checkout">
         <div className="checkout-wrap">
           <div className="checkout-card" style={{ textAlign: 'center' }}>
-            <h2 className="checkout-title">Currently unavailable</h2>
-            <p style={{ color: 'var(--muted)', margin: '1rem 0' }}>{share.name} is out of stock. Contact us for availability.</p>
+            <h2 className="checkout-title">{listed ? 'Not available for purchase' : 'Currently unavailable'}</h2>
+            <p style={{ color: 'var(--muted)', margin: '1rem 0' }}>
+              {listed
+                ? `${share.name} is exchange-listed. GO UNLISTED only deals in unlisted & pre-IPO shares.`
+                : `${share.name} is out of stock. Contact us for availability.`}
+            </p>
             <Link to="/contact" className="btn btn-primary">Contact Us</Link>
           </div>
         </div>

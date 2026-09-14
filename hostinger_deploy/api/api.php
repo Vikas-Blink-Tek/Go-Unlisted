@@ -766,7 +766,9 @@ function recordIpAttempt($conn, $table) {
 }
 
 function normalizeIndianPhone($phone) {
-    $phone = preg_replace('/\D/', '', $phone);
+    // If multiple numbers stored (comma/newline), use the first
+    $first = preg_split('/[,;\n|]+/', (string) $phone)[0] ?? '';
+    $phone = preg_replace('/\D/', '', $first);
     if (strlen($phone) === 12 && str_starts_with($phone, '91')) {
         return substr($phone, 2);
     }
@@ -774,6 +776,25 @@ function normalizeIndianPhone($phone) {
         return substr($phone, 1);
     }
     return $phone;
+}
+
+/** Split Site Settings `mobile` into unique 10-digit Indian numbers (order preserved). */
+function parseSitePhoneList($raw): array {
+    $parts = preg_split('/[,;\n|]+/', (string) $raw) ?: [];
+    $out = [];
+    $seen = [];
+    foreach ($parts as $part) {
+        $norm = normalizeIndianPhone(trim((string) $part));
+        if ($norm === '' || !preg_match('/^[6-9]\d{9}$/', $norm)) {
+            continue;
+        }
+        if (isset($seen[$norm])) {
+            continue;
+        }
+        $seen[$norm] = true;
+        $out[] = $norm;
+    }
+    return $out;
 }
 
 function resolveUserByLoginId(mysqli $conn, string $loginId): ?array {
@@ -1752,28 +1773,44 @@ switch ($action) {
         $userRow = $stmt->get_result()->fetch_assoc();
         $referralCode = normalizeUserCode((string) ($userRow['referral_code'] ?? ''));
 
-        $supportPhone = getSettingValue($conn, 'mobile', SITE_CONTACT_DEFAULTS['mobile']);
+        $supportPhoneRaw = getSettingValue($conn, 'mobile', SITE_CONTACT_DEFAULTS['mobile']);
         $supportEmail = getSettingValue($conn, 'email', SITE_CONTACT_DEFAULTS['email']);
-        $supportWhatsapp = getSettingValue($conn, 'whatsapp', SITE_CONTACT_DEFAULTS['whatsapp'] ?: $supportPhone);
+        $supportWhatsapp = getSettingValue($conn, 'whatsapp', SITE_CONTACT_DEFAULTS['whatsapp'] ?: $supportPhoneRaw);
+        $companyPhones = parseSitePhoneList($supportPhoneRaw);
+        $carePhone = $companyPhones[0] ?? normalizeIndianPhone($supportPhoneRaw);
+        $deskPhone = $companyPhones[1] ?? '';
 
         $rm = lookupRmForReferralCode($conn, $referralCode);
         $rmPayload = null;
         if ($rm) {
             $rmPhone = normalizeIndianPhone((string) ($rm['phone'] ?? ''));
+            if ($rmPhone === '' || $rmPhone === $carePhone) {
+                $rmPhone = $deskPhone !== '' ? $deskPhone : $rmPhone;
+            }
             $rmPayload = [
                 'name' => $rm['name'],
                 'email' => $rm['email'],
                 'phone' => $rmPhone,
                 'employeeId' => strtoupper(trim((string) ($rm['employee_id'] ?? ''))),
+                'isDesk' => false,
+            ];
+        } elseif ($deskPhone !== '') {
+            $rmPayload = [
+                'name' => 'Relationship desk',
+                'email' => $supportEmail,
+                'phone' => $deskPhone,
+                'employeeId' => '',
+                'isDesk' => true,
             ];
         }
 
         sendResponse([
             'success' => true,
             'support' => [
-                'phone' => normalizeIndianPhone($supportPhone),
+                'phone' => $carePhone,
+                'phones' => $companyPhones,
                 'email' => $supportEmail,
-                'whatsapp' => normalizeIndianPhone($supportWhatsapp ?: $supportPhone),
+                'whatsapp' => normalizeIndianPhone($supportWhatsapp ?: $carePhone),
             ],
             'relationManager' => $rmPayload,
             'referralCode' => $referralCode,

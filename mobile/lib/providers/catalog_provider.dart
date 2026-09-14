@@ -20,7 +20,7 @@ class CatalogProvider extends ChangeNotifier {
 
   List<String> get sectors {
     final set = <String>{'All'};
-    for (final s in _shares) {
+    for (final s in buyable) {
       if (s.sector.isNotEmpty) set.add(s.sector);
     }
     return set.toList()..sort();
@@ -28,8 +28,11 @@ class CatalogProvider extends ChangeNotifier {
 
   List<GuShare> get featured => _shares.where((s) => s.featured).take(12).toList();
 
+  /// Buyable catalog only — exchange-listed / out-of-stock excluded.
+  List<GuShare> get buyable => _shares.where((s) => s.isPurchasable).toList();
+
   List<GuShare> get filtered {
-    return _shares.where((s) {
+    return buyable.where((s) {
       if (_sector != 'All' && s.sector != _sector) return false;
       if (_query.isEmpty) return true;
       final q = _query.toLowerCase();

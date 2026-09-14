@@ -133,8 +133,14 @@ export async function uploadKycDematProof(file: File) {
 }
 
 export interface AccountContacts {
-  support: { phone: string; email: string; whatsapp: string };
-  relationManager?: { name: string; email: string; phone: string; employeeId: string } | null;
+  support: { phone: string; phones?: string[]; email: string; whatsapp: string };
+  relationManager?: {
+    name: string;
+    email: string;
+    phone: string;
+    employeeId: string;
+    isDesk?: boolean;
+  } | null;
   referralCode?: string;
 }
 

@@ -128,7 +128,7 @@ class ShareDetailScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${share.ticker} · Unlisted',
+                          '${share.ticker} · ${share.listingType?.isNotEmpty == true ? share.listingType : 'Unlisted'}',
                           style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
                         ),
                       ],
@@ -200,48 +200,66 @@ class ShareDetailScreen extends StatelessWidget {
               const SizedBox(height: 24),
               
               // Bottom CTA Card
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: GuColors.border),
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Ready to invest in ${share.name}?',
-                      style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 16),
+              Builder(
+                builder: (context) {
+                  final canPurchase = share.isPurchasable;
+                  final trackOnly = share.isTrackRecordOnly;
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: GuColors.border),
+                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10, offset: Offset(0, 4))],
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: Text(
-                            'Min. ${formatNumber(share.minQty)} shares · ${canViewRates ? formatInr(share.price * share.minQty) : "Login to see total"}',
-                            style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
-                          ),
+                        Text(
+                          canPurchase
+                              ? 'Ready to invest in ${share.name}?'
+                              : trackOnly
+                                  ? '${share.name} — sample listing'
+                                  : '${share.name} is unavailable',
+                          style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 16),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: GuPrimaryButton(
-                            label: 'Invest Now →',
-                            onPressed: () {
-                              if (!auth.isLoggedIn) {
-                                context.push('/auth?redirect=/checkout/${share.id}');
-                                return;
-                              }
-                              context.push('/checkout/${share.id}');
-                            },
+                        const SizedBox(height: 8),
+                        if (!canPurchase)
+                          Text(
+                            trackOnly
+                                ? 'This is a Market Activity / sample card (same as website). Purchase is only available for live unlisted & pre-IPO inventory.'
+                                : 'This share is currently out of stock. Contact us for availability.',
+                            style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13, height: 1.4),
+                          )
+                        else
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Min. ${formatNumber(share.minQty)} shares · ${canViewRates ? formatInr(share.price * share.minQty) : "Login to see total"}',
+                                  style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: GuPrimaryButton(
+                                  label: 'Invest Now →',
+                                  onPressed: () {
+                                    if (!auth.isLoggedIn) {
+                                      context.push('/auth?redirect=/checkout/${share.id}');
+                                      return;
+                                    }
+                                    context.push('/checkout/${share.id}');
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
                       ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
               const SizedBox(height: 40),
             ],

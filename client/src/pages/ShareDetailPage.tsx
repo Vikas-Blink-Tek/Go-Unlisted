@@ -2,11 +2,12 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import PriceChart from '../components/shares/PriceChart';
 import CompanyLogo from '../components/shares/CompanyLogo';
+import { useShareSearch } from '../components/shares/GlobalShareSearch';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, formatCurrency, invoiceChargesEnabled } from '../utils/format';
 import { useAuth } from '../context/AuthContext';
-import { getInventoryBadge, isShareOnRequest, isShareUnavailable } from '../utils/inventory';
+import { getInventoryBadge, isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { getBulkPricingSummary } from '../utils/bulkPricing';
@@ -18,6 +19,7 @@ export default function ShareDetailPage() {
   const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { openSearch } = useShareSearch();
   const canViewRates = useCanViewShareRates();
   const [period, setPeriod] = useState<ChartPeriod>('3M');
 
@@ -37,7 +39,7 @@ export default function ShareDetailPage() {
   }
 
   const handleBuy = () => {
-    if (isShareUnavailable(share.inventoryStatus)) return;
+    if (!isSharePurchasable(share)) return;
     if (!user) {
       navigate('/login', { state: { from: `/shares/${share.id}` } });
       return;
@@ -47,7 +49,9 @@ export default function ShareDetailPage() {
 
   const unavailable = isShareUnavailable(share.inventoryStatus);
   const onRequest = isShareOnRequest(share.inventoryStatus);
+  const canPurchase = isSharePurchasable(share);
   const invBadge = getInventoryBadge(share.inventoryStatus);
+  const listedOnly = !canPurchase && !unavailable;
 
   const na = (v?: string | number | null) => {
     if (v === null || v === undefined || v === '') return 'N/A';
@@ -75,9 +79,19 @@ export default function ShareDetailPage() {
   return (
     <div className="view" id="view-detail">
       <div className="detail-page-wrap">
-        <button type="button" className="detail-back" onClick={() => navigate('/shares')}>
-          ← Back to Listings
-        </button>
+        <div className="detail-toolbar">
+          <button type="button" className="detail-back" onClick={() => navigate('/shares')}>
+            ← Back to Listings
+          </button>
+          <button type="button" className="detail-search-btn" onClick={openSearch}>
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2" aria-hidden>
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            Search shares
+            <kbd>/</kbd>
+          </button>
+        </div>
 
         <div className="detail-hero-row">
           <div className="detail-hero-left">
@@ -188,6 +202,10 @@ export default function ShareDetailPage() {
           {unavailable ? (
             <Link to="/contact" className="btn btn-outline btn-lg">
               Contact Us for Availability
+            </Link>
+          ) : listedOnly ? (
+            <Link to="/contact" className="btn btn-outline btn-lg">
+              Exchange listed — Contact Us
             </Link>
           ) : (
             <button type="button" className="btn btn-primary btn-lg" onClick={handleBuy}>

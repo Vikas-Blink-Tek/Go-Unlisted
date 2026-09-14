@@ -8,7 +8,6 @@ import {
   isPendingOrder,
   canMarkOrderComplete,
   canUndoOrderComplete,
-  canTransferOrder,
   canRejectOrder,
 } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
@@ -72,16 +71,6 @@ export default function AdminOrdersSection({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selected, setSelected] = useState<Order | null>(null);
-  const [transferPick, setTransferPick] = useState<Record<string, string>>({});
-
-  const employeeOptions = useMemo(() => {
-    return (employees || [])
-      .map((e) => {
-        const code = String(e.employee_id ?? e.employeeCode ?? '').trim();
-        return code ? { code, name: e.name ? String(e.name) : code } : null;
-      })
-      .filter(Boolean) as Array<{ code: string; name: string }>;
-  }, [employees]);
 
   const employeeCodes = useMemo(() => {
     const codes = new Set<string>([DEFAULT_USER_CODE]);
@@ -131,15 +120,6 @@ export default function AdminOrdersSection({
 
   const display = limit ? filtered.slice(0, limit) : filtered;
   const showActionCol = showActions || !!onComplete || !!onUndoComplete || !!onDelete || !!onReject;
-  const canUpdateStatus = (o: Order) =>
-    (showActions && isPendingOrder(o.status))
-    || (!!onComplete && canMarkOrderComplete(o.status))
-    || (!!onUndoComplete && canUndoOrderComplete(o.status));
-
-  const canShowTransfer = (o: Order) =>
-    !!onTransferOrder
-    && employeeOptions.length > 0
-    && canTransferOrder(o.status);
 
   const handleVerify = (id: string) => {
     if (confirm('Verify payment? Order moves to Pending Share Transfer.')) {
@@ -180,18 +160,6 @@ export default function AdminOrdersSection({
 
   const handleRestore = (id: string) => {
     onRestore?.(id);
-  };
-
-  const handleTransfer = async (orderId: string) => {
-    const picked =
-      transferPick[orderId]
-      || display.find((o) => o.orderId === orderId)?.employeeCode
-      || employeeOptions[0]?.code
-      || '';
-    if (!picked) return;
-    const ok = confirm(`Transfer this order to ${displayUserCode(picked)}?`);
-    if (!ok) return;
-    await Promise.resolve(onTransferOrder?.(orderId, picked));
   };
 
   return (
@@ -259,29 +227,25 @@ export default function AdminOrdersSection({
           <table className="data-table admin-orders-table">
             <thead>
               <tr>
-                <th>Order ID</th>
-                <th>Date / Time</th>
-                {showFranchiseColumn && <th>Franchise</th>}
-                <th>User Code</th>
-                <th>Buyer</th>
-                <th>Share</th>
-                <th>Price / Share</th>
-                <th>Qty</th>
-                <th>Amount</th>
-                <th>Payment Ref</th>
-                <th>Status</th>
-                {showActionCol && <th>Actions</th>}
+                <th className="admin-orders-col-id">Order</th>
+                <th className="admin-orders-col-buyer">Buyer</th>
+                <th className="admin-orders-col-share">Share</th>
+                <th className="admin-orders-col-amount">Amount</th>
+                <th className="admin-orders-col-utr">Payment</th>
+                <th className="admin-orders-col-status">Status</th>
+                {showActionCol && <th className="admin-orders-col-actions"> </th>}
               </tr>
             </thead>
             <tbody>
               {display.map((o) => {
-                const showTransfer = !verifyMode && canShowTransfer(o);
-                const transferValue =
-                  transferPick[o.orderId]
-                  || (o.employeeCode && employeeOptions.some((e) => e.code.toUpperCase() === o.employeeCode!.toUpperCase())
-                    ? o.employeeCode
-                    : employeeOptions[0]?.code)
-                  || '';
+                const shareLabel = o.companyName || o.shareName || '—';
+                const paymentRef = (o.transactionId || o.utr || '').trim();
+                const primaryAction = showActions && isPendingOrder(o.status)
+                  ? { label: 'Verify', run: () => handleVerify(o.orderId) }
+                  : onComplete && canMarkOrderComplete(o.status)
+                    ? { label: 'Complete', run: () => handleComplete(o.orderId) }
+                    : null;
+
                 return (
                   <tr key={o.orderId} className="admin-order-row" onClick={() => setSelected(o)}>
                     <td className="admin-orders-col-id" onClick={(e) => e.stopPropagation()}>
@@ -289,102 +253,87 @@ export default function AdminOrdersSection({
                         <code className="admin-order-id">{o.orderId}</code>
                         <CopyTextButton value={o.orderId} label="Order ID copied" />
                       </div>
+                      <div className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</div>
+                      {(showFranchiseColumn || o.employeeCode) && (
+                        <div
+                          className="admin-orders-id-meta"
+                          title={showFranchiseColumn ? (o.franchiseName || 'Direct / Platform') : undefined}
+                        >
+                          {displayUserCode(o.employeeCode)}
+                          {showFranchiseColumn ? ` · ${o.franchiseName || 'Direct'}` : ''}
+                        </div>
+                      )}
                     </td>
-                    <td className="admin-orders-col-date">{formatDateTime(getOrderDate(o))}</td>
-                    {showFranchiseColumn && (
-                      <td className="admin-orders-col-franchise" title={o.franchiseName || 'Direct / Platform'}>
-                        {o.franchiseName || 'Direct / Platform'}
-                      </td>
-                    )}
-                    <td className="admin-orders-col-code">{displayUserCode(o.employeeCode)}</td>
                     <td className="admin-orders-col-buyer">
                       <div className="admin-orders-buyer-name">{formatPersonName(o.buyerName)}</div>
                       <div className="admin-orders-buyer-meta">
                         {o.buyerPhone ? formatIndianPhoneDisplay(o.buyerPhone) : o.buyerEmail || '—'}
                       </div>
                     </td>
-                    <td className="admin-orders-col-share" title={o.companyName || o.shareName || ''}>
-                      {o.companyName || o.shareName || '—'}
+                    <td className="admin-orders-col-share">
+                      <div className="admin-orders-share-name" title={shareLabel}>{shareLabel}</div>
+                      <div className="admin-orders-col-deal">
+                        <span className="admin-orders-deal-qty">{o.qty}</span>
+                        <span className="admin-orders-deal-sep">×</span>
+                        <span className="admin-orders-deal-price">{formatCurrency(o.pricePerShare || 0)}</span>
+                      </div>
                     </td>
-                    <td className="admin-orders-col-price">{formatCurrency(o.pricePerShare || 0)}</td>
-                    <td className="admin-orders-col-qty">{o.qty}</td>
                     <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
                     <td className="admin-orders-col-utr">
-                      <code className="admin-utr-code" title="Bank UTR (manual) or self-confirmed online">
-                        {o.transactionId || o.utr || '—'}
-                      </code>
+                      {paymentRef ? (
+                        <code className="admin-utr-code" title={paymentRef}>{paymentRef}</code>
+                      ) : (
+                        <span className="admin-orders-empty-ref">—</span>
+                      )}
                     </td>
-                    <td className="admin-orders-col-status" onClick={(e) => showTransfer && e.stopPropagation()}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start', minWidth: 160 }}>
-                        <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
-                          {getAdminOrderStatusLabel(o.status)}
-                        </span>
-                        {showTransfer && (
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <select
-                              className="report-filter-input"
-                              style={{ minWidth: 110, fontSize: '0.75rem', padding: '0.25rem 0.4rem' }}
-                              value={transferValue}
-                              aria-label="Transfer order assign employee"
-                              onChange={(e) => setTransferPick((prev) => ({ ...prev, [o.orderId]: e.target.value }))}
-                            >
-                              {employeeOptions.map((emp) => (
-                                <option key={emp.code} value={emp.code}>
-                                  {displayUserCode(emp.code)}{emp.name ? ` — ${emp.name}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => void handleTransfer(o.orderId)}
-                            >
-                              Transfer
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                    <td className="admin-orders-col-status">
+                      <span className={`status-badge status-badge--admin ${getOrderStatusClass(o.status)}`}>
+                        {getAdminOrderStatusLabel(o.status)}
+                      </span>
                     </td>
                     {showActionCol && (
                       <td className="admin-orders-col-actions" onClick={(e) => e.stopPropagation()}>
-                        {showActions && isPendingOrder(o.status) && (
-                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleVerify(o.orderId)}>
-                            Verify
-                          </button>
-                        )}
-                        {showActions && onReject && canRejectOrder(o.status) && (
+                        <div className="admin-orders-actions">
+                          {primaryAction && (
+                            <button type="button" className="btn btn-primary btn-sm" onClick={primaryAction.run}>
+                              {primaryAction.label}
+                            </button>
+                          )}
                           <button
                             type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: '#ef4444' }}
-                            onClick={() => handleReject(o.orderId)}
+                            className="btn btn-ghost btn-sm admin-orders-open-btn"
+                            onClick={() => setSelected(o)}
                           >
-                            Reject
+                            Open
                           </button>
-                        )}
-                        {onComplete && canMarkOrderComplete(o.status) && (
-                          <button type="button" className="btn btn-primary btn-sm" onClick={() => handleComplete(o.orderId)}>
-                            Complete
-                          </button>
-                        )}
-                        {onUndoComplete && canUndoOrderComplete(o.status) && (
-                          <button type="button" className="btn btn-ghost btn-sm" onClick={() => handleUndoComplete(o.orderId)}>
-                            Undo
-                          </button>
-                        )}
-                        {onDelete && (
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-sm"
-                            style={{ color: '#ef4444' }}
-                            onClick={() => handleDelete(o.orderId)}
-                          >
-                            Delete
-                          </button>
-                        )}
-                        {verifyMode && !canUpdateStatus(o) && !onDelete && !(onReject && canRejectOrder(o.status)) && (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>—</span>
-                        )}
+                          {showActions && onReject && canRejectOrder(o.status) && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm admin-orders-danger-btn"
+                              onClick={() => handleReject(o.orderId)}
+                            >
+                              Reject
+                            </button>
+                          )}
+                          {onUndoComplete && canUndoOrderComplete(o.status) && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => handleUndoComplete(o.orderId)}
+                            >
+                              Undo
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm admin-orders-danger-btn"
+                              onClick={() => handleDelete(o.orderId)}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

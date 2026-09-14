@@ -38,10 +38,16 @@ export default function AccountManagerPage() {
 
   const support = contactsQuery.data?.support;
   const rm = contactsQuery.data?.relationManager;
+  const companyPhones = support?.phones?.length
+    ? support.phones
+    : support?.phone
+      ? [support.phone]
+      : [];
   const rmPhone = rm?.phone || '';
-  const supportPhone = support?.phone || '';
-  const whatsappTarget = rmPhone || support?.whatsapp || supportPhone;
-  const emailTarget = rm?.email || support?.email || user.email;
+  const supportPhone = companyPhones[0] || support?.phone || '';
+  const extraPhones = companyPhones.slice(1).filter((p) => p && p !== rmPhone);
+  const whatsappTarget = support?.whatsapp || supportPhone || rmPhone;
+  const emailTarget = (!rm?.isDesk && rm?.email) || support?.email || user.email;
 
   const startDelete = async () => {
     if (!window.confirm('Delete your account permanently? This cannot be undone. Your order history will be removed.')) {
@@ -104,25 +110,46 @@ export default function AccountManagerPage() {
             <>
               {rm?.phone ? (
                 <div className="account-manager-row">
-                  <span className="account-manager-label">Relation Manager</span>
+                  <span className="account-manager-label">
+                    {rm.isDesk ? 'Relationship desk' : 'Relation Manager'}
+                  </span>
                   <a href={`tel:+91${rmPhone}`} className="account-manager-value">
                     {formatIndianPhoneDisplay(rmPhone)}
                   </a>
-                  {rm.name && <span className="account-manager-sub">{rm.name}</span>}
+                  {rm.name && (
+                    <span className="account-manager-sub">
+                      {rm.isDesk ? 'Company line for KYC & orders' : rm.name}
+                    </span>
+                  )}
                 </div>
-              ) : contactsQuery.data?.referralCode ? (
+              ) : (
                 <div className="account-manager-row">
                   <span className="account-manager-label">Relation Manager</span>
-                  <span className="account-manager-value muted">Not assigned — contact support below</span>
+                  <span className="account-manager-value muted">
+                    Not assigned — add a 2nd number in Site Settings → Mobile, or assign an employee RM
+                  </span>
                 </div>
-              ) : null}
+              )}
 
               <div className="account-manager-row">
-                <span className="account-manager-label">Support</span>
-                <a href={`tel:+91${supportPhone}`} className="account-manager-value">
-                  {formatIndianPhoneDisplay(supportPhone)}
-                </a>
+                <span className="account-manager-label">Customer care</span>
+                {supportPhone ? (
+                  <a href={`tel:+91${supportPhone}`} className="account-manager-value">
+                    {formatIndianPhoneDisplay(supportPhone)}
+                  </a>
+                ) : (
+                  <span className="account-manager-value muted">—</span>
+                )}
               </div>
+
+              {extraPhones.map((p, i) => (
+                <div className="account-manager-row" key={p}>
+                  <span className="account-manager-label">Company line {i + 2}</span>
+                  <a href={`tel:+91${p}`} className="account-manager-value">
+                    {formatIndianPhoneDisplay(p)}
+                  </a>
+                </div>
+              ))}
 
               <div className="account-manager-actions">
                 <a

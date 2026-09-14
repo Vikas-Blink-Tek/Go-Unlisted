@@ -97,6 +97,8 @@ class GuShare {
     this.logoInitials,
     this.inventoryStatus,
     this.listingType,
+    this.listingPrice,
+    this.purchasable,
     this.featured = false,
     this.isTop10 = false,
     this.highlights = const [],
@@ -134,6 +136,8 @@ class GuShare {
   final String? logoInitials;
   final String? inventoryStatus;
   final String? listingType;
+  final double? listingPrice;
+  final bool? purchasable;
   final bool featured;
   final bool isTop10;
   final List<String> highlights;
@@ -163,6 +167,44 @@ class GuShare {
   final List<GuDiscountTier>? _discountTiers;
   List<GuDiscountTier> get discountTiers => _discountTiers ?? const [];
 
+  /// Market Activity / sample track-record IDs (not for purchase).
+  static const trackRecordOnlyIds = {
+    'custom-adtech-systems-ltd-0ce13',
+    'custom-anand-rathi-wealth-52a7d',
+    'custom-bikaji-foods-c8739',
+    'custom-just-dial-ltd-c9d32',
+    'custom-nykaa-d23d5',
+  };
+
+  bool get isExchangeListed {
+    if (trackRecordOnlyIds.contains(id)) return true;
+    final type = (listingType ?? '').trim().toLowerCase();
+    if (type == 'listed' || type == 'exchange listed' || type == 'nse listed' || type == 'bse listed') {
+      return true;
+    }
+    final lp = listingPrice;
+    return lp != null && lp > 0;
+  }
+
+  /// Homepage starred / Market Activity samples — browse only, not checkout.
+  bool get isTrackRecordOnly {
+    if (featured) return true;
+    if (trackRecordOnlyIds.contains(id)) return true;
+    if (isExchangeListed) return true;
+    return false;
+  }
+
+  bool get isUnavailable => (inventoryStatus ?? '').trim() == 'Out of Stock';
+
+  /// Investor may place an in-app / online purchase.
+  bool get isPurchasable {
+    if (purchasable == false) return false;
+    if (isUnavailable) return false;
+    if (isTrackRecordOnly) return false;
+    if (price <= 0) return false;
+    return true;
+  }
+
   factory GuShare.fromJson(Map<String, dynamic> j) {
     final highlightsRaw = j['highlights'] ?? j['keyHighlights'];
     List<String> highlights = [];
@@ -184,6 +226,17 @@ class GuShare {
       logoInitials: (rawInitials == null || rawInitials.isEmpty) ? null : rawInitials,
       inventoryStatus: (j['inventoryStatus'] ?? j['inventory_status'])?.toString(),
       listingType: (j['listingType'] ?? j['listing_type'])?.toString(),
+      listingPrice: () {
+        final raw = j['listingPrice'] ?? j['listing_price'];
+        if (raw == null || raw == '') return null;
+        final v = _toDouble(raw);
+        return v > 0 ? v : null;
+      }(),
+      purchasable: j['purchasable'] is bool
+          ? j['purchasable'] as bool
+          : (j['purchasable'] == 1 || j['purchasable'] == '1'
+              ? true
+              : (j['purchasable'] == 0 || j['purchasable'] == '0' || j['purchasable'] == false ? false : null)),
       featured: j['featured'] == true ||
           j['featured'] == 1 ||
           j['featured'] == '1' ||
