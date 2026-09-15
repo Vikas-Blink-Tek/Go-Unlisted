@@ -127,6 +127,38 @@ export default function ShareDetailPage() {
           </div>
         </div>
 
+        <div className="detail-invest-cta">
+          <div>
+            <h3>Ready to invest in {share.name}?</h3>
+            <p>
+              Min. {share.minQty} shares
+              {canViewRates ? (
+                <>
+                  {' '}
+                  · {formatCurrency(calcOrderTotal(share.price, share.minQty, settings))}
+                  {invoiceChargesEnabled(settings) ? ' (incl. extra charges)' : ''}
+                </>
+              ) : (
+                <> · <span className="share-rate-login-inline">login to see total</span></>
+              )}
+              {onRequest && ' · Delivery timeline on request'}
+            </p>
+          </div>
+          {unavailable ? (
+            <Link to="/contact" className="btn btn-outline btn-lg">
+              Contact Us for Availability
+            </Link>
+          ) : listedOnly ? (
+            <Link to="/contact" className="btn btn-outline btn-lg">
+              Exchange listed — Contact Us
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-primary btn-lg" onClick={handleBuy}>
+              {canViewRates ? 'Invest Now →' : 'Login to Invest →'}
+            </button>
+          )}
+        </div>
+
         {bulk && (
           <BlurredRatesLock className="detail-price-compare-lock">
             <SharePriceCompare share={share} variant="detail" />
@@ -181,38 +213,6 @@ export default function ShareDetailPage() {
             </div>
           </BlurredRatesLock>
         )}
-
-        <div className="detail-invest-cta">
-          <div>
-            <h3>Ready to invest in {share.name}?</h3>
-            <p>
-              Min. {share.minQty} shares
-              {canViewRates ? (
-                <>
-                  {' '}
-                  · {formatCurrency(calcOrderTotal(share.price, share.minQty, settings))}
-                  {invoiceChargesEnabled(settings) ? ' (incl. extra charges)' : ''}
-                </>
-              ) : (
-                <> · <span className="share-rate-login-inline">login to see total</span></>
-              )}
-              {onRequest && ' · Delivery timeline on request'}
-            </p>
-          </div>
-          {unavailable ? (
-            <Link to="/contact" className="btn btn-outline btn-lg">
-              Contact Us for Availability
-            </Link>
-          ) : listedOnly ? (
-            <Link to="/contact" className="btn btn-outline btn-lg">
-              Exchange listed — Contact Us
-            </Link>
-          ) : (
-            <button type="button" className="btn btn-primary btn-lg" onClick={handleBuy}>
-              {canViewRates ? 'Invest Now →' : 'Login to Invest →'}
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

@@ -1285,6 +1285,10 @@
       white-space: nowrap;
     }
 
+    .admin-orders-table .admin-initiated-col-actions {
+      width: 11.5rem;
+    }
+
     .admin-orders-actions {
       display: inline-flex;
       flex-wrap: wrap;

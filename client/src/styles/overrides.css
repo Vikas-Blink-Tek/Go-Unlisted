@@ -930,7 +930,8 @@ button.footer-link {
 }
 
 .detail-invest-cta {
-  margin-top: 1.5rem;
+  margin-top: 0.25rem;
+  margin-bottom: 1.5rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 18px;
