@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { getUsers, mapApiUser } from '../../../api/admin';
 import type { User } from '../../../types';
 import { matchesAdminSearch } from '../../../utils/adminSearch';
-import { formatDateTime } from '../../../utils/format';
+import { formatDateTime, formatIndianPhoneDisplay, formatPersonName } from '../../../utils/format';
 import { displayUserCode, DEFAULT_USER_CODE } from '../../../utils/userCode';
 import AdminSectionHeader from '../components/AdminSectionHeader';
 
@@ -150,34 +150,41 @@ export default function AdminSignupsPanel() {
         </div>
       ) : (
         <div className="price-table-wrap admin-orders-table-wrap">
-          <table className="data-table admin-orders-table">
+          <table className="data-table admin-orders-table admin-signups-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Registered On</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Employee Code</th>
-                <th>KYC Status</th>
+                <th className="admin-signups-col-num">#</th>
+                <th className="admin-signups-col-date">Registered On</th>
+                <th className="admin-signups-col-name">Name</th>
+                <th className="admin-signups-col-contact">Contact</th>
+                <th className="admin-signups-col-code">Employee Code</th>
+                <th className="admin-signups-col-kyc">KYC Status</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((u, idx) => (
-                <tr key={u.id}>
-                  <td style={{ color: 'var(--text-dim)', fontSize: '0.78rem' }}>{idx + 1}</td>
-                  <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>
+                <tr key={u.id} className="admin-order-row">
+                  <td className="admin-signups-col-num">{idx + 1}</td>
+                  <td className="admin-signups-col-date">
                     {u.createdAt ? formatDateTime(u.createdAt) : '—'}
                   </td>
-                  <td style={{ fontWeight: 600 }}>{u.name || '—'}</td>
-                  <td>{u.email}</td>
-                  <td>{u.phone || '—'}</td>
-                  <td style={{ fontFamily: 'monospace' }}>
+                  <td className="admin-signups-col-name">
+                    <div className="admin-orders-buyer-name">{formatPersonName(u.name)}</div>
+                  </td>
+                  <td className="admin-signups-col-contact">
+                    <div className="admin-signups-email" title={u.email || undefined}>
+                      {u.email || '—'}
+                    </div>
+                    <div className="admin-orders-buyer-meta">
+                      {u.phone ? formatIndianPhoneDisplay(u.phone) : '—'}
+                    </div>
+                  </td>
+                  <td className="admin-signups-col-code">
                     {displayUserCode(u.referralCode)}
                   </td>
-                  <td>
+                  <td className="admin-signups-col-kyc">
                     <span
-                      className={`status-badge ${
+                      className={`status-badge status-badge--admin ${
                         u.kycStatus === 'Verified'
                           ? 'status-confirmed'
                           : u.kycStatus === 'Rejected'
