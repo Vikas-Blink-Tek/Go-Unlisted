@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/gu_theme.dart';
+import '../../models/models.dart';
 import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
 
@@ -12,7 +13,10 @@ class SharesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<CatalogProvider>();
+    final top10 = catalog.top10Shares;
     final items = catalog.filtered;
+    final totalCount = top10.length + items.length;
+    final filtersActive = catalog.query.trim().isNotEmpty || catalog.sector != 'All';
 
     return GuPageBackground(
       child: SafeArea(
@@ -27,7 +31,7 @@ class SharesScreen extends StatelessWidget {
                   Text('Shares', style: Theme.of(context).textTheme.headlineMedium),
                   const SizedBox(height: 4),
                   Text(
-                    '${items.length} companies · live from website',
+                    '$totalCount companies · live from website',
                     style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted),
                   ),
                   const SizedBox(height: 16),
@@ -85,9 +89,9 @@ class SharesScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: catalog.loading && items.isEmpty
+              child: catalog.loading && totalCount == 0
                   ? const Center(child: CircularProgressIndicator(color: GuColors.lime))
-                  : items.isEmpty
+                  : totalCount == 0
                       ? Center(
                           child: Padding(
                             padding: const EdgeInsets.all(32),
@@ -109,17 +113,83 @@ class SharesScreen extends StatelessWidget {
                       : RefreshIndicator(
                           color: GuColors.lime,
                           onRefresh: catalog.load,
-                          child: ListView.separated(
+                          child: ListView(
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                            itemCount: items.length,
-                            separatorBuilder: (_, _) => const SizedBox(height: 12),
-                            itemBuilder: (_, i) => ShareListTile(share: items[i]).guFadeSlide(delayMs: (i % 8) * 28),
+                            children: [
+                              if (top10.isNotEmpty) ...[
+                                _SectionTitle(
+                                  icon: Icons.emoji_events_rounded,
+                                  title: 'Top 10 Shares',
+                                ),
+                                const SizedBox(height: 12),
+                                ..._shareTiles(top10),
+                                if (items.isNotEmpty || filtersActive) const SizedBox(height: 20),
+                              ],
+                              if (filtersActive && items.isNotEmpty) ...[
+                                _SectionTitle(
+                                  title: catalog.query.isNotEmpty
+                                      ? 'Results for “${catalog.query.trim()}”'
+                                      : 'Matching listings',
+                                  trailing: '($totalCount)',
+                                ),
+                                const SizedBox(height: 12),
+                              ],
+                              if (items.isNotEmpty) ..._shareTiles(items, startDelay: top10.length),
+                            ],
                           ),
                         ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  List<Widget> _shareTiles(List<GuShare> shares, {int startDelay = 0}) {
+    final out = <Widget>[];
+    for (var i = 0; i < shares.length; i++) {
+      if (i > 0) out.add(const SizedBox(height: 12));
+      out.add(ShareListTile(share: shares[i]).guFadeSlide(delayMs: ((startDelay + i) % 8) * 28));
+    }
+    return out;
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle({
+    required this.title,
+    this.icon,
+    this.trailing,
+  });
+
+  final String title;
+  final IconData? icon;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, color: GuColors.limeDark, size: 22),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            style: GoogleFonts.manrope(
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: GuColors.ink,
+            ),
+          ),
+        ),
+        if (trailing != null)
+          Text(
+            trailing!,
+            style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted, fontWeight: FontWeight.w500),
+          ),
+      ],
     );
   }
 }

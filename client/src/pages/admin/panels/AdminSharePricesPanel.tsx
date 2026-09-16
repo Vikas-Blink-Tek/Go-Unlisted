@@ -10,6 +10,7 @@ import StockListingModal from '../components/StockListingModal';
 import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { STOCK_SECTORS } from '../../../data/sharesCatalog';
 import { buildPriceHistory, defaultChartLabels } from '../../../utils/priceHistory';
+import { normalizeDrhpStatus } from '../../../utils/drhpStatus';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #003478, #0050a8)',
@@ -30,6 +31,7 @@ type FormState = {
   ticker: string;
   sector: string;
   listingType: string;
+  drhpStatus: string;
   basePrice: string;
   buyPrice: string;
   listingPrice: string;
@@ -66,6 +68,7 @@ const emptyForm = (): FormState => ({
   ticker: '',
   sector: '',
   listingType: 'Pre-IPO',
+  drhpStatus: 'Not Filed',
   basePrice: '',
   buyPrice: '',
   listingPrice: '',
@@ -117,6 +120,7 @@ function shareToForm(share: Share): FormState {
     ticker: share.ticker,
     sector: share.sector,
     listingType: share.listingType || 'Pre-IPO',
+    drhpStatus: normalizeDrhpStatus(share.drhpStatus),
     basePrice: String(share.basePrice || share.price),
     buyPrice: share.buyPrice ? String(share.buyPrice) : '',
     listingPrice: share.listingPrice ? String(share.listingPrice) : '',
@@ -147,6 +151,7 @@ function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boole
     ticker: share.ticker,
     sector: share.sector,
     listingType: share.listingType || 'Pre-IPO',
+    drhpStatus: normalizeDrhpStatus(share.drhpStatus),
     sectorColor: share.sectorColor || '#7ac142',
     basePrice: share.basePrice || share.price,
     buyPrice: share.buyPrice ?? undefined,
@@ -336,6 +341,7 @@ export default function AdminSharePricesPanel() {
         ticker: form.ticker.toUpperCase(),
         sector: form.sector.trim(),
         listingType: form.listingType,
+        drhpStatus: normalizeDrhpStatus(form.drhpStatus),
         sectorColor: '#7ac142',
         basePrice,
         buyPrice: form.buyPrice ? parseFloat(form.buyPrice) : undefined,
@@ -528,6 +534,8 @@ export default function AdminSharePricesPanel() {
                 </div>
                 <div className="price-company-sector">
                   {s.ticker} · {s.sector} · Min {s.minQty} · {s.inventoryStatus || 'In Stock'}
+                  {' · '}
+                  {normalizeDrhpStatus(s.drhpStatus)}
                   {s.buyPrice ? ` · Margin ${formatCurrency(s.price - s.buyPrice)}/sh` : ''}
                 </div>
                 {!s.description && <div className="stock-missing-hint">⚠ No description — click to edit</div>}

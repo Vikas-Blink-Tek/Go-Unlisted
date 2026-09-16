@@ -183,6 +183,19 @@ Color shareCardTagColor(String label) {
   }
 }
 
+Color _drhpColor(String status) {
+  switch (status) {
+    case 'DRHP Approved':
+      return const Color(0xFF15803D);
+    case 'DRHP Filed':
+      return const Color(0xFF1D4ED8);
+    case 'DRHP Pending':
+      return const Color(0xFFB45309);
+    default:
+      return GuColors.muted;
+  }
+}
+
 /// Full-width catalog row — scannable, thumb-friendly.
 class ShareListTile extends StatelessWidget {
   const ShareListTile({super.key, required this.share});
@@ -240,6 +253,15 @@ class ShareListTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
+                  Text(
+                    share.displayDrhpStatus,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _drhpColor(share.displayDrhpStatus),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     'Min lot ${share.minQty}',
                     style: GoogleFonts.inter(fontSize: 11, color: GuColors.mutedSoft),
@@ -362,6 +384,17 @@ class ShareCard extends StatelessWidget {
                 style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: GuColors.ink),
               ),
               const Spacer(),
+              if ((share.listingPrice ?? 0) > 0) ...[
+                Text(
+                  'Listing ${formatInr(share.listingPrice!)}',
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: GuColors.limeDark,
+                  ),
+                ),
+                const SizedBox(height: 2),
+              ],
               Row(
                 children: [
                   Expanded(

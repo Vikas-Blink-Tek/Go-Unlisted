@@ -4,6 +4,7 @@ import { useShares, useWatchlist } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import { formatCurrency } from '../utils/format';
+import { sectorMatches } from '../utils/sectorFilter';
 import { useCanViewShareRates } from '../utils/shareRates';
 import type { Share } from '../types';
 
@@ -27,45 +28,47 @@ export default function SharesPage() {
   const [maxPrice, setMaxPrice] = useState(4000);
   const [watchOnly, setWatchOnly] = useState(false);
   const [watched, setWatched] = useState<string[]>(watchlist.get());
-  const [sectorOpen, setSectorOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const sectorPanelRef = useRef<HTMLDivElement>(null);
 
   const sectorOptions = useMemo(() => {
-    const fromShares = [...new Set(shares.map((s) => s.sector).filter(Boolean))].sort((a, b) =>
+    const fromShares = [...new Set(shares.map((s) => (s.sector || '').trim()).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b),
     );
     return ['All', ...fromShares];
   }, [shares]);
 
   const q = search.trim().toLowerCase();
+  // Guests get price masked to 0 — max-price slider must not hide the whole catalog.
+  const priceFilterActive = canViewRates && maxPrice < 4000;
 
   const searchHits = useMemo(() => {
     if (!q) return [] as Share[];
     return shares
       .filter((s) => shareMatchesQuery(s, q))
-      .filter((s) => (sector === 'All' ? true : s.sector === sector))
-      .filter((s) => (maxPrice < 4000 ? s.price <= maxPrice : true))
+      .filter((s) => sectorMatches(s.sector, sector))
+      .filter((s) => (priceFilterActive ? s.price <= maxPrice : true))
       .filter((s) => (watchOnly ? watched.includes(s.id) : true))
       .slice(0, 8);
-  }, [shares, q, sector, maxPrice, watchOnly, watched]);
+  }, [shares, q, sector, maxPrice, watchOnly, watched, priceFilterActive]);
 
   const top10Shares = useMemo(() => {
     return shares
       .filter((s) => {
         if (!s.isTop10) return false;
-        if (sector !== 'All' && s.sector !== sector) return false;
-        if (maxPrice < 4000 && s.price > maxPrice) return false;
+        if (!sectorMatches(s.sector, sector)) return false;
+        if (priceFilterActive && s.price > maxPrice) return false;
         if (watchOnly && !watched.includes(s.id)) return false;
         return shareMatchesQuery(s, q);
       })
       .slice(0, 10);
-  }, [shares, q, sector, maxPrice, watchOnly, watched]);
+  }, [shares, q, sector, maxPrice, watchOnly, watched, priceFilterActive]);
 
   const filtered = useMemo(() => {
-    const includeSpotlight = q !== '' || sector !== 'All' || watchOnly || maxPrice < 4000;
+    const includeSpotlight = q !== '' || sector !== 'All' || watchOnly || priceFilterActive;
     const top10Ids = new Set(top10Shares.map((s) => s.id));
 
     return shares.filter((s) => {
@@ -75,12 +78,12 @@ export default function SharesPage() {
       } else if (top10Ids.has(s.id)) {
         return false;
       }
-      if (sector !== 'All' && s.sector !== sector) return false;
-      if (maxPrice < 4000 && s.price > maxPrice) return false;
+      if (!sectorMatches(s.sector, sector)) return false;
+      if (priceFilterActive && s.price > maxPrice) return false;
       if (watchOnly && !watched.includes(s.id)) return false;
       return shareMatchesQuery(s, q);
     });
-  }, [shares, sector, maxPrice, watchOnly, watched, q, top10Shares]);
+  }, [shares, sector, maxPrice, watchOnly, watched, q, top10Shares, priceFilterActive]);
 
   const totalMatchCount = filtered.length + top10Shares.length;
 
@@ -90,9 +93,9 @@ export default function SharesPage() {
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (!searchWrapRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (!searchWrapRef.current?.contains(target) && !sectorPanelRef.current?.contains(target)) {
         setDropdownOpen(false);
-        setSectorOpen(false);
       }
     };
     document.addEventListener('mousedown', onDoc);
@@ -105,8 +108,8 @@ export default function SharesPage() {
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
       if (!typing && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
-        setSectorOpen(true);
         setDropdownOpen(false);
+        sectorPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         searchInputRef.current?.focus();
       }
     };
@@ -253,12 +256,11 @@ export default function SharesPage() {
 
               <button
                 type="button"
-                className={`shares-sector-shortcut${sector !== 'All' || sectorOpen ? ' is-active' : ''}`}
+                className={`shares-sector-shortcut${sector !== 'All' ? ' is-active' : ''}`}
                 onClick={() => {
-                  setSectorOpen((o) => !o);
                   setDropdownOpen(false);
+                  sectorPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }}
-                aria-expanded={sectorOpen}
                 aria-label="Sector filter (shortcut S)"
                 title="Sector filter (press S)"
               >
@@ -272,37 +274,26 @@ export default function SharesPage() {
               </button>
             </div>
 
-            {sectorOpen && (
-              <div className="filter-group shares-sector-panel">
-                <span className="filter-label">Sector:</span>
-                <div className="sector-filters">
-                  {sectorOptions.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className={`filter-btn ${sector === s ? 'active' : ''}`}
-                      onClick={() => {
-                        setSector(s);
-                        setSectorOpen(false);
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+            <div className="filter-group shares-sector-panel" ref={sectorPanelRef}>
+              <span className="filter-label">Sector:</span>
+              <div className="sector-filters">
+                {sectorOptions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`filter-btn ${sector === s ? 'active' : ''}`}
+                    onClick={() => setSector(s)}
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
-            )}
-
-            {!sectorOpen && sector !== 'All' && (
-              <div className="shares-active-chip-row">
-                <button type="button" className="filter-btn active" onClick={() => setSectorOpen(true)}>
-                  Sector: {sector}
-                </button>
+              {sector !== 'All' && (
                 <button type="button" className="filter-btn" onClick={() => setSector('All')}>
                   Clear sector
                 </button>
-              </div>
-            )}
+              )}
+            </div>
 
             <div className="filter-group">
               <span className="filter-label">Watchlist:</span>
@@ -356,7 +347,7 @@ export default function SharesPage() {
             </div>
           )}
 
-          {(q || sector !== 'All' || watchOnly || maxPrice < 4000) && (
+          {(q || sector !== 'All' || watchOnly || priceFilterActive) && (
             <h2 className="section-title" style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>
               {q ? `Results for “${search.trim()}”` : 'Matching listings'}
               <span style={{ fontWeight: 500, color: 'var(--muted)', marginLeft: '0.5rem', fontSize: '0.95rem' }}>

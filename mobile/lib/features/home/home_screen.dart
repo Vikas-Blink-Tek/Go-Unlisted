@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/gu_theme.dart';
+import '../../core/utils/format.dart';
 import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
@@ -79,6 +80,58 @@ class HomeScreen extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: TextField(
+                  onChanged: catalog.setQuery,
+                  decoration: InputDecoration(
+                    hintText: 'Search company, ticker, sector…',
+                    prefixIcon: const Icon(Icons.search_rounded, color: GuColors.limeDark),
+                    suffixIcon: catalog.query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () {
+                              catalog.setQuery('');
+                              FocusScope.of(context).unfocus();
+                            },
+                          ),
+                  ),
+                ).guFadeSlide(delayMs: 40),
+              ),
+            ),
+            if (catalog.query.isNotEmpty)
+              ...[
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final items = catalog.filtered;
+                        if (items.isEmpty) {
+                          return Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                Icon(Icons.search_off_rounded, size: 48, color: GuColors.lime.withValues(alpha: 0.5)),
+                                const SizedBox(height: 12),
+                                Text('No matches', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 18)),
+                              ],
+                            ),
+                          );
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: ShareListTile(share: items[index]),
+                        );
+                      },
+                      childCount: catalog.filtered.isEmpty ? 1 : catalog.filtered.length,
+                    ),
+                  ),
+                ),
+              ]
+            else ...[
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                 child: Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
@@ -150,7 +203,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                ).guFadeSlide(delayMs: 40),
+                ).guFadeSlide(delayMs: 60),
               ),
             ),
             SliverToBoxAdapter(
@@ -183,56 +236,6 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ],
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                child: TextField(
-                  onChanged: catalog.setQuery,
-                  decoration: InputDecoration(
-                    hintText: 'Search company, ticker, sector…',
-                    prefixIcon: const Icon(Icons.search_rounded, color: GuColors.limeDark),
-                    suffixIcon: catalog.query.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () {
-                              catalog.setQuery('');
-                              FocusScope.of(context).unfocus();
-                            },
-                          ),
-                  ),
-                ).guFadeSlide(delayMs: 60),
-              ),
-            ),
-            if (catalog.query.isNotEmpty)
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final items = catalog.filtered;
-                      if (items.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            children: [
-                              Icon(Icons.search_off_rounded, size: 48, color: GuColors.lime.withValues(alpha: 0.5)),
-                              const SizedBox(height: 12),
-                              Text('No matches', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 18)),
-                            ],
-                          ),
-                        );
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: ShareListTile(share: items[index]),
-                      );
-                    },
-                    childCount: catalog.filtered.isEmpty ? 1 : catalog.filtered.length,
-                  ),
-                ),
-              )
-            else ...[
             const SliverToBoxAdapter(
               child: SectionHeader(
                 title: 'How it works',
@@ -265,7 +268,7 @@ class HomeScreen extends StatelessWidget {
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 28)),
-            ], // Close the else block
+            ],
           ],
         ),
       ),

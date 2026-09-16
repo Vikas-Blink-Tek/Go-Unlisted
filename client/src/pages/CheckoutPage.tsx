@@ -9,14 +9,13 @@ import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
-import { UPI_APPS, isMobileDevice, openUpiPay } from '../utils/upiPay';
 type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 
 const PAYMENT_MODES: { id: PaymentMode; label: string; desc: string; icon: string }[] = [
   { id: 'neft', label: 'NEFT', desc: 'Transfer via NEFT to our bank account', icon: '🏦' },
   { id: 'imps', label: 'IMPS', desc: 'Instant transfer using IMPS', icon: '⚡' },
-  { id: 'upi', label: 'UPI Apps', desc: 'Pay with GPay, PhonePe, Paytm — opens on your phone', icon: '📱' },
-  { id: 'qr', label: 'Scan QR Code', desc: 'Scan QR or open UPI app with amount pre-filled', icon: '📷' },
+  { id: 'upi', label: 'UPI Apps', desc: 'Copy UPI ID → pay in GPay / PhonePe / Paytm', icon: '📱' },
+  { id: 'qr', label: 'Scan QR Code', desc: 'Scan QR or pay using our UPI ID', icon: '📷' },
 ];
 
 function CopyRow({ label, value }: { label: string; value: string }) {
@@ -135,52 +134,41 @@ export default function CheckoutPage() {
   
   const total = calcOrderTotal(activePrice, safeQty, settings);
   const chargesBreakdown = calcOrderChargesBreakdown(activePrice, safeQty, settings);
-  const mobile = isMobileDevice();
-  const upiPayParams = {
-    vpa: settings.bank_upi || '',
-    payeeName: settings.bank_ac_name || 'GO UNLISTED',
-    amount: total,
-    note: `GO UNLISTED ${share.ticker}`,
-  };
 
-  const handleOpenUpi = (packageName?: string) => {
+  const copyUpiId = () => {
     if (!settings.bank_upi?.trim()) {
       showToast('UPI ID not configured. Contact support.', 'error');
       return;
     }
-    const ok = openUpiPay(upiPayParams, packageName);
-    if (ok) {
-      showToast('Opening your UPI app… Complete payment, then tick the box below.', 'info');
-    }
+    navigator.clipboard.writeText(settings.bank_upi);
+    showToast('UPI ID copied — open GPay / PhonePe and pay', 'success');
   };
 
-  const renderUpiPayButtons = (compact?: boolean) => (
-    <div className={`pay-upi-apps${compact ? ' pay-upi-apps--compact' : ''}`}>
-      {mobile ? (
-        UPI_APPS.map((app) => (
-          <button
-            key={app.id}
-            type="button"
-            className={app.id === 'any' ? 'btn btn-primary btn-full pay-upi-app-btn pay-upi-app-btn--primary' : 'btn btn-outline btn-full pay-upi-app-btn'}
-            onClick={() => handleOpenUpi(app.packageName)}
-          >
-            <span className="pay-upi-app-label">{app.label}</span>
-            {app.id === 'any' && (
-              <span className="pay-upi-app-amount">Pay {formatCurrency(total)}</span>
-            )}
-          </button>
-        ))
-      ) : (
-        <button type="button" className="btn btn-primary btn-full pay-upi-app-btn pay-upi-app-btn--primary" onClick={() => handleOpenUpi()}>
-          <span className="pay-upi-app-label">Open UPI app</span>
-          <span className="pay-upi-app-amount">Pay {formatCurrency(total)}</span>
-        </button>
-      )}
-      <p className="pay-upi-apps-hint">
-        {mobile
-          ? 'Tap Pay — your phone will open GPay, PhonePe, or another UPI app with amount filled.'
-          : 'On mobile this opens GPay / PhonePe directly. On desktop, scan the QR or use bank transfer.'}
-      </p>
+  const renderUpiSteps = () => (
+    <ol className="pay-step-list">
+      <li>Copy our <strong>UPI ID</strong> below.</li>
+      <li>
+        Open <strong>GPay, PhonePe, or Paytm</strong> and send <strong>{formatCurrency(total)}</strong> to that UPI ID.
+      </li>
+      <li>
+        After payment, paste the <strong>Transaction ID / UTR</strong> from your SMS or app (not the UPI ID) and tap{' '}
+        <strong>Confirm payment &amp; place order</strong>.
+      </li>
+    </ol>
+  );
+
+  const renderUpiIdBox = () => (
+    <div className="pay-upi-id-box">
+      <span>Merchant UPI</span>
+      <strong>{settings.bank_ac_name}</strong>
+      <div className="pay-upi-id">{settings.bank_upi || '—'}</div>
+      <button type="button" className="btn btn-primary btn-sm pay-copy-upi-btn" onClick={copyUpiId}>
+        Copy UPI ID
+      </button>
+      <div className="pay-amount-box pay-amount-box--inline">
+        <span>Pay exactly</span>
+        <strong>{formatCurrency(total)}</strong>
+      </div>
     </div>
   );
 
@@ -304,39 +292,21 @@ export default function CheckoutPage() {
         )}
         {paymentMode === 'upi' && (
           <div className="pay-upi-card">
-            <p className="pay-instruction-hint">
-              Tap <strong>Pay {formatCurrency(total)}</strong> — your UPI app opens with our details and amount already filled.
-            </p>
-            {renderUpiPayButtons()}
-            <div className="pay-upi-id-box">
-              <span>Merchant UPI</span>
-              <strong>{settings.bank_ac_name}</strong>
-              <div className="pay-upi-id">{settings.bank_upi}</div>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  navigator.clipboard.writeText(settings.bank_upi);
-                  showToast('UPI ID copied', 'success');
-                }}
-              >
-                Copy UPI ID
-              </button>
-            </div>
+            {renderUpiSteps()}
+            {renderUpiIdBox()}
           </div>
         )}
         {paymentMode === 'qr' && (
           <div className="pay-qr-card">
-            <p className="pay-instruction-hint">
-              Scan the QR with any UPI app, or tap Pay below to open GPay / PhonePe on your phone.
-            </p>
+            <ol className="pay-step-list">
+              <li>Scan the QR below in any UPI app, or copy the UPI ID.</li>
+              <li>
+                Pay <strong>{formatCurrency(total)}</strong> to <strong>{settings.bank_ac_name}</strong>.
+              </li>
+              <li>Enter the Transaction ID / UTR below to complete your order.</li>
+            </ol>
             <img src="/QR.jpeg" alt="UPI QR Code" className="pay-qr-img" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <div className="pay-amount-box">
-              <span>Amount</span>
-              <strong>{formatCurrency(total)}</strong>
-            </div>
-            {renderUpiPayButtons(true)}
-            <p className="pay-qr-fallback">UPI ID: <strong>{settings.bank_upi}</strong></p>
+            {renderUpiIdBox()}
           </div>
         )}
 
@@ -355,7 +325,7 @@ export default function CheckoutPage() {
             inputMode="text"
           />
           <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-            After paying, copy the <strong>Transaction ID / UTR</strong> from your UPI or bank app (not our UPI ID). Order is placed only with a valid reference.
+            Paste the <strong>Transaction ID / UTR</strong> from GPay / PhonePe / bank SMS (not our UPI ID). Once you confirm, your order is submitted for verification.
           </p>
         </div>
 

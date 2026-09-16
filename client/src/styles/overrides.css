@@ -1246,6 +1246,27 @@ button.footer-link {
   line-height: 1.5;
 }
 
+.pay-step-list {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+.pay-step-list li + li {
+  margin-top: 0.55rem;
+}
+
+.pay-upi-id-box .pay-amount-box--inline {
+  margin-top: 0.85rem;
+  text-align: left;
+}
+
+.pay-copy-upi-btn {
+  margin-top: 0.5rem;
+}
+
 .pay-bank-card,
 .pay-upi-card,
 .pay-qr-card {
@@ -1918,6 +1939,50 @@ button.footer-link {
   font-weight: 600;
   color: var(--text);
   line-height: 1.25;
+}
+
+.share-drhp-badge {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 0 0.85rem;
+  padding: 0.28rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.detail-subtitle .share-drhp-badge {
+  margin: 0;
+  vertical-align: middle;
+}
+
+.share-drhp-badge--none {
+  color: #64748b;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.share-drhp-badge--pending {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.share-drhp-badge--filed {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.share-drhp-badge--approved {
+  color: #15803d;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
 }
 
 
@@ -3322,6 +3387,111 @@ button.footer-link {
 .calc-rates-lock {
   min-height: 5rem;
 }
+
+.detail-returns-calc {
+  margin-top: 2.5rem;
+  padding: 1.5rem 1.25rem 1.75rem;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-2, #f4f7f2);
+}
+
+.detail-returns-calc-head {
+  margin-bottom: 1.25rem;
+}
+
+.detail-returns-calc-title {
+  margin: 0.35rem 0 0.4rem;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.detail-returns-calc-title span {
+  color: var(--accent, #7ac142);
+}
+
+.detail-returns-calc-sub {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.portfolio-empty-demo {
+  padding: 2rem 1.5rem 2.25rem;
+  text-align: center;
+}
+
+.portfolio-empty-demo-badge {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(122, 193, 66, 0.15);
+  color: var(--accent, #39b54a);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.portfolio-empty-demo-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.portfolio-empty-demo-sub {
+  margin: 0 auto 1.5rem;
+  max-width: 32rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.portfolio-empty-demo-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 auto 1.25rem;
+  max-width: 28rem;
+  text-align: left;
+  opacity: 0.72;
+}
+
+.portfolio-empty-demo-card {
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px dashed var(--border);
+  background: var(--surface, #fff);
+}
+
+.portfolio-empty-demo-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.portfolio-empty-demo-card-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.portfolio-empty-demo-steps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .detail-fundamentals-lock .share-rates-blur-overlay span,
 .calc-rates-lock .share-rates-blur-overlay span {
   max-width: 14rem;

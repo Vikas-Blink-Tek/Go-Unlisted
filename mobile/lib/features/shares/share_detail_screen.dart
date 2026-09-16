@@ -131,6 +131,21 @@ class ShareDetailScreen extends StatelessWidget {
                           '${share.ticker} · ${share.listingType?.isNotEmpty == true ? share.listingType : 'Unlisted'}',
                           style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
                         ),
+                        const SizedBox(height: 6),
+                        Text(
+                          share.displayDrhpStatus,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: share.displayDrhpStatus == 'DRHP Approved'
+                                ? const Color(0xFF15803D)
+                                : share.displayDrhpStatus == 'DRHP Filed'
+                                    ? const Color(0xFF1D4ED8)
+                                    : share.displayDrhpStatus == 'DRHP Pending'
+                                        ? const Color(0xFFB45309)
+                                        : GuColors.muted,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -474,6 +489,7 @@ class _FundamentalsGrid extends StatelessWidget {
       {'label': 'Book value', 'value': na(share.bookValue)},
       {'label': 'Face value', 'value': na(share.faceValue)},
       {'label': 'ISIN', 'value': na(share.isin)},
+      {'label': 'DRHP status', 'value': share.displayDrhpStatus},
     ];
 
     return Container(

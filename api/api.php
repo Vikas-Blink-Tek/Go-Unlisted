@@ -312,6 +312,8 @@ function autoMigrateSchema($conn) {
         'qty_on_hand' => 'INT NOT NULL DEFAULT 0',
         'is_top10' => 'TINYINT(1) NOT NULL DEFAULT 0',
         'discount_tiers' => 'TEXT',
+        // SEBI draft: Not Filed / DRHP Pending / DRHP Filed / DRHP Approved
+        'drhp_status' => "VARCHAR(40) DEFAULT 'Not Filed'",
     ];
     foreach ($shareCols as $col => $def) {
         $res = $conn->query("SHOW COLUMNS FROM shares LIKE '$col'");
@@ -4423,6 +4425,22 @@ switch ($action) {
         $sector_color = trim($data['sectorColor'] ?? '#7ac142');
         $listing_type = trim($data['listingType'] ?? 'Pre-IPO');
         $ipo_timeline = '';
+        $allowedDrhp = ['Not Filed', 'DRHP Pending', 'DRHP Filed', 'DRHP Approved'];
+        $drhp_status = trim((string) ($data['drhpStatus'] ?? $data['drhp_status'] ?? 'Not Filed'));
+        if ($drhp_status === '' || !in_array($drhp_status, $allowedDrhp, true)) {
+            // Accept short labels from older clients
+            $map = [
+                'pending' => 'DRHP Pending',
+                'filed' => 'DRHP Filed',
+                'approved' => 'DRHP Approved',
+                'yes' => 'DRHP Filed',
+                'no' => 'Not Filed',
+                'not filed' => 'Not Filed',
+                'none' => 'Not Filed',
+            ];
+            $key = strtolower($drhp_status);
+            $drhp_status = $map[$key] ?? 'Not Filed';
+        }
         $has_buy_price = array_key_exists('buyPrice', $data);
         $buy_price = $has_buy_price && $data['buyPrice'] !== '' && $data['buyPrice'] !== null
             ? (float) $data['buyPrice'] : 0.0;
@@ -4617,6 +4635,12 @@ switch ($action) {
         if ($fundStmt) {
             $fundStmt->bind_param('ss', $fundamentals, $share_id);
             $fundStmt->execute();
+        }
+
+        $drhpStmt = $conn->prepare('UPDATE shares SET drhp_status=? WHERE share_id=?');
+        if ($drhpStmt) {
+            $drhpStmt->bind_param('ss', $drhp_status, $share_id);
+            $drhpStmt->execute();
         }
 
         if ($has_buy_price) {

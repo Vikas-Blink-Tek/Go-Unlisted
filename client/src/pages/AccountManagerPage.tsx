@@ -45,7 +45,6 @@ export default function AccountManagerPage() {
       : [];
   const rmPhone = rm?.phone || '';
   const supportPhone = companyPhones[0] || support?.phone || '';
-  const extraPhones = companyPhones.slice(1).filter((p) => p && p !== rmPhone);
   const whatsappTarget = support?.whatsapp || supportPhone || rmPhone;
   const emailTarget = (!rm?.isDesk && rm?.email) || support?.email || user.email;
 
@@ -141,15 +140,6 @@ export default function AccountManagerPage() {
                   <span className="account-manager-value muted">—</span>
                 )}
               </div>
-
-              {extraPhones.map((p, i) => (
-                <div className="account-manager-row" key={p}>
-                  <span className="account-manager-label">Company line {i + 2}</span>
-                  <a href={`tel:+91${p}`} className="account-manager-value">
-                    {formatIndianPhoneDisplay(p)}
-                  </a>
-                </div>
-              ))}
 
               <div className="account-manager-actions">
                 <a

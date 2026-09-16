@@ -31,6 +31,27 @@ function parseGrowthFraction(string $growth): float {
     return 0.15;
 }
 
+/** Admin-maintained SEBI draft status shown on share cards / detail. */
+function normalizeDrhpStatus($raw): string {
+    $allowed = ['Not Filed', 'DRHP Pending', 'DRHP Filed', 'DRHP Approved'];
+    $value = trim((string) $raw);
+    if ($value !== '' && in_array($value, $allowed, true)) {
+        return $value;
+    }
+    $map = [
+        'pending' => 'DRHP Pending',
+        'filed' => 'DRHP Filed',
+        'approved' => 'DRHP Approved',
+        'yes' => 'DRHP Filed',
+        'no' => 'Not Filed',
+        'not filed' => 'Not Filed',
+        'none' => 'Not Filed',
+        '' => 'Not Filed',
+    ];
+    $key = strtolower($value);
+    return $map[$key] ?? 'Not Filed';
+}
+
 function defaultChartLabels(): array {
     return [
         '3M' => ['Apr 1', 'Apr 8', 'Apr 15', 'Apr 22', 'May 1', 'May 8', 'May 15', 'May 22', 'Jun 1', 'Jun 8', 'Jun 15', 'Jun 22', 'Jun 30'],
@@ -103,28 +124,42 @@ function syncShareConfigPrice(mysqli $conn, string $shareId, float $price): void
 
 /**
  * Strip monetary rates from a mapped share for guests (browse OK, rates after login).
+ * Product exception: Market Activity + Pre-IPO vs Listing Price track record stay public.
  */
 function maskShareRates(array $mapped): array {
-    $mapped['basePrice'] = 0;
-    $mapped['price'] = 0;
-    $mapped['listingPrice'] = null;
-    $mapped['discountTiers'] = [];
-    $mapped['growth'] = '';
-    $mapped['week52High'] = '';
-    $mapped['week52Low'] = '';
-    $mapped['bookValue'] = '';
-    $mapped['faceValue'] = '';
-    $mapped['peRatio'] = '';
-    $mapped['pbRatio'] = '';
-    if (isset($mapped['priceHistory']) && is_array($mapped['priceHistory'])) {
-        foreach (array_keys($mapped['priceHistory']) as $period) {
-            $mapped['priceHistory'][$period] = [];
+    $listingType = strtolower(trim((string) ($mapped['listingType'] ?? '')));
+    $listingPrice = isset($mapped['listingPrice']) ? (float) $mapped['listingPrice'] : 0.0;
+    $keepPublicRates =
+        !empty($mapped['isFeatured'])
+        || $listingPrice > 0
+        || in_array($listingType, ['listed', 'exchange listed', 'nse listed', 'bse listed'], true);
+
+    if (!$keepPublicRates) {
+        $mapped['basePrice'] = 0;
+        $mapped['price'] = 0;
+        $mapped['listingPrice'] = null;
+        $mapped['growth'] = '';
+        $mapped['week52High'] = '';
+        $mapped['week52Low'] = '';
+        $mapped['bookValue'] = '';
+        $mapped['faceValue'] = '';
+        $mapped['peRatio'] = '';
+        $mapped['pbRatio'] = '';
+        if (isset($mapped['priceHistory']) && is_array($mapped['priceHistory'])) {
+            foreach (array_keys($mapped['priceHistory']) as $period) {
+                $mapped['priceHistory'][$period] = [];
+            }
+        } else {
+            $mapped['priceHistory'] = ['3M' => [], '6M' => [], '1Y' => []];
         }
+        $mapped['ratesVisible'] = false;
     } else {
-        $mapped['priceHistory'] = ['3M' => [], '6M' => [], '1Y' => []];
+        // Track-record / Market Activity samples — invest & listing prices remain visible.
+        $mapped['ratesVisible'] = true;
     }
+
+    $mapped['discountTiers'] = [];
     unset($mapped['buyPrice']);
-    $mapped['ratesVisible'] = false;
     return $mapped;
 }
 
@@ -213,6 +248,7 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
         'chartLabels' => $labels,
         'listingType' => isExchangeListedShare($row) ? 'Listed' : ($row['listing_type'] ?? 'Pre-IPO'),
         'ipoTimeline' => $row['ipo_timeline'] ?? '',
+        'drhpStatus' => normalizeDrhpStatus($row['drhp_status'] ?? ''),
         'listingPrice' => isset($row['listing_price']) && $row['listing_price'] !== null && $row['listing_price'] !== ''
             ? (float) $row['listing_price']
             : null,

@@ -59,10 +59,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 child: Center(child: CircularProgressIndicator(color: GuColors.lime)),
               )
             else if (portfolio.orders.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 48),
-                child: Center(child: Text('No orders yet — browse shares to get started', style: TextStyle(color: GuColors.muted))),
-              )
+              _PortfolioEmptyDemo(onBrowse: () => context.go('/app/shares'))
             else
               ...portfolio.orders.map((o) {
                 return Container(
@@ -134,6 +131,107 @@ class _Gate extends StatelessWidget {
             GuPrimaryButton(label: cta, onPressed: onTap),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PortfolioEmptyDemo extends StatelessWidget {
+  const _PortfolioEmptyDemo({required this.onBrowse});
+  final VoidCallback onBrowse;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: GuColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: GuColors.border),
+        boxShadow: GuColors.softCard,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: GuColors.limeSoft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Text(
+                'DEMO PREVIEW',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: GuColors.limeDark,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Your portfolio will look like this',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Sample layout only — not real positions. Buy a share and submit UTR to see live orders here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: GuColors.muted, height: 1.45, fontSize: 13),
+          ),
+          const SizedBox(height: 16),
+          ...[
+            ('Sample Pre-IPO Co.', '100 shares', '₹85,000', 'Transfer Pending'),
+            ('Example Unlisted Ltd.', '50 shares', '₹42,500', 'Completed'),
+          ].map((row) {
+            return Opacity(
+              opacity: 0.75,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: GuColors.border, style: BorderStyle.solid),
+                  color: GuColors.bgWarm,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(row.$1, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        ),
+                        Text(
+                          row.$4,
+                          style: const TextStyle(fontSize: 11, color: GuColors.blue, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${row.$2} · ${row.$3}',
+                      style: const TextStyle(color: GuColors.muted, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 8),
+          const Text(
+            '1. Browse & pay  ·  2. Submit UTR  ·  3. Track here',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: GuColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          GuPrimaryButton(label: 'Explore Shares', onPressed: onBrowse),
+        ],
       ),
     );
   }

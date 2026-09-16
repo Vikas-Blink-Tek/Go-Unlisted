@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { formatCurrency } from '../../../utils/format';
 import { trendFromGrowth } from '../../../utils/priceHistory';
+import { DRHP_STATUSES } from '../../../utils/drhpStatus';
 
 const LISTING_TYPES = ['Pre-IPO', 'Unlisted', 'Listed', 'Delisted', 'ESOP'];
 const INVENTORY_STATUSES = ['In Stock', 'Limited', 'On Request', 'Out of Stock'];
@@ -27,6 +28,7 @@ export type StockFormState = {
   ticker: string;
   sector: string;
   listingType: string;
+  drhpStatus: string;
   basePrice: string;
   buyPrice: string;
   listingPrice: string;
@@ -282,6 +284,20 @@ export default function StockListingModal({
                     >
                       {LISTING_TYPES.map((t) => (
                         <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field
+                    label="DRHP status"
+                    hint="Has the company filed a draft with SEBI? Team updates this."
+                  >
+                    <select
+                      className="slm-input"
+                      value={form.drhpStatus}
+                      onChange={(e) => set({ drhpStatus: e.target.value })}
+                    >
+                      {DRHP_STATUSES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
                   </Field>

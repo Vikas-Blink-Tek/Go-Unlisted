@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import PriceChart from '../components/shares/PriceChart';
 import CompanyLogo from '../components/shares/CompanyLogo';
+import ReturnsCalculator from '../components/home/ReturnsCalculator';
 import { useShareSearch } from '../components/shares/GlobalShareSearch';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
@@ -11,11 +12,12 @@ import { getInventoryBadge, isShareOnRequest, isSharePurchasable, isShareUnavail
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { getBulkPricingSummary } from '../utils/bulkPricing';
+import { normalizeDrhpStatus, drhpStatusKind } from '../utils/drhpStatus';
 import type { ChartPeriod } from '../types';
 
 export default function ShareDetailPage() {
   const { shareId } = useParams<{ shareId: string }>();
-  const { getShareById } = useShares();
+  const { shares, getShareById } = useShares();
   const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -71,10 +73,13 @@ export default function ShareDetailPage() {
     { label: 'Book value', value: na(share.bookValue) },
     { label: 'Face value', value: na(share.faceValue) },
     { label: 'ISIN', value: na(share.isin) },
+    { label: 'DRHP status', value: normalizeDrhpStatus(share.drhpStatus) },
   ];
 
   const chartData = share.priceHistory?.[period] ?? [];
   const bulk = getBulkPricingSummary(share);
+  const drhp = normalizeDrhpStatus(share.drhpStatus);
+  const drhpKind = drhpStatusKind(drhp);
 
   return (
     <div className="view" id="view-detail">
@@ -123,6 +128,13 @@ export default function ShareDetailPage() {
                   {invBadge}
                 </span>
               )}
+              <span
+                className={`share-drhp-badge share-drhp-badge--${drhpKind}`}
+                style={{ marginLeft: 8 }}
+                title="SEBI draft red herring prospectus status"
+              >
+                {drhp}
+              </span>
             </div>
           </div>
         </div>
@@ -213,6 +225,12 @@ export default function ShareDetailPage() {
             </div>
           </BlurredRatesLock>
         )}
+
+        <ReturnsCalculator
+          shares={shares.length ? shares : [share]}
+          initialShareId={share.id}
+          embedded
+        />
       </div>
     </div>
   );

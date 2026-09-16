@@ -320,8 +320,34 @@ export default function DashboardPage() {
           )}
 
           {!portfolioVisible ? (
-            <div className="empty-state glass-card" style={{ padding: '3rem', textAlign: 'center' }}>
-              <p style={{ marginBottom: '1.5rem', color: 'var(--muted)' }}>No investments yet. Start building your pre-IPO portfolio.</p>
+            <div className="portfolio-empty-demo glass-card">
+              <div className="portfolio-empty-demo-badge">Demo preview</div>
+              <h3 className="portfolio-empty-demo-title">Your portfolio will look like this</h3>
+              <p className="portfolio-empty-demo-sub">
+                After you buy and we verify payment, holdings and pending orders show up here. Below is a sample layout — not real positions.
+              </p>
+              <div className="portfolio-empty-demo-grid">
+                {[
+                  { name: 'Sample Pre-IPO Co.', qty: '100 shares', total: '₹85,000', status: 'Transfer Pending' },
+                  { name: 'Example Unlisted Ltd.', qty: '50 shares', total: '₹42,500', status: 'Completed' },
+                ].map((row) => (
+                  <div key={row.name} className="portfolio-empty-demo-card">
+                    <div className="portfolio-empty-demo-card-top">
+                      <strong>{row.name}</strong>
+                      <span className="status-badge status-pending">{row.status}</span>
+                    </div>
+                    <div className="portfolio-empty-demo-card-meta">
+                      <span>{row.qty}</span>
+                      <span>{row.total}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="portfolio-empty-demo-steps">
+                <div><strong>1.</strong> Browse &amp; pay</div>
+                <div><strong>2.</strong> Submit UTR</div>
+                <div><strong>3.</strong> Track transfer here</div>
+              </div>
               <Link to="/shares" className="btn btn-primary">Explore Shares</Link>
             </div>
           ) : (

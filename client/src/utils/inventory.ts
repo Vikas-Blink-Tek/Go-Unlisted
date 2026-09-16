@@ -22,12 +22,17 @@ export function isSharePurchasable(share: {
   purchasable?: boolean;
   isFeatured?: boolean;
   price?: number | null;
+  ratesVisible?: boolean | null;
 }): boolean {
+  // API already computed purchasability from real base price (before guest rate mask).
   if (share.purchasable === false) return false;
   if (isShareUnavailable(share.inventoryStatus || undefined)) return false;
   // Featured = Market Activity sample / dummy — not for checkout
   if (share.isFeatured) return false;
   if (isExchangeListedShare(share)) return false;
+  // Guests get price masked to 0 — don't treat that as non-purchasable.
+  if (share.purchasable === true) return true;
+  if (share.ratesVisible === false) return true;
   if (share.price != null && share.price <= 0) return false;
   return true;
 }

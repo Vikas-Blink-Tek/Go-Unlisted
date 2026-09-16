@@ -45,7 +45,7 @@ class GuUser {
       id: (j['id'] ?? '').toString(),
       name: (j['name'] ?? '').toString(),
       email: (j['email'] ?? '').toString(),
-      phone: (j['phone'] ?? '').toString(),
+      phone: (j['phone'] ?? j['mobile'] ?? j['phone_number'] ?? '').toString(),
       kycStatus: (j['kycStatus'] ?? j['kyc_status'] ?? 'Not Submitted').toString(),
       referralCode: (j['referralCode'] ?? j['referral_code'])?.toString(),
       kycPan: (j['kycPan'] ?? j['kyc_pan'])?.toString(),
@@ -98,7 +98,9 @@ class GuShare {
     this.inventoryStatus,
     this.listingType,
     this.listingPrice,
+    this.drhpStatus,
     this.purchasable,
+    this.ratesVisible,
     this.featured = false,
     this.isTop10 = false,
     this.highlights = const [],
@@ -137,7 +139,10 @@ class GuShare {
   final String? inventoryStatus;
   final String? listingType;
   final double? listingPrice;
+  /// SEBI draft: Not Filed | DRHP Pending | DRHP Filed | DRHP Approved
+  final String? drhpStatus;
   final bool? purchasable;
+  final bool? ratesVisible;
   final bool featured;
   final bool isTop10;
   final List<String> highlights;
@@ -201,6 +206,9 @@ class GuShare {
     if (purchasable == false) return false;
     if (isUnavailable) return false;
     if (isTrackRecordOnly) return false;
+    // Guests get price masked to 0 — trust API purchasable / ratesVisible instead.
+    if (purchasable == true) return true;
+    if (ratesVisible == false) return true;
     if (price <= 0) return false;
     return true;
   }
@@ -232,11 +240,17 @@ class GuShare {
         final v = _toDouble(raw);
         return v > 0 ? v : null;
       }(),
+      drhpStatus: _normalizeDrhpStatus(j['drhpStatus'] ?? j['drhp_status']),
       purchasable: j['purchasable'] is bool
           ? j['purchasable'] as bool
           : (j['purchasable'] == 1 || j['purchasable'] == '1'
               ? true
               : (j['purchasable'] == 0 || j['purchasable'] == '0' || j['purchasable'] == false ? false : null)),
+      ratesVisible: j['ratesVisible'] is bool
+          ? j['ratesVisible'] as bool
+          : (j['ratesVisible'] == 0 || j['ratesVisible'] == '0' || j['rates_visible'] == 0
+              ? false
+              : (j['ratesVisible'] == 1 || j['ratesVisible'] == '1' ? true : null)),
       featured: j['featured'] == true ||
           j['featured'] == 1 ||
           j['featured'] == '1' ||
@@ -307,6 +321,28 @@ class GuShare {
     return [];
   }
 
+  static String _normalizeDrhpStatus(dynamic raw) {
+    const allowed = {'Not Filed', 'DRHP Pending', 'DRHP Filed', 'DRHP Approved'};
+    final value = (raw ?? '').toString().trim();
+    if (allowed.contains(value)) return value;
+    switch (value.toLowerCase()) {
+      case 'pending':
+      case 'drhp pending':
+        return 'DRHP Pending';
+      case 'filed':
+      case 'yes':
+      case 'drhp filed':
+        return 'DRHP Filed';
+      case 'approved':
+      case 'drhp approved':
+        return 'DRHP Approved';
+      default:
+        return 'Not Filed';
+    }
+  }
+
+  String get displayDrhpStatus => _normalizeDrhpStatus(drhpStatus);
+
   static double _toDouble(dynamic v) {
     if (v is num) return v.toDouble();
     return double.tryParse(v?.toString() ?? '') ?? 0;
@@ -369,6 +405,7 @@ class GuSettings {
     this.accountName,
     this.accountNumber,
     this.ifsc,
+    this.branch,
     this.qrUrl,
     this.phone,
     this.whatsapp,
@@ -379,6 +416,7 @@ class GuSettings {
   final String? accountName;
   final String? accountNumber;
   final String? ifsc;
+  final String? branch;
   final String? qrUrl;
   final String? phone;
   final String? whatsapp;
@@ -400,6 +438,7 @@ class GuSettings {
       accountName: pick(['bank_ac_name', 'accountName', 'account_name']),
       accountNumber: pick(['bank_ac_no', 'accountNumber', 'account_number']),
       ifsc: pick(['bank_ifsc', 'ifsc']),
+      branch: pick(['bank_branch', 'branch']),
       qrUrl: qr != null
           ? ApiConfig.resolveMediaUrl(qr)
           : '${ApiConfig.baseUrl}/QR.jpeg',

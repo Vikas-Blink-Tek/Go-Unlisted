@@ -5,16 +5,20 @@ import type { Share } from '../../types';
 
 interface ReturnsCalculatorProps {
   shares: Share[];
+  /** Pre-select this share (e.g. from share detail page). */
+  initialShareId?: string;
+  /** Compact block for share detail — no full homepage section chrome. */
+  embedded?: boolean;
 }
 
-export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
+export default function ReturnsCalculator({ shares, initialShareId, embedded }: ReturnsCalculatorProps) {
   const canViewRates = useCanViewShareRates();
   const list = useMemo(
-    () => [...shares].sort((a, b) => a.name.localeCompare(b.name)),
+    () => [...shares].filter((s) => s.price > 0).sort((a, b) => a.name.localeCompare(b.name)),
     [shares],
   );
 
-  const [shareId, setShareId] = useState('');
+  const [shareId, setShareId] = useState(initialShareId || '');
   const [amount, setAmount] = useState(50000);
   const [gain, setGain] = useState(50);
 
@@ -23,8 +27,12 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
       setShareId('');
       return;
     }
-    setShareId((current) => (list.some((s) => s.id === current) ? current : list[0].id));
-  }, [list]);
+    setShareId((current) => {
+      if (initialShareId && list.some((s) => s.id === initialShareId)) return initialShareId;
+      if (current && list.some((s) => s.id === current)) return current;
+      return list[0].id;
+    });
+  }, [list, initialShareId]);
 
   const share = list.find((s) => s.id === shareId) ?? list[0] ?? null;
 
@@ -41,6 +49,7 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
   }, [share, amount, gain]);
 
   if (!list.length) {
+    if (embedded) return null;
     return (
       <section
         className="section"
@@ -69,9 +78,154 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
   const dashOffset = 440 - (440 * Math.min(gain, 300)) / 300;
   const unitPrice = share.price;
 
+  const body = (
+    <BlurredRatesLock className="calc-rates-lock" message="Login to see the share prices">
+      <div className="calc-grid" style={{ pointerEvents: canViewRates ? undefined : 'none' }}>
+        <div className="calc-inputs">
+          <div className="form-group">
+            <label className="form-label">Select Pre-IPO Company</label>
+            <select
+              className="form-input"
+              value={share.id}
+              onChange={(e) => setShareId(e.target.value)}
+              disabled={!canViewRates}
+            >
+              {list.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {formatCurrency(s.price)}
+                </option>
+              ))}
+            </select>
+            <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--muted)' }}>
+              Live price {formatCurrency(unitPrice)}
+              {share.minQty > 0 ? ` · Min ${share.minQty} shares` : ''}
+            </div>
+          </div>
+
+          <div className="slider-container">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>
+                Investment Amount (INR)
+              </label>
+              <strong style={{ color: 'var(--white)', fontSize: '0.9rem' }}>{formatCurrency(amount)}</strong>
+            </div>
+            <input
+              type="range"
+              className="price-slider"
+              min={5000}
+              max={500000}
+              step={5000}
+              value={amount}
+              onChange={(e) => setAmount(+e.target.value)}
+              disabled={!canViewRates}
+            />
+            <div className="slider-labels">
+              <span>₹5,000</span>
+              <span>₹5,00,000</span>
+            </div>
+          </div>
+
+          <div className="slider-container">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>
+                Expected Listing Gain
+              </label>
+              <strong style={{ color: 'var(--gold)', fontSize: '0.9rem' }}>+{gain}%</strong>
+            </div>
+            <input
+              type="range"
+              className="price-slider"
+              min={10}
+              max={300}
+              step={10}
+              value={gain}
+              onChange={(e) => setGain(+e.target.value)}
+              disabled={!canViewRates}
+            />
+            <div className="slider-labels">
+              <span>+10% (1.1x)</span>
+              <span>+300% (4.0x)</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="calc-outputs">
+          <div className="calc-gauge-wrap">
+            <svg width="160" height="160" viewBox="0 0 160 160">
+              <circle cx="80" cy="80" r="70" stroke="var(--navy-mid)" strokeWidth="10" fill="transparent" />
+              <circle
+                cx="80"
+                cy="80"
+                r="70"
+                stroke="var(--gold)"
+                strokeWidth="10"
+                fill="transparent"
+                strokeDasharray="440"
+                strokeDashoffset={dashOffset}
+                strokeLinecap="round"
+                style={{
+                  transform: 'rotate(-90deg)',
+                  transformOrigin: '50% 50%',
+                  transition: 'stroke-dashoffset 0.4s ease',
+                }}
+              />
+            </svg>
+            <div className="calc-gauge-text">
+              <div className="calc-multiplier">{calc.multiplier.toFixed(1)}x</div>
+              <div className="calc-multiplier-label">Multiplier</div>
+            </div>
+          </div>
+
+          <div className="calc-metrics">
+            <div className="calc-metric-row">
+              <span className="lbl">Share Price</span>
+              <span className="val">{formatCurrency(unitPrice)}</span>
+            </div>
+            <div className="calc-metric-row">
+              <span className="lbl">Shares Purchased</span>
+              <span className="val">{calc.qty}</span>
+            </div>
+            <div className="calc-metric-row">
+              <span className="lbl">Total Invested</span>
+              <span className="val">{formatCurrency(calc.invested)}</span>
+            </div>
+            <div className="calc-metric-row">
+              <span className="lbl">Est. Profit</span>
+              <span className="val" style={{ color: 'var(--green)' }}>
+                {formatCurrency(calc.profit)}
+              </span>
+            </div>
+            <div className="calc-metric-row">
+              <span className="lbl">Est. Value at Listing</span>
+              <span className="val">{formatCurrency(calc.estValue)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </BlurredRatesLock>
+  );
+
+  if (embedded) {
+    return (
+      <div className="detail-returns-calc" id="returns-calculator">
+        <div className="detail-returns-calc-head">
+          <div className="section-tag">Returns Simulator</div>
+          <h3 className="detail-returns-calc-title">
+            Pre-IPO Returns <span>Calculator</span>
+          </h3>
+          <p className="detail-returns-calc-sub">
+            Simulate potential returns for {share.name} based on your target listing gain.
+          </p>
+        </div>
+        {body}
+      </div>
+    );
+  }
+
   return (
     <section
       className="section"
+      id="returns-calculator"
       style={{
         borderTop: '1px solid var(--border)',
         background: 'var(--bg-2)',
@@ -89,131 +243,7 @@ export default function ReturnsCalculator({ shares }: ReturnsCalculatorProps) {
             Simulate potential returns based on target price expectations and see your estimated profits.
           </p>
         </div>
-
-        <BlurredRatesLock className="calc-rates-lock" message="Login to see the share prices">
-          <div className="calc-grid" style={{ pointerEvents: canViewRates ? undefined : 'none' }}>
-            <div className="calc-inputs">
-              <div className="form-group">
-                <label className="form-label">Select Pre-IPO Company</label>
-                <select
-                  className="form-input"
-                  value={share.id}
-                  onChange={(e) => setShareId(e.target.value)}
-                  disabled={!canViewRates}
-                >
-                  {list.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} — {formatCurrency(s.price)}
-                    </option>
-                  ))}
-                </select>
-                <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--muted)' }}>
-                  Live price {formatCurrency(unitPrice)}
-                  {share.minQty > 0 ? ` · Min ${share.minQty} shares` : ''}
-                </div>
-              </div>
-
-              <div className="slider-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>
-                    Investment Amount (INR)
-                  </label>
-                  <strong style={{ color: 'var(--white)', fontSize: '0.9rem' }}>{formatCurrency(amount)}</strong>
-                </div>
-                <input
-                  type="range"
-                  className="price-slider"
-                  min={5000}
-                  max={500000}
-                  step={5000}
-                  value={amount}
-                  onChange={(e) => setAmount(+e.target.value)}
-                  disabled={!canViewRates}
-                />
-                <div className="slider-labels">
-                  <span>₹5,000</span>
-                  <span>₹5,00,000</span>
-                </div>
-              </div>
-
-              <div className="slider-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>
-                    Expected Listing Gain
-                  </label>
-                  <strong style={{ color: 'var(--gold)', fontSize: '0.9rem' }}>+{gain}%</strong>
-                </div>
-                <input
-                  type="range"
-                  className="price-slider"
-                  min={10}
-                  max={300}
-                  step={10}
-                  value={gain}
-                  onChange={(e) => setGain(+e.target.value)}
-                  disabled={!canViewRates}
-                />
-                <div className="slider-labels">
-                  <span>+10% (1.1x)</span>
-                  <span>+300% (4.0x)</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="calc-outputs">
-              <div className="calc-gauge-wrap">
-                <svg width="160" height="160" viewBox="0 0 160 160">
-                  <circle cx="80" cy="80" r="70" stroke="var(--navy-mid)" strokeWidth="10" fill="transparent" />
-                  <circle
-                    cx="80"
-                    cy="80"
-                    r="70"
-                    stroke="var(--gold)"
-                    strokeWidth="10"
-                    fill="transparent"
-                    strokeDasharray="440"
-                    strokeDashoffset={dashOffset}
-                    strokeLinecap="round"
-                    style={{
-                      transform: 'rotate(-90deg)',
-                      transformOrigin: '50% 50%',
-                      transition: 'stroke-dashoffset 0.4s ease',
-                    }}
-                  />
-                </svg>
-                <div className="calc-gauge-text">
-                  <div className="calc-multiplier">{calc.multiplier.toFixed(1)}x</div>
-                  <div className="calc-multiplier-label">Multiplier</div>
-                </div>
-              </div>
-
-              <div className="calc-metrics">
-                <div className="calc-metric-row">
-                  <span className="lbl">Share Price</span>
-                  <span className="val">{formatCurrency(unitPrice)}</span>
-                </div>
-                <div className="calc-metric-row">
-                  <span className="lbl">Shares Purchased</span>
-                  <span className="val">{calc.qty}</span>
-                </div>
-                <div className="calc-metric-row">
-                  <span className="lbl">Total Invested</span>
-                  <span className="val">{formatCurrency(calc.invested)}</span>
-                </div>
-                <div className="calc-metric-row">
-                  <span className="lbl">Est. Profit</span>
-                  <span className="val" style={{ color: 'var(--green)' }}>
-                    {formatCurrency(calc.profit)}
-                  </span>
-                </div>
-                <div className="calc-metric-row">
-                  <span className="lbl">Est. Value at Listing</span>
-                  <span className="val">{formatCurrency(calc.estValue)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </BlurredRatesLock>
+        {body}
       </div>
     </section>
   );

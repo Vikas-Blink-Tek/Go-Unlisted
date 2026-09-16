@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -114,8 +115,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(user.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-                      Text(user.email, style: const TextStyle(color: GuColors.muted, fontSize: 13)),
+                      Text(
+                        user.name.isNotEmpty ? user.name : 'Investor',
+                        style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18, color: GuColors.ink),
+                      ),
+                      if (user.phone.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          formatIndianPhone(user.phone),
+                          style: GoogleFonts.inter(color: GuColors.text, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                      if (user.email.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          user.email,
+                          style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
+                        ),
+                      ],
                       const SizedBox(height: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -165,9 +182,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               final rmPhone = contacts?.rmPhone;
               final rmIsDesk = contacts?.rmIsDesk == true;
               final waPhone = contacts?.whatsapp ?? supportPhone;
-              final extraPhones = companyPhones
-                  .where((p) => p.isNotEmpty && p != supportPhone && p != rmPhone)
-                  .toList();
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -194,13 +208,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       title: 'Customer care',
                       subtitle: formatIndianPhone(supportPhone),
                       onTap: () => _call(supportPhone),
-                    ),
-                  for (var i = 0; i < extraPhones.length; i++)
-                    _Tile(
-                      icon: Icons.business_rounded,
-                      title: 'Company line ${i + 2}',
-                      subtitle: formatIndianPhone(extraPhones[i]),
-                      onTap: () => _call(extraPhones[i]),
                     ),
                   if (waPhone != null && waPhone.isNotEmpty)
                     _Tile(

@@ -23,6 +23,8 @@ export interface Share {
   chartLabels: Record<ChartPeriod, string[]>;
   listingType?: string;
   ipoTimeline?: string;
+  /** SEBI draft: Not Filed | DRHP Pending | DRHP Filed | DRHP Approved */
+  drhpStatus?: string;
   buyPrice?: number | null;
   /** Listing / IPO price — when set, stock appears in homepage pre-IPO vs listing comparison */
   listingPrice?: number | null;

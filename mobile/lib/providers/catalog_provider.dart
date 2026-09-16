@@ -3,6 +3,23 @@ import 'package:flutter/foundation.dart';
 import '../core/api/gu_api.dart';
 import '../models/models.dart';
 
+/// Case-insensitive sector match: "Aviation" also matches "Aviation and Tourism sector".
+bool sectorMatches(String? shareSector, String selected) {
+  if (selected.isEmpty || selected == 'All') return true;
+  final share = (shareSector ?? '').trim().toLowerCase();
+  final want = selected.trim().toLowerCase();
+  if (share.isEmpty || want.isEmpty) return false;
+  if (share == want) return true;
+  if (share.startsWith('$want ') ||
+      share.startsWith('$want/') ||
+      share.startsWith('$want,') ||
+      share.startsWith('$want &') ||
+      share.startsWith('$want(')) {
+    return true;
+  }
+  return false;
+}
+
 class CatalogProvider extends ChangeNotifier {
   List<GuShare> _shares = [];
   GuSettings? _settings;
@@ -20,25 +37,64 @@ class CatalogProvider extends ChangeNotifier {
 
   List<String> get sectors {
     final set = <String>{'All'};
-    for (final s in buyable) {
-      if (s.sector.isNotEmpty) set.add(s.sector);
+    for (final s in browsable) {
+      final sector = s.sector.trim();
+      if (sector.isNotEmpty) set.add(sector);
     }
-    return set.toList()..sort();
+    final list = set.toList()..sort();
+    // Keep "All" first
+    list.remove('All');
+    return ['All', ...list];
   }
 
   List<GuShare> get featured => _shares.where((s) => s.featured).take(12).toList();
 
-  /// Buyable catalog only — exchange-listed / out-of-stock excluded.
+  /// Homepage Pre-IPO vs Listing Price track record (public).
+  List<GuShare> get listingComparisons {
+    final items = _shares
+        .where((s) => (s.listingPrice ?? 0) > 0 && s.price > 0)
+        .toList();
+    items.sort((a, b) {
+      final aGain = ((a.listingPrice! - a.price) / a.price);
+      final bGain = ((b.listingPrice! - b.price) / b.price);
+      return bGain.compareTo(aGain);
+    });
+    return items;
+  }
+
+  /// Public browse catalog — same as website Shares page (listed / featured still visible).
+  List<GuShare> get browsable => List<GuShare>.from(_shares);
+
+  /// Buyable catalog only — exchange-listed / out-of-stock / featured samples excluded.
   List<GuShare> get buyable => _shares.where((s) => s.isPurchasable).toList();
 
+  bool get _filtersActive => _query.trim().isNotEmpty || _sector != 'All';
+
+  bool _matchesBrowseFilters(GuShare s) {
+    if (!sectorMatches(s.sector, _sector)) return false;
+    if (_query.isEmpty) return true;
+    final q = _query.toLowerCase();
+    return s.name.toLowerCase().contains(q) ||
+        s.ticker.toLowerCase().contains(q) ||
+        s.sector.toLowerCase().contains(q);
+  }
+
+  /// Same as website Shares page “Top 10 Shares” block.
+  List<GuShare> get top10Shares {
+    return browsable.where((s) => s.isTop10 && _matchesBrowseFilters(s)).take(10).toList();
+  }
+
+  /// Main grid — excludes Top 10 (shown above) and, with no filters, homepage featured samples.
   List<GuShare> get filtered {
-    return buyable.where((s) {
-      if (_sector != 'All' && s.sector != _sector) return false;
-      if (_query.isEmpty) return true;
-      final q = _query.toLowerCase();
-      return s.name.toLowerCase().contains(q) ||
-          s.ticker.toLowerCase().contains(q) ||
-          s.sector.toLowerCase().contains(q);
+    final top10Ids = top10Shares.map((s) => s.id).toSet();
+    return browsable.where((s) {
+      if (!_filtersActive) {
+        if (s.featured) return false;
+        if (s.isTop10) return false;
+      } else if (top10Ids.contains(s.id)) {
+        return false;
+      }
+      return _matchesBrowseFilters(s);
     }).toList();
   }
 

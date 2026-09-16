@@ -3,6 +3,7 @@ import { formatCurrency } from '../../utils/format';
 import { isSharePurchasable, isShareUnavailable } from '../../utils/inventory';
 import { getShareCardTag } from '../../utils/shareCardTag';
 import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
+import { normalizeDrhpStatus, drhpStatusKind } from '../../utils/drhpStatus';
 import ShareSparkline from './ShareSparkline';
 import CompanyLogo from './CompanyLogo';
 import SharePriceCompare from './SharePriceCompare';
@@ -24,6 +25,8 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
   const tag = getShareCardTag(share);
   const sparkline = share.priceHistory?.['3M'] ?? [];
   const bulk = getBulkPricingSummary(share);
+  const drhp = normalizeDrhpStatus(share.drhpStatus);
+  const drhpKind = drhpStatusKind(drhp);
 
   return (
     <div
@@ -62,6 +65,10 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
       <div className="share-card-sector">
         <span className="share-card-sector-label">Sector</span>
         <span className="share-card-sector-value">{share.sector || 'Unlisted'}</span>
+      </div>
+
+      <div className={`share-drhp-badge share-drhp-badge--${drhpKind}`} title="SEBI draft red herring prospectus status">
+        {drhp}
       </div>
 
       <BlurredRatesLock className="share-card-rates">
