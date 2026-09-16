@@ -252,15 +252,17 @@ class ShareListTile extends StatelessWidget {
                       Flexible(child: GuSectorChip(label: share.sector.isEmpty ? 'Unlisted' : share.sector)),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    share.displayDrhpStatus,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _drhpColor(share.displayDrhpStatus),
+                  if (share.showDrhpStatus) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      share.displayDrhpStatus,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _drhpColor(share.displayDrhpStatus),
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     'Min lot ${share.minQty}',

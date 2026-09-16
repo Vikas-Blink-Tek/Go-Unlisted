@@ -289,7 +289,7 @@ export default function StockListingModal({
                   </Field>
                   <Field
                     label="DRHP status"
-                    hint="Has the company filed a draft with SEBI? Team updates this."
+                    hint="Leave as Don't show for most stocks. Set Pending / Filed / Approved only on selected listings — then it appears on web & app."
                   >
                     <select
                       className="slm-input"
@@ -297,7 +297,9 @@ export default function StockListingModal({
                       onChange={(e) => set({ drhpStatus: e.target.value })}
                     >
                       {DRHP_STATUSES.map((s) => (
-                        <option key={s} value={s}>{s}</option>
+                        <option key={s} value={s}>
+                          {s === 'Not Filed' ? "Don't show" : s}
+                        </option>
                       ))}
                     </select>
                   </Field>

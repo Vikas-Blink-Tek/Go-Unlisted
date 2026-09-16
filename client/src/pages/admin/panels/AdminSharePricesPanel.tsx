@@ -10,7 +10,7 @@ import StockListingModal from '../components/StockListingModal';
 import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { STOCK_SECTORS } from '../../../data/sharesCatalog';
 import { buildPriceHistory, defaultChartLabels } from '../../../utils/priceHistory';
-import { normalizeDrhpStatus } from '../../../utils/drhpStatus';
+import { normalizeDrhpStatus, isDrhpVisible } from '../../../utils/drhpStatus';
 
 const GRADIENTS = [
   'linear-gradient(135deg, #003478, #0050a8)',
@@ -534,8 +534,7 @@ export default function AdminSharePricesPanel() {
                 </div>
                 <div className="price-company-sector">
                   {s.ticker} · {s.sector} · Min {s.minQty} · {s.inventoryStatus || 'In Stock'}
-                  {' · '}
-                  {normalizeDrhpStatus(s.drhpStatus)}
+                  {isDrhpVisible(s.drhpStatus) ? ` · ${normalizeDrhpStatus(s.drhpStatus)}` : ''}
                   {s.buyPrice ? ` · Margin ${formatCurrency(s.price - s.buyPrice)}/sh` : ''}
                 </div>
                 {!s.description && <div className="stock-missing-hint">⚠ No description — click to edit</div>}

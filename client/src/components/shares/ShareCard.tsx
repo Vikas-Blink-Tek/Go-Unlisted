@@ -3,7 +3,7 @@ import { formatCurrency } from '../../utils/format';
 import { isSharePurchasable, isShareUnavailable } from '../../utils/inventory';
 import { getShareCardTag } from '../../utils/shareCardTag';
 import { BlurredRatesLock, useCanViewShareRates } from '../../utils/shareRates';
-import { normalizeDrhpStatus, drhpStatusKind } from '../../utils/drhpStatus';
+import { normalizeDrhpStatus, isDrhpVisible, drhpStatusKind } from '../../utils/drhpStatus';
 import ShareSparkline from './ShareSparkline';
 import CompanyLogo from './CompanyLogo';
 import SharePriceCompare from './SharePriceCompare';
@@ -27,6 +27,7 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
   const bulk = getBulkPricingSummary(share);
   const drhp = normalizeDrhpStatus(share.drhpStatus);
   const drhpKind = drhpStatusKind(drhp);
+  const showDrhp = isDrhpVisible(drhp);
 
   return (
     <div
@@ -67,9 +68,11 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
         <span className="share-card-sector-value">{share.sector || 'Unlisted'}</span>
       </div>
 
-      <div className={`share-drhp-badge share-drhp-badge--${drhpKind}`} title="SEBI draft red herring prospectus status">
-        {drhp}
-      </div>
+      {showDrhp && (
+        <div className={`share-drhp-badge share-drhp-badge--${drhpKind}`} title="SEBI draft red herring prospectus status">
+          {drhp}
+        </div>
+      )}
 
       <BlurredRatesLock className="share-card-rates">
         {bulk ? (

@@ -12,7 +12,7 @@ import { getInventoryBadge, isShareOnRequest, isSharePurchasable, isShareUnavail
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { getBulkPricingSummary } from '../utils/bulkPricing';
-import { normalizeDrhpStatus, drhpStatusKind } from '../utils/drhpStatus';
+import { normalizeDrhpStatus, drhpStatusKind, isDrhpVisible } from '../utils/drhpStatus';
 import type { ChartPeriod } from '../types';
 
 export default function ShareDetailPage() {
@@ -73,13 +73,16 @@ export default function ShareDetailPage() {
     { label: 'Book value', value: na(share.bookValue) },
     { label: 'Face value', value: na(share.faceValue) },
     { label: 'ISIN', value: na(share.isin) },
-    { label: 'DRHP status', value: normalizeDrhpStatus(share.drhpStatus) },
   ];
+  if (isDrhpVisible(share.drhpStatus)) {
+    fundamentals.push({ label: 'DRHP status', value: normalizeDrhpStatus(share.drhpStatus) });
+  }
 
   const chartData = share.priceHistory?.[period] ?? [];
   const bulk = getBulkPricingSummary(share);
   const drhp = normalizeDrhpStatus(share.drhpStatus);
   const drhpKind = drhpStatusKind(drhp);
+  const showDrhp = isDrhpVisible(drhp);
 
   return (
     <div className="view" id="view-detail">
@@ -128,13 +131,15 @@ export default function ShareDetailPage() {
                   {invBadge}
                 </span>
               )}
-              <span
-                className={`share-drhp-badge share-drhp-badge--${drhpKind}`}
-                style={{ marginLeft: 8 }}
-                title="SEBI draft red herring prospectus status"
-              >
-                {drhp}
-              </span>
+              {showDrhp && (
+                <span
+                  className={`share-drhp-badge share-drhp-badge--${drhpKind}`}
+                  style={{ marginLeft: 8 }}
+                  title="SEBI draft red herring prospectus status"
+                >
+                  {drhp}
+                </span>
+              )}
             </div>
           </div>
         </div>

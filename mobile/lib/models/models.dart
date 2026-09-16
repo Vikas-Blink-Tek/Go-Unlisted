@@ -139,7 +139,7 @@ class GuShare {
   final String? inventoryStatus;
   final String? listingType;
   final double? listingPrice;
-  /// SEBI draft: Not Filed | DRHP Pending | DRHP Filed | DRHP Approved
+  /// SEBI draft — public only when Pending / Filed / Approved (Not Filed = hidden).
   final String? drhpStatus;
   final bool? purchasable;
   final bool? ratesVisible;
@@ -342,6 +342,12 @@ class GuShare {
   }
 
   String get displayDrhpStatus => _normalizeDrhpStatus(drhpStatus);
+
+  /// Public surfaces: only show when admin set Pending / Filed / Approved.
+  bool get showDrhpStatus {
+    final s = displayDrhpStatus;
+    return s == 'DRHP Pending' || s == 'DRHP Filed' || s == 'DRHP Approved';
+  }
 
   static double _toDouble(dynamic v) {
     if (v is num) return v.toDouble();
