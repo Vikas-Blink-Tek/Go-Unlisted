@@ -9,6 +9,7 @@ import WhatsAppFloat from './WhatsAppFloat';
 import WelcomeAuthModal from '../auth/WelcomeAuthModal';
 import { ShareSearchProvider, useShareSearch } from '../shares/GlobalShareSearch';
 import { kycBadgeClass, kycBadgeLabel, userInitials } from '../../utils/kyc';
+import { formatIndianPhoneDisplay } from '../../utils/format';
 
 const navLinks = [
   { to: '/', label: 'Home' },
@@ -164,9 +165,25 @@ function MainLayoutInner() {
                   </button>
                   <div className={`nav-user-dropdown-menu${dropdown ? ' show' : ''}`} id="nav-user-dropdown-menu">
                     <div className="dropdown-user-info">
-                      <div className="dropdown-user-name">{user.name || user.email.split('@')[0]}</div>
-                      <div className="dropdown-user-email">{user.email}</div>
-                      <div className="dropdown-user-kyc" style={{ marginTop: 6 }}>
+                      <div className="dropdown-user-row">
+                        <span className="dropdown-user-label">User Name</span>
+                        <span className="dropdown-user-value">
+                          {user.name?.trim() || user.email.split('@')[0] || '—'}
+                        </span>
+                      </div>
+                      <div className="dropdown-user-row">
+                        <span className="dropdown-user-label">Mobile</span>
+                        <span className="dropdown-user-value">
+                          {user.phone?.trim() ? formatIndianPhoneDisplay(user.phone) : '—'}
+                        </span>
+                      </div>
+                      <div className="dropdown-user-row">
+                        <span className="dropdown-user-label">Email</span>
+                        <span className="dropdown-user-value dropdown-user-value--email">
+                          {user.email?.trim() || '—'}
+                        </span>
+                      </div>
+                      <div className="dropdown-user-kyc" style={{ marginTop: 8 }}>
                         KYC Status:{' '}
                         <span className={`kyc-badge ${kycBadgeClass(user.kycStatus)}`}>
                           {kycBadgeLabel(user.kycStatus)}

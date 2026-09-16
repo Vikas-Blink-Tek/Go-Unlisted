@@ -29,10 +29,11 @@ export default function SharesPage() {
   const [watchOnly, setWatchOnly] = useState(false);
   const [watched, setWatched] = useState<string[]>(watchlist.get());
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [sectorMenuOpen, setSectorMenuOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const searchWrapRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const sectorPanelRef = useRef<HTMLDivElement>(null);
+  const sectorMenuRef = useRef<HTMLDivElement>(null);
 
   const sectorOptions = useMemo(() => {
     const fromShares = [...new Set(shares.map((s) => (s.sector || '').trim()).filter(Boolean))].sort((a, b) =>
@@ -94,8 +95,11 @@ export default function SharesPage() {
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (!searchWrapRef.current?.contains(target) && !sectorPanelRef.current?.contains(target)) {
+      if (!searchWrapRef.current?.contains(target)) {
         setDropdownOpen(false);
+      }
+      if (!sectorMenuRef.current?.contains(target)) {
+        setSectorMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDoc);
@@ -109,8 +113,10 @@ export default function SharesPage() {
       if (!typing && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         setDropdownOpen(false);
-        sectorPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        searchInputRef.current?.focus();
+        setSectorMenuOpen((open) => !open);
+      }
+      if (e.key === 'Escape') {
+        setSectorMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -254,45 +260,65 @@ export default function SharesPage() {
                 )}
               </div>
 
-              <button
-                type="button"
-                className={`shares-sector-shortcut${sector !== 'All' ? ' is-active' : ''}`}
-                onClick={() => {
-                  setDropdownOpen(false);
-                  sectorPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                }}
-                aria-label="Sector filter (shortcut S)"
-                title="Sector filter (press S)"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
-                </svg>
-                <span className="shares-sector-shortcut-label">
-                  {sector === 'All' ? 'Sector' : sector}
-                </span>
-                <kbd className="shares-sector-kbd">S</kbd>
-              </button>
-            </div>
-
-            <div className="filter-group shares-sector-panel" ref={sectorPanelRef}>
-              <span className="filter-label">Sector:</span>
-              <div className="sector-filters">
-                {sectorOptions.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className={`filter-btn ${sector === s ? 'active' : ''}`}
-                    onClick={() => setSector(s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              {sector !== 'All' && (
-                <button type="button" className="filter-btn" onClick={() => setSector('All')}>
-                  Clear sector
+              <div className="shares-sector-menu-wrap" ref={sectorMenuRef}>
+                <button
+                  type="button"
+                  className={`shares-sector-shortcut${sector !== 'All' ? ' is-active' : ''}${sectorMenuOpen ? ' is-open' : ''}`}
+                  onClick={() => {
+                    setDropdownOpen(false);
+                    setSectorMenuOpen((open) => !open);
+                  }}
+                  aria-label="Sector filter (shortcut S)"
+                  aria-expanded={sectorMenuOpen}
+                  aria-haspopup="listbox"
+                  title="Sector filter (press S)"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
+                  </svg>
+                  <span className="shares-sector-shortcut-label">
+                    {sector === 'All' ? 'Sector' : sector}
+                  </span>
+                  <kbd className="shares-sector-kbd">S</kbd>
                 </button>
-              )}
+
+                {sectorMenuOpen && (
+                  <div className="shares-sector-dropdown" role="listbox" aria-label="Filter by sector">
+                    <div className="shares-sector-dropdown-head">
+                      <span>Filter by sector</span>
+                      {sector !== 'All' && (
+                        <button
+                          type="button"
+                          className="shares-sector-clear"
+                          onClick={() => {
+                            setSector('All');
+                            setSectorMenuOpen(false);
+                          }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    <div className="shares-sector-dropdown-list">
+                      {sectorOptions.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          role="option"
+                          aria-selected={sector === s}
+                          className={`shares-sector-option${sector === s ? ' is-active' : ''}`}
+                          onClick={() => {
+                            setSector(s);
+                            setSectorMenuOpen(false);
+                          }}
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="filter-group">
