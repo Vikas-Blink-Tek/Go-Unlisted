@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/gu_theme.dart';
 import '../../core/utils/format.dart';
@@ -254,6 +255,9 @@ class ShareDetailScreen extends StatelessWidget {
               ],
 
               const SizedBox(height: 24),
+              _CompanyWebsiteCard(share: share).guFadeSlide(delayMs: 60),
+
+              const SizedBox(height: 28),
               Text(
                 'KEY DATA',
                 style: GoogleFonts.inter(
@@ -489,6 +493,7 @@ class _FundamentalsGrid extends StatelessWidget {
       {'label': 'Book value', 'value': na(share.bookValue)},
       {'label': 'Face value', 'value': na(share.faceValue)},
       {'label': 'ISIN', 'value': na(share.isin)},
+      if (share.displayWebsiteDomain.isNotEmpty) {'label': 'Website', 'value': share.displayWebsiteDomain},
       if (share.showDrhpStatus) {'label': 'DRHP status', 'value': share.displayDrhpStatus},
     ];
 
@@ -708,6 +713,116 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompanyWebsiteCard extends StatelessWidget {
+  const _CompanyWebsiteCard({required this.share});
+  final GuShare share;
+
+  Future<void> _openWebsite(BuildContext context) async {
+    String? rawUrl = share.website?.trim();
+    if (rawUrl == null || rawUrl.isEmpty) {
+      rawUrl = 'https://www.google.com/search?q=${Uri.encodeComponent('${share.name} official website')}';
+    } else {
+      if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+        rawUrl = 'https://$rawUrl';
+      }
+    }
+    final uri = Uri.tryParse(rawUrl);
+    if (uri != null) {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not open $rawUrl')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: GuColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: GuColors.border),
+        boxShadow: GuColors.softCard,
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'SECTOR',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: GuColors.muted, letterSpacing: 0.5),
+                ),
+                Text(
+                  share.sector.toUpperCase(),
+                  style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w800, color: GuColors.text),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: GuColors.border),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'MIN ORDER',
+                  style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: GuColors.muted, letterSpacing: 0.5),
+                ),
+                Text(
+                  '${formatNumber(share.minQty)} Shares',
+                  style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w800, color: GuColors.text),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: GuColors.border),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+              onTap: () => _openWebsite(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    const Icon(Icons.language_rounded, size: 20, color: GuColors.limeDark),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Visit website',
+                        style: GoogleFonts.manrope(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: GuColors.text,
+                        ),
+                      ),
+                    ),
+                    if (share.displayWebsiteDomain.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6.0),
+                        child: Text(
+                          share.displayWebsiteDomain,
+                          style: GoogleFonts.inter(fontSize: 12, color: GuColors.muted),
+                        ),
+                      ),
+                    const Icon(Icons.chevron_right_rounded, size: 20, color: GuColors.muted),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

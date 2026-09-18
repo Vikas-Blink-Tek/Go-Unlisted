@@ -47,6 +47,12 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
     if (!seen) {
       context.go('/onboarding');
+      return;
+    }
+    // After first login on this device → MPIN unlock (email remembered).
+    // Brand-new guests → home + welcome sheet (same as web).
+    if (auth.hasRememberedAccount) {
+      context.go('/auth');
     } else {
       context.go('/app');
     }

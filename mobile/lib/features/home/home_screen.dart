@@ -229,7 +229,7 @@ class HomeScreen extends StatelessWidget {
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 196,
+                  height: 256,
                   child: catalog.loading && featured.isEmpty
                       ? const Center(child: CircularProgressIndicator(color: GuColors.lime))
                       : _FeaturedAutoMarquee(shares: featured),
@@ -261,7 +261,7 @@ class HomeScreen extends StatelessWidget {
                       _StepDivider(),
                       _StepRow(n: '3', title: 'KYC', body: 'PAN, demat & bank in your profile'),
                       _StepDivider(),
-                      _StepRow(n: '4', title: 'Demat', body: 'Shares credited after ops verification'),
+                      _StepRow(n: '4', title: 'Demat', body: 'Shares credited after payment verification'),
                     ],
                   ),
                 ).guFadeSlide(delayMs: 100),
@@ -375,7 +375,7 @@ class _FeaturedAutoMarqueeState extends State<_FeaturedAutoMarquee>
 
   static const _cardW = 200.0;
   static const _gap = 12.0;
-  static const _cardH = 188.0;
+  static const _cardH = 248.0;
   static const _pad = 20.0;
   /// ~5.5s per card — same calm pace as website Market Activity.
   static const _secPerCard = 5.5;

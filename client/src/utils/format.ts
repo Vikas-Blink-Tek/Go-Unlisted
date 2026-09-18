@@ -4,6 +4,24 @@ export function formatCurrency(amount: number) {
   return '₹' + Number(amount).toLocaleString('en-IN');
 }
 
+/** Portfolio line: `XYZ Unlisted @45×1,000=45,000` */
+export function formatTradeCalc(opts: {
+  name: string;
+  pricePerShare: number;
+  qty: number;
+  total?: number;
+}) {
+  const name = (opts.name || 'Share').trim() || 'Share';
+  const price = Number(opts.pricePerShare) || 0;
+  const qty = Math.max(0, Math.floor(Number(opts.qty) || 0));
+  const total = opts.total != null ? Number(opts.total) : price * qty;
+  const fmt = (n: number) =>
+    Number.isInteger(n) || Math.abs(n - Math.round(n)) < 1e-9
+      ? Math.round(n).toLocaleString('en-IN')
+      : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  return `${name} @${fmt(price)}×${fmt(qty)}=${fmt(total)}`;
+}
+
 const IST = 'Asia/Kolkata';
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

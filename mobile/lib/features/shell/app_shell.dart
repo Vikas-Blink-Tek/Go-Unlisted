@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/gu_theme.dart';
+import '../auth/welcome_auth_sheet.dart';
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -22,7 +23,8 @@ class AppShell extends StatelessWidget {
   Widget build(BuildContext context) {
     final index = navigationShell.currentIndex;
 
-    return Scaffold(
+    return WelcomeAuthHost(
+      child: Scaffold(
       backgroundColor: GuColors.bg,
       body: navigationShell,
       bottomNavigationBar: Container(
@@ -76,6 +78,7 @@ class AppShell extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }

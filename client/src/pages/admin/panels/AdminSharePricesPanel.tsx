@@ -51,6 +51,7 @@ type FormState = {
   roe: string;
   bookValue: string;
   faceValue: string;
+  website: string;
   logoInitials: string;
   logoUrl: string;
   changePositive: boolean;
@@ -88,6 +89,7 @@ const emptyForm = (): FormState => ({
   roe: '',
   bookValue: '',
   faceValue: '',
+  website: '',
   logoInitials: '',
   logoUrl: '',
   changePositive: true,
@@ -110,6 +112,7 @@ function fundamentalsFromShare(share: Share) {
     roe: share.roe || '',
     bookValue: share.bookValue || '',
     faceValue: share.faceValue || '',
+    website: share.website || '',
   };
 }
 
@@ -363,6 +366,7 @@ export default function AdminSharePricesPanel() {
         roe: form.roe.trim(),
         bookValue: form.bookValue.trim(),
         faceValue: form.faceValue.trim(),
+        website: form.website.trim(),
         changePositive: form.changePositive,
         isFeatured: form.isFeatured,
         isTop10: form.isTop10,

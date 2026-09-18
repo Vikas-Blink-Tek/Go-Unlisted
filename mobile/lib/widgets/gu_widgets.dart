@@ -320,12 +320,12 @@ class ShareCard extends StatelessWidget {
     final tag = getShareCardTag(share);
     return SizedBox(
       width: 200,
-      height: 188,
+      height: 248,
       child: GuPressable(
         onTap: onTap ?? () => context.push('/shares/${share.id}'),
         borderRadius: BorderRadius.circular(22),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
           decoration: BoxDecoration(
             color: GuColors.surface,
             borderRadius: BorderRadius.circular(22),
@@ -349,7 +349,7 @@ class ShareCard extends StatelessWidget {
                     colorHex: share.sectorColor,
                     logoUrl: share.logoUrl,
                     logoInitials: share.logoInitials,
-                    size: 44,
+                    size: 40,
                   ),
                   const Spacer(),
                   Text(
@@ -362,14 +362,14 @@ class ShareCard extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 share.name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14, color: GuColors.ink, height: 1.25),
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14, color: GuColors.ink, height: 1.2),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 'SECTOR',
                 style: GoogleFonts.inter(
@@ -387,25 +387,60 @@ class ShareCard extends StatelessWidget {
               ),
               const Spacer(),
               if ((share.listingPrice ?? 0) > 0) ...[
-                Text(
-                  'Listing ${formatInr(share.listingPrice!)}',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: GuColors.limeDark,
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: GuColors.limeSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: GuColors.lime.withValues(alpha: 0.35)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'LISTING PRICE',
+                        style: GoogleFonts.inter(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                          color: GuColors.limeDark,
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        formatInr(share.listingPrice!),
+                        style: GoogleFonts.manrope(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          height: 1.05,
+                          color: GuColors.limeDark,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-              ],
-              Row(
-                children: [
-                  Expanded(
-                    child: auth.canViewPrices
-                        ? Text(formatInr(share.price), style: GuTheme.price(context, size: 18))
-                        : const GuBlurredPrice(compact: true),
+                const SizedBox(height: 6),
+                Text(
+                  'Invest ${auth.canViewPrices ? formatInr(share.price) : '••••'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: GuColors.muted,
                   ),
-                ],
-              ),
+                ),
+              ] else
+                Row(
+                  children: [
+                    Expanded(
+                      child: auth.canViewPrices
+                          ? Text(formatInr(share.price), style: GuTheme.price(context, size: 18))
+                          : const GuBlurredPrice(compact: true),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),

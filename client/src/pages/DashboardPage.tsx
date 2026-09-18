@@ -5,7 +5,7 @@ import { updateKyc, uploadKycDematProof } from '../api/auth';
 import { getOrders } from '../api/orders';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
-import { formatCurrency, formatDateTime, getOrderDate, normalizeDemat, parseDbDateTime, validateDemat, validatePAN } from '../utils/format';
+import { formatCurrency, formatDateTime, formatTradeCalc, getOrderDate, normalizeDemat, parseDbDateTime, validateDemat, validatePAN } from '../utils/format';
 import { getOrderStatusClass, getOrderStatusLabel, canViewInvoice } from '../utils/orderStatus';
 import AutofillBlocker from '../components/forms/AutofillBlocker';
 import { blockTextInput } from '../utils/autofill';
@@ -328,8 +328,8 @@ export default function DashboardPage() {
               </p>
               <div className="portfolio-empty-demo-grid">
                 {[
-                  { name: 'Sample Pre-IPO Co.', qty: '100 shares', total: '₹85,000', status: 'Transfer Pending' },
-                  { name: 'Example Unlisted Ltd.', qty: '50 shares', total: '₹42,500', status: 'Completed' },
+                  { name: 'Sample Pre-IPO Co.', price: 850, qty: 100, status: 'Transfer Pending' },
+                  { name: 'Example Unlisted Ltd.', price: 850, qty: 50, status: 'Completed' },
                 ].map((row) => (
                   <div key={row.name} className="portfolio-empty-demo-card">
                     <div className="portfolio-empty-demo-card-top">
@@ -337,8 +337,13 @@ export default function DashboardPage() {
                       <span className="status-badge status-pending">{row.status}</span>
                     </div>
                     <div className="portfolio-empty-demo-card-meta">
-                      <span>{row.qty}</span>
-                      <span>{row.total}</span>
+                      <span>
+                        {formatTradeCalc({
+                          name: row.name,
+                          pricePerShare: row.price,
+                          qty: row.qty,
+                        })}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -381,7 +386,17 @@ export default function DashboardPage() {
                         {holdings.map((o) => (
                           <tr key={o.orderId}>
                             <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{o.orderId}</td>
-                            <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
+                            <td style={{ fontWeight: 600 }}>
+                              <div>{o.companyName || o.shareName}</div>
+                              <div style={{ fontWeight: 500, fontSize: '0.78rem', color: 'var(--muted)', marginTop: 4 }}>
+                                {formatTradeCalc({
+                                  name: o.companyName || o.shareName || 'Share',
+                                  pricePerShare: o.pricePerShare || ((o.totalPaid || o.total || 0) / Math.max(1, o.qty || 1)),
+                                  qty: o.qty,
+                                  total: o.totalPaid || o.total || 0,
+                                })}
+                              </div>
+                            </td>
                             <td>{o.qty}</td>
                             <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
                             <td style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</td>
@@ -418,6 +433,14 @@ export default function DashboardPage() {
                           <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
                             {getOrderStatusLabel(o.status)}
                           </span>
+                        </div>
+                        <div className="dashboard-order-calc">
+                          {formatTradeCalc({
+                            name: o.companyName || o.shareName || 'Share',
+                            pricePerShare: o.pricePerShare || ((o.totalPaid || o.total || 0) / Math.max(1, o.qty || 1)),
+                            qty: o.qty,
+                            total: o.totalPaid || o.total || 0,
+                          })}
                         </div>
                         <div className="dashboard-order-meta">
                           <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
@@ -467,7 +490,17 @@ export default function DashboardPage() {
                         {pendingOrders.map((o) => (
                           <tr key={o.orderId}>
                             <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{o.orderId}</td>
-                            <td style={{ fontWeight: 600 }}>{o.companyName || o.shareName}</td>
+                            <td style={{ fontWeight: 600 }}>
+                              <div>{o.companyName || o.shareName}</div>
+                              <div style={{ fontWeight: 500, fontSize: '0.78rem', color: 'var(--muted)', marginTop: 4 }}>
+                                {formatTradeCalc({
+                                  name: o.companyName || o.shareName || 'Share',
+                                  pricePerShare: o.pricePerShare || ((o.totalPaid || o.total || 0) / Math.max(1, o.qty || 1)),
+                                  qty: o.qty,
+                                  total: o.totalPaid || o.total || 0,
+                                })}
+                              </div>
+                            </td>
                             <td>{o.qty}</td>
                             <td style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</td>
                             <td>{o.method || o.paymentMethod || '—'}</td>
@@ -492,6 +525,14 @@ export default function DashboardPage() {
                           <span className={`status-badge ${getOrderStatusClass(o.status)}`}>
                             {getOrderStatusLabel(o.status)}
                           </span>
+                        </div>
+                        <div className="dashboard-order-calc">
+                          {formatTradeCalc({
+                            name: o.companyName || o.shareName || 'Share',
+                            pricePerShare: o.pricePerShare || ((o.totalPaid || o.total || 0) / Math.max(1, o.qty || 1)),
+                            qty: o.qty,
+                            total: o.totalPaid || o.total || 0,
+                          })}
                         </div>
                         <div className="dashboard-order-meta">
                           <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>

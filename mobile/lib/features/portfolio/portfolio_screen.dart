@@ -93,8 +93,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '${o.qty} shares · ${formatInr(o.totalPaid, decimals: true)}',
-                        style: const TextStyle(color: GuColors.muted),
+                        formatTradeCalc(
+                          name: o.shareName,
+                          pricePerShare: o.unitPrice,
+                          qty: o.qty,
+                          total: o.totalPaid,
+                        ),
+                        style: const TextStyle(color: GuColors.muted, fontSize: 13),
                       ),
                     ],
                   ),
@@ -186,8 +191,18 @@ class _PortfolioEmptyDemo extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           ...[
-            ('Sample Pre-IPO Co.', '100 shares', '₹85,000', 'Transfer Pending'),
-            ('Example Unlisted Ltd.', '50 shares', '₹42,500', 'Completed'),
+            (
+              name: 'Sample Pre-IPO Co.',
+              price: 850,
+              qty: 100,
+              status: 'Transfer Pending',
+            ),
+            (
+              name: 'Example Unlisted Ltd.',
+              price: 850,
+              qty: 50,
+              status: 'Completed',
+            ),
           ].map((row) {
             return Opacity(
               opacity: 0.75,
@@ -205,18 +220,22 @@ class _PortfolioEmptyDemo extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(row.$1, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          child: Text(row.name, style: const TextStyle(fontWeight: FontWeight.w700)),
                         ),
                         Text(
-                          row.$4,
+                          row.status,
                           style: const TextStyle(fontSize: 11, color: GuColors.blue, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '${row.$2} · ${row.$3}',
-                      style: const TextStyle(color: GuColors.muted, fontSize: 13),
+                      formatTradeCalc(
+                        name: row.name,
+                        pricePerShare: row.price,
+                        qty: row.qty,
+                      ),
+                      style: const TextStyle(color: GuColors.muted, fontSize: 12.5, height: 1.35),
                     ),
                   ],
                 ),

@@ -8,6 +8,9 @@ import '../features/kyc/kyc_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/portfolio/portfolio_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/profile/account_center_screen.dart';
+import '../features/profile/about_screens.dart';
+import '../features/profile/profile_content.dart';
 import '../features/shares/share_detail_screen.dart';
 import '../features/shares/shares_screen.dart';
 import '../features/shell/app_shell.dart';
@@ -21,7 +24,8 @@ bool _needsAuth(String location) {
   return location.startsWith('/checkout') ||
       location == '/kyc' ||
       location.startsWith('/app/portfolio') ||
-      location.startsWith('/app/profile');
+      location.startsWith('/app/profile') ||
+      location.startsWith('/profile/');
 }
 
 GoRouter createRouter(AuthProvider auth) {
@@ -58,7 +62,10 @@ GoRouter createRouter(AuthProvider auth) {
         path: '/auth',
         pageBuilder: (context, state) => guSlidePage(
           key: state.pageKey,
-          child: AuthScreen(redirectTo: state.uri.queryParameters['redirect']),
+          child: AuthScreen(
+            redirectTo: state.uri.queryParameters['redirect'],
+            initialTab: state.uri.queryParameters['tab'],
+          ),
         ),
       ),
       GoRoute(
@@ -80,6 +87,62 @@ GoRouter createRouter(AuthProvider auth) {
         pageBuilder: (context, state) => guSlidePage(
           key: state.pageKey,
           child: const KycScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/account',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const AccountCenterScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/about',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const AboutHubScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/about/company',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const AboutCompanyScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/about/vision',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const VisionMissionScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/faqs',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const FaqsScreen(),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/legal/privacy',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const LegalDocScreen(title: 'Privacy Policy', body: GuProfileCopy.privacyBody),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/legal/risk',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const LegalDocScreen(title: 'Declaration of Risk', body: GuProfileCopy.riskBody),
+        ),
+      ),
+      GoRoute(
+        path: '/profile/legal/terms',
+        pageBuilder: (context, state) => guSlidePage(
+          key: state.pageKey,
+          child: const LegalDocScreen(title: 'Terms & Conditions', body: GuProfileCopy.termsBody),
         ),
       ),
       StatefulShellRoute.indexedStack(

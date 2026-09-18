@@ -1,29 +1,48 @@
 import 'package:flutter/foundation.dart';
 
 import '../core/api/gu_api.dart';
+import '../core/auth_prefs.dart';
 import '../models/models.dart';
 
 class AuthProvider extends ChangeNotifier {
   GuUser? _user;
   bool _booting = true;
   String? _error;
+  String? _rememberedEmail;
+  String? _rememberedName;
 
   GuUser? get user => _user;
   bool get isLoggedIn => _user != null;
   bool get booting => _booting;
   String? get error => _error;
   bool get canViewPrices => isLoggedIn;
+  String? get rememberedEmail => _rememberedEmail;
+  String? get rememberedName => _rememberedName;
+  bool get hasRememberedAccount => (_rememberedEmail ?? '').isNotEmpty;
 
   Future<void> bootstrap() async {
     _booting = true;
     notifyListeners();
     try {
+      _rememberedEmail = await AuthPrefs.rememberedEmail();
+      _rememberedName = await AuthPrefs.rememberedName();
       await GuApi.instance.init();
-      final res = await GuApi.instance.get('checkAuth');
-      if (res['authenticated'] == true && res['type'] == 'user' && res['user'] is Map) {
-        _user = GuUser.fromJson(Map<String, dynamic>.from(res['user'] as Map));
-      } else {
+
+      // Once the user has logged in on this device, every cold start asks for MPIN only
+      // (email is remembered). Silent cookie restore would skip that unlock step.
+      if (hasRememberedAccount) {
+        await GuApi.instance.clearSession();
         _user = null;
+      } else {
+        final res = await GuApi.instance.get('checkAuth');
+        if (res['authenticated'] == true && res['type'] == 'user' && res['user'] is Map) {
+          _user = GuUser.fromJson(Map<String, dynamic>.from(res['user'] as Map));
+          await AuthPrefs.rememberAccount(email: _user!.email, name: _user!.name);
+          _rememberedEmail = _user!.email;
+          _rememberedName = _user!.name;
+        } else {
+          _user = null;
+        }
       }
     } catch (_) {
       _user = null;
@@ -41,10 +60,12 @@ class AuthProvider extends ChangeNotifier {
         'email': email.trim(),
         'password': mpin.trim(),
       });
-      // Server regenerates session + CSRF on login — drop cached token.
       GuApi.instance.invalidateCsrf();
       if (res['user'] is Map) {
         _user = GuUser.fromJson(Map<String, dynamic>.from(res['user'] as Map));
+        await AuthPrefs.rememberAccount(email: _user!.email, name: _user!.name);
+        _rememberedEmail = _user!.email;
+        _rememberedName = _user!.name;
         notifyListeners();
         return true;
       }
@@ -117,17 +138,29 @@ class AuthProvider extends ChangeNotifier {
       final res = await GuApi.instance.get('checkAuth');
       if (res['authenticated'] == true && res['user'] is Map) {
         _user = GuUser.fromJson(Map<String, dynamic>.from(res['user'] as Map));
+        await AuthPrefs.rememberAccount(email: _user!.email, name: _user!.name);
+        _rememberedEmail = _user!.email;
+        _rememberedName = _user!.name;
         notifyListeners();
       }
     } catch (_) {}
   }
 
+  /// Clears session but keeps remembered email so next open is MPIN-only.
   Future<void> logout() async {
     try {
       await GuApi.instance.post('logout', {});
     } catch (_) {}
     await GuApi.instance.clearSession();
     _user = null;
+    notifyListeners();
+  }
+
+  /// Full login again (different email / phone).
+  Future<void> switchAccount() async {
+    await AuthPrefs.clearRememberedAccount();
+    _rememberedEmail = null;
+    _rememberedName = null;
     notifyListeners();
   }
 

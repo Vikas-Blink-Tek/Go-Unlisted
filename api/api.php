@@ -4496,6 +4496,7 @@ switch ($action) {
             'roe' => trim($data['roe'] ?? ''),
             'bookValue' => trim($data['bookValue'] ?? ''),
             'faceValue' => trim($data['faceValue'] ?? ''),
+            'website' => trim($data['website'] ?? $data['companyWebsite'] ?? ''),
         ]);
 
         if (!$share_id && $name) {

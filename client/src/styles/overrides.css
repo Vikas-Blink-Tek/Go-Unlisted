@@ -3511,10 +3511,18 @@ button.footer-link {
 }
 
 .portfolio-empty-demo-card-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
   color: var(--muted);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.dashboard-order-calc {
+  margin: 0.35rem 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .portfolio-empty-demo-steps {

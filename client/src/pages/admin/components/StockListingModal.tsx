@@ -48,6 +48,7 @@ export type StockFormState = {
   roe: string;
   bookValue: string;
   faceValue: string;
+  website: string;
   logoInitials: string;
   logoUrl: string;
   changePositive: boolean;
@@ -630,6 +631,7 @@ export default function StockListingModal({
                       ['bookValue', 'Book value', '₹1.24'],
                       ['faceValue', 'Face value', '₹1'],
                       ['isin', 'ISIN', 'INE312K01010'],
+                      ['website', 'Company Website', 'https://oyorooms.com'],
                     ] as const
                   ).map(([key, label, ph]) => (
                     <Field key={key} label={label}>

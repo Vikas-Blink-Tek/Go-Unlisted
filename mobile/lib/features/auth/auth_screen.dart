@@ -10,9 +10,11 @@ import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key, this.redirectTo});
+  const AuthScreen({super.key, this.redirectTo, this.initialTab});
 
   final String? redirectTo;
+  /// `register` opens signup tab.
+  final String? initialTab;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -20,6 +22,8 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
+  /// When true, only MPIN is shown for the remembered email.
+  bool _unlockMode = false;
   final _email = TextEditingController();
   final _mpin = TextEditingController();
   final _confirmMpin = TextEditingController();
@@ -29,9 +33,26 @@ class _AuthScreenState extends State<AuthScreen> {
   final _ref = TextEditingController();
   final _loginKey = GlobalKey<FormState>();
   final _regKey = GlobalKey<FormState>();
+  final _unlockKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _otpSent = false;
   bool _obscureMpin = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLogin = widget.initialTab != 'register';
+    WidgetsBinding.instance.addPostFrameCallback((_) => _hydrateRemembered());
+  }
+
+  void _hydrateRemembered() {
+    final auth = context.read<AuthProvider>();
+    final email = auth.rememberedEmail;
+    if (email != null && email.isNotEmpty && widget.initialTab != 'register') {
+      _email.text = email;
+      setState(() => _unlockMode = true);
+    }
+  }
 
   @override
   void dispose() {
@@ -49,7 +70,19 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() {
       _isLogin = login;
       _otpSent = false;
+      if (!login) _unlockMode = false;
       context.read<AuthProvider>().clearError();
+    });
+  }
+
+  Future<void> _switchAccount() async {
+    await context.read<AuthProvider>().switchAccount();
+    if (!mounted) return;
+    _email.clear();
+    _mpin.clear();
+    setState(() {
+      _unlockMode = false;
+      _isLogin = true;
     });
   }
 
@@ -57,6 +90,23 @@ class _AuthScreenState extends State<AuthScreen> {
     if (!(_loginKey.currentState?.validate() ?? false)) return;
     setState(() => _loading = true);
     final ok = await context.read<AuthProvider>().login(_email.text, _mpin.text);
+    if (!mounted) return;
+    if (ok) {
+      await context.read<CatalogProvider>().load();
+      if (!mounted) return;
+      setState(() => _loading = false);
+      context.go(widget.redirectTo ?? '/app');
+    } else {
+      setState(() => _loading = false);
+      _toast(context.read<AuthProvider>().error, error: true);
+    }
+  }
+
+  Future<void> _unlock() async {
+    if (!(_unlockKey.currentState?.validate() ?? false)) return;
+    final email = context.read<AuthProvider>().rememberedEmail ?? _email.text;
+    setState(() => _loading = true);
+    final ok = await context.read<AuthProvider>().login(email, _mpin.text);
     if (!mounted) return;
     if (ok) {
       await context.read<CatalogProvider>().load();
@@ -133,6 +183,8 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final h = MediaQuery.sizeOf(context).height;
+    final auth = context.watch<AuthProvider>();
+    final canBrowse = widget.redirectTo == null || widget.redirectTo == '/app';
 
     return GuPageBackground(
       child: Scaffold(
@@ -141,7 +193,13 @@ class _AuthScreenState extends State<AuthScreen> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           leading: IconButton(
-            onPressed: () => context.canPop() ? context.pop() : context.go('/app'),
+            onPressed: () {
+              if (context.canPop()) {
+                context.pop();
+              } else if (canBrowse) {
+                context.go('/app');
+              }
+            },
             icon: const Icon(Icons.arrow_back_rounded),
           ),
         ),
@@ -168,45 +226,57 @@ class _AuthScreenState extends State<AuthScreen> {
                             border: Border.all(color: GuColors.border),
                             boxShadow: GuColors.softCard,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _AuthTabs(isLogin: _isLogin, onChanged: _switchTab),
-                              const SizedBox(height: 18),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 250),
-                                switchInCurve: Curves.easeOutCubic,
-                                child: _isLogin
-                                    ? _LoginForm(
-                                        key: const ValueKey('login'),
-                                        formKey: _loginKey,
-                                        email: _email,
-                                        mpin: _mpin,
-                                        obscure: _obscureMpin,
-                                        loading: _loading,
-                                        onToggleObscure: () => setState(() => _obscureMpin = !_obscureMpin),
-                                        onSubmit: _login,
-                                        onGoRegister: () => _switchTab(false),
-                                      )
-                                    : _RegisterForm(
-                                        key: const ValueKey('register'),
-                                        formKey: _regKey,
-                                        name: _name,
-                                        email: _email,
-                                        phone: _phone,
-                                        mpin: _mpin,
-                                        confirmMpin: _confirmMpin,
-                                        otp: _otp,
-                                        referral: _ref,
-                                        obscure: _obscureMpin,
-                                        otpSent: _otpSent,
-                                        loading: _loading,
-                                        onToggleObscure: () => setState(() => _obscureMpin = !_obscureMpin),
-                                        onSubmit: _signup,
-                                        onGoLogin: () => _switchTab(true),
-                                      ),
-                              ),
-                            ],
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            switchInCurve: Curves.easeOutCubic,
+                            child: _unlockMode
+                                ? _UnlockForm(
+                                    key: const ValueKey('unlock'),
+                                    formKey: _unlockKey,
+                                    email: auth.rememberedEmail ?? _email.text,
+                                    name: auth.rememberedName,
+                                    mpin: _mpin,
+                                    obscure: _obscureMpin,
+                                    loading: _loading,
+                                    onToggleObscure: () => setState(() => _obscureMpin = !_obscureMpin),
+                                    onSubmit: _unlock,
+                                    onSwitchAccount: _switchAccount,
+                                  )
+                                : Column(
+                                    key: ValueKey(_isLogin ? 'login' : 'register'),
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      _AuthTabs(isLogin: _isLogin, onChanged: _switchTab),
+                                      const SizedBox(height: 18),
+                                      _isLogin
+                                          ? _LoginForm(
+                                              formKey: _loginKey,
+                                              email: _email,
+                                              mpin: _mpin,
+                                              obscure: _obscureMpin,
+                                              loading: _loading,
+                                              onToggleObscure: () => setState(() => _obscureMpin = !_obscureMpin),
+                                              onSubmit: _login,
+                                              onGoRegister: () => _switchTab(false),
+                                            )
+                                          : _RegisterForm(
+                                              formKey: _regKey,
+                                              name: _name,
+                                              email: _email,
+                                              phone: _phone,
+                                              mpin: _mpin,
+                                              confirmMpin: _confirmMpin,
+                                              otp: _otp,
+                                              referral: _ref,
+                                              obscure: _obscureMpin,
+                                              otpSent: _otpSent,
+                                              loading: _loading,
+                                              onToggleObscure: () => setState(() => _obscureMpin = !_obscureMpin),
+                                              onSubmit: _signup,
+                                              onGoLogin: () => _switchTab(true),
+                                            ),
+                                    ],
+                                  ),
                           ),
                         ).guFadeSlide(delayMs: 60),
                         const SizedBox(height: 16),
@@ -342,9 +412,134 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
+class _UnlockForm extends StatelessWidget {
+  const _UnlockForm({
+    super.key,
+    required this.formKey,
+    required this.email,
+    required this.name,
+    required this.mpin,
+    required this.obscure,
+    required this.loading,
+    required this.onToggleObscure,
+    required this.onSubmit,
+    required this.onSwitchAccount,
+  });
+
+  final GlobalKey<FormState> formKey;
+  final String email;
+  final String? name;
+  final TextEditingController mpin;
+  final bool obscure;
+  final bool loading;
+  final VoidCallback onToggleObscure;
+  final VoidCallback onSubmit;
+  final VoidCallback onSwitchAccount;
+
+  @override
+  Widget build(BuildContext context) {
+    final greeting = (name != null && name!.trim().isNotEmpty) ? name!.trim().split(' ').first : null;
+
+    return Form(
+      key: formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            greeting != null ? 'Welcome back, $greeting' : 'Welcome back',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(fontSize: 18, fontWeight: FontWeight.w800, color: GuColors.navy),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Enter your MPIN to continue',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted),
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: GuColors.bg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: GuColors.border),
+            ),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: GuColors.limeSoft,
+                  child: Text(
+                    ((greeting ?? email).isNotEmpty ? (greeting ?? email)[0] : '?').toUpperCase(),
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w800, color: GuColors.limeDark),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (name != null && name!.trim().isNotEmpty)
+                        Text(
+                          name!,
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                      Text(
+                        email,
+                        style: GoogleFonts.inter(fontSize: 12.5, color: GuColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _FieldLabel('MPIN'),
+          TextFormField(
+            controller: mpin,
+            obscureText: obscure,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => onSubmit(),
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              hintText: '4–6 digit MPIN',
+              counterText: '',
+              suffixIcon: IconButton(
+                onPressed: onToggleObscure,
+                icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 20),
+              ),
+            ),
+            validator: (v) {
+              if (v == null || v.length < 4) return 'Enter 4–6 digit MPIN';
+              return null;
+            },
+          ),
+          const SizedBox(height: 16),
+          GuPrimaryButton(
+            label: loading ? 'Unlocking…' : 'Unlock',
+            loading: loading,
+            onPressed: onSubmit,
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: onSwitchAccount,
+            child: Text(
+              'Use another account',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: GuColors.blue, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LoginForm extends StatelessWidget {
   const _LoginForm({
-    super.key,
     required this.formKey,
     required this.email,
     required this.mpin,
@@ -460,7 +655,6 @@ class _LoginForm extends StatelessWidget {
 
 class _RegisterForm extends StatelessWidget {
   const _RegisterForm({
-    super.key,
     required this.formKey,
     required this.name,
     required this.email,

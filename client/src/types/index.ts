@@ -44,6 +44,7 @@ export interface Share {
   roe?: string;
   bookValue?: string;
   faceValue?: string;
+  website?: string;
   isFeatured?: boolean;
   isTop10?: boolean;
   /** False for exchange-listed / out-of-stock — no online purchase */

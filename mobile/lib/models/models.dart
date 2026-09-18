@@ -117,6 +117,7 @@ class GuShare {
     this.faceValue,
     this.isin,
     this.growth,
+    this.website,
     bool changePositive = true,
     Map<String, List<double>> priceHistory = const {},
     Map<String, List<String>> chartLabels = const {},
@@ -159,6 +160,7 @@ class GuShare {
   final String? faceValue;
   final String? isin;
   final String? growth;
+  final String? website;
   
   final bool? _changePositive;
   bool get changePositive => _changePositive ?? true;
@@ -211,6 +213,16 @@ class GuShare {
     if (ratesVisible == false) return true;
     if (price <= 0) return false;
     return true;
+  }
+
+  /// Short domain without https:// or www. for clean UI badge.
+  String get displayWebsiteDomain {
+    if (website == null || website!.trim().isEmpty) return '';
+    return website!
+        .trim()
+        .replaceFirst(RegExp(r'^https?://(www\.)?', caseSensitive: false), '')
+        .split('/')
+        .first;
   }
 
   factory GuShare.fromJson(Map<String, dynamic> j) {
@@ -280,6 +292,7 @@ class GuShare {
       faceValue: j['faceValue']?.toString(),
       isin: j['isin']?.toString(),
       growth: j['growth']?.toString(),
+      website: (j['website'] ?? j['companyWebsite'] ?? j['company_website'])?.toString().trim(),
       changePositive: j['changePositive'] ?? j['change_positive'] ?? true,
       priceHistory: _parsePriceHistory(j['priceHistory'] ?? j['price_history']),
       chartLabels: _parseChartLabels(j['chartLabels'] ?? j['chart_labels']),
@@ -379,6 +392,7 @@ class GuOrder {
     required this.qty,
     required this.totalPaid,
     required this.status,
+    this.pricePerShare,
     this.shareTicker,
     this.createdAt,
   });
@@ -388,8 +402,15 @@ class GuOrder {
   final int qty;
   final double totalPaid;
   final String status;
+  final double? pricePerShare;
   final String? shareTicker;
   final String? createdAt;
+
+  double get unitPrice {
+    if (pricePerShare != null && pricePerShare! > 0) return pricePerShare!;
+    if (qty > 0 && totalPaid > 0) return totalPaid / qty;
+    return 0;
+  }
 
   factory GuOrder.fromJson(Map<String, dynamic> j) {
     return GuOrder(
@@ -398,6 +419,12 @@ class GuOrder {
       shareTicker: (j['shareTicker'] ?? j['share_ticker'])?.toString(),
       qty: int.tryParse((j['qty'] ?? j['quantity'] ?? 0).toString()) ?? 0,
       totalPaid: GuShare._toDouble(j['totalPaid'] ?? j['total_amount'] ?? j['total']),
+      pricePerShare: () {
+        final raw = j['pricePerShare'] ?? j['price_per_share'] ?? j['price'];
+        if (raw == null || raw == '') return null;
+        final v = GuShare._toDouble(raw);
+        return v > 0 ? v : null;
+      }(),
       status: (j['status'] ?? '').toString(),
       createdAt: (j['createdAt'] ?? j['date'] ?? j['created_at'])?.toString(),
     );

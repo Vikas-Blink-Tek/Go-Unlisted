@@ -21,6 +21,25 @@ String formatNumber(num value) {
   return _numFmt.format(value);
 }
 
+/// Portfolio line: `XYZ Unlisted @45×1,000=45,000`
+String formatTradeCalc({
+  required String name,
+  required num pricePerShare,
+  required int qty,
+  num? total,
+}) {
+  final cleanName = name.trim().isEmpty ? 'Share' : name.trim();
+  final unit = pricePerShare is int || pricePerShare == pricePerShare.roundToDouble()
+      ? formatNumber(pricePerShare.round())
+      : NumberFormat('#,##0.##', 'en_IN').format(pricePerShare);
+  final q = formatNumber(qty);
+  final t = total ?? (pricePerShare * qty);
+  final totalStr = t is int || t == t.roundToDouble()
+      ? formatNumber(t.round())
+      : NumberFormat('#,##0.##', 'en_IN').format(t);
+  return '$cleanName @$unit×$q=$totalStr';
+}
+
 /// 10-digit Indian mobile → `+91 XXXXX XXXXX`
 String formatIndianPhone(String? raw) {
   final digits = (raw ?? '').replaceAll(RegExp(r'\D'), '');

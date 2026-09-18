@@ -267,6 +267,7 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
         'roe' => trim($fundamentals['roe'] ?? ''),
         'bookValue' => trim($fundamentals['bookValue'] ?? ''),
         'faceValue' => trim($fundamentals['faceValue'] ?? ''),
+        'website' => trim($fundamentals['website'] ?? $fundamentals['companyWebsite'] ?? ''),
         'isFeatured' => ((int) ($row['is_featured'] ?? 0)) === 1,
         'isTop10' => ((int) ($row['is_top10'] ?? 0)) === 1,
         'discountTiers' => (static function ($raw) {
