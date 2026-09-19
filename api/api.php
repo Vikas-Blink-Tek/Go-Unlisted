@@ -376,6 +376,22 @@ function autoMigrateSchema($conn) {
         }
     }
 
+    $conn->query("CREATE TABLE IF NOT EXISTS festival_offers (
+        id VARCHAR(64) PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        tagline VARCHAR(255) DEFAULT '',
+        description TEXT,
+        image_url VARCHAR(500) DEFAULT '',
+        discount_text VARCHAR(100) DEFAULT '',
+        coupon_code VARCHAR(50) DEFAULT '',
+        link_url VARCHAR(500) DEFAULT '',
+        ends_at DATETIME DEFAULT NULL,
+        is_active TINYINT(1) DEFAULT 1,
+        sort_order INT DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
     seedDefaultSharesIfEmpty($conn);
     migrateFranchiseSchema($conn);
 }
@@ -1799,6 +1815,72 @@ switch ($action) {
     case 'logout':
         session_destroy();
         sendResponse(["success" => true]);
+        break;
+
+    case 'deleteAccount':
+        // Only authenticated regular users can delete their own account
+        if (!isset($_SESSION['user_id'])) {
+            http_response_code(401);
+            sendResponse(['error' => 'You must be logged in to delete your account.']);
+            break;
+        }
+
+        $uid = (string) $_SESSION['user_id'];
+        if ($uid === '') {
+            http_response_code(401);
+            sendResponse(['error' => 'Invalid session.']);
+            break;
+        }
+
+        // 1. Fetch user data before deleting (for file cleanup and audit)
+        $stmt = $conn->prepare("SELECT id, name, email, phone, kyc_demat_proof FROM users WHERE id = ?");
+        $stmt->bind_param("s", $uid);
+        $stmt->execute();
+        $userRow = $stmt->get_result()->fetch_assoc();
+
+        if (!$userRow) {
+            session_destroy();
+            sendResponse(['success' => true, 'message' => 'Account already removed.']);
+            break;
+        }
+
+        // 2. Safely remove physical KYC files if stored on server
+        $dematProof = trim((string) ($userRow['kyc_demat_proof'] ?? ''));
+        if ($dematProof !== '') {
+            $dematProofClean = ltrim($dematProof, '/');
+            $fullProofPath = __DIR__ . '/../' . $dematProofClean;
+            $realPath = realpath($fullProofPath);
+            $uploadsDir = realpath(__DIR__ . '/../uploads');
+            if ($realPath && $uploadsDir && strpos($realPath, $uploadsDir) === 0 && file_exists($realPath)) {
+                @unlink($realPath);
+            }
+        }
+
+        // 3. Anonymize user's orders (anonymize PII for GDPR/privacy compliance while keeping ledger integrity)
+        $anonStmt = $conn->prepare("UPDATE orders SET deleted_at = NOW(), buyer_name = 'Deleted Account', buyer_email = 'deleted@gounlisted.in', buyer_phone = '0000000000' WHERE user_id = ?");
+        if ($anonStmt) {
+            $anonStmt->bind_param("s", $uid);
+            $anonStmt->execute();
+        }
+
+        // 4. Delete user record from database
+        $delStmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+        $delStmt->bind_param("s", $uid);
+        $delStmt->execute();
+
+        // 5. Audit log
+        logAudit($conn, 'User Account Deleted', $uid, [
+            'email' => $userRow['email'] ?? '',
+            'phone' => $userRow['phone'] ?? '',
+        ]);
+
+        // 6. Destroy session completely
+        session_destroy();
+
+        sendResponse([
+            'success' => true,
+            'message' => 'Your account and personal data have been permanently deleted.'
+        ]);
         break;
 
     case 'checkAuth':
@@ -5127,6 +5209,162 @@ switch ($action) {
         $url = 'uploads/articles/' . $filename;
         logAudit($conn, 'Upload Article Image', $_SESSION['admin_id'], ['file' => $filename]);
         sendResponse(["success" => true, "url" => $url]);
+        break;
+
+    case 'getActiveOffers':
+        $res = $conn->query("SELECT * FROM festival_offers WHERE is_active = 1 AND (ends_at IS NULL OR ends_at > NOW()) ORDER BY sort_order ASC, created_at DESC");
+        $offers = [];
+        if ($res) {
+            while ($row = $res->fetch_assoc()) {
+                $offers[] = [
+                    'id' => $row['id'],
+                    'title' => $row['title'],
+                    'tagline' => $row['tagline'] ?? '',
+                    'description' => $row['description'] ?? '',
+                    'imageUrl' => $row['image_url'] ?? '',
+                    'discountText' => $row['discount_text'] ?? '',
+                    'couponCode' => $row['coupon_code'] ?? '',
+                    'linkUrl' => $row['link_url'] ?? '',
+                    'endsAt' => $row['ends_at'],
+                    'isActive' => (bool) $row['is_active'],
+                    'sortOrder' => (int) $row['sort_order'],
+                    'createdAt' => $row['created_at'],
+                ];
+            }
+        }
+        sendResponse(['success' => true, 'offers' => $offers]);
+        break;
+
+    case 'getAdminOffers':
+        requirePermission('prices');
+        $res = $conn->query("SELECT * FROM festival_offers ORDER BY sort_order ASC, created_at DESC");
+        $offers = [];
+        if ($res) {
+            while ($row = $res->fetch_assoc()) {
+                $offers[] = [
+                    'id' => $row['id'],
+                    'title' => $row['title'],
+                    'tagline' => $row['tagline'] ?? '',
+                    'description' => $row['description'] ?? '',
+                    'imageUrl' => $row['image_url'] ?? '',
+                    'discountText' => $row['discount_text'] ?? '',
+                    'couponCode' => $row['coupon_code'] ?? '',
+                    'linkUrl' => $row['link_url'] ?? '',
+                    'endsAt' => $row['ends_at'],
+                    'isActive' => (bool) $row['is_active'],
+                    'sortOrder' => (int) $row['sort_order'],
+                    'createdAt' => $row['created_at'],
+                ];
+            }
+        }
+        sendResponse(['success' => true, 'offers' => $offers]);
+        break;
+
+    case 'saveOffer':
+        requirePermission('prices');
+        $data = getPostData();
+        $id = trim((string) ($data['id'] ?? ''));
+        $title = trim((string) ($data['title'] ?? ''));
+        if ($title === '') {
+            sendResponse(['error' => 'Offer title is required'], 400);
+            break;
+        }
+        $tagline = trim((string) ($data['tagline'] ?? ''));
+        $description = trim((string) ($data['description'] ?? ''));
+        $imageUrl = trim((string) ($data['imageUrl'] ?? $data['image_url'] ?? ''));
+        $discountText = trim((string) ($data['discountText'] ?? $data['discount_text'] ?? ''));
+        $couponCode = strtoupper(trim((string) ($data['couponCode'] ?? $data['coupon_code'] ?? '')));
+        $linkUrl = trim((string) ($data['linkUrl'] ?? $data['link_url'] ?? '/shares'));
+        $endsAt = trim((string) ($data['endsAt'] ?? $data['ends_at'] ?? ''));
+        $endsAt = $endsAt !== '' ? $endsAt : null;
+        $isActive = isset($data['isActive']) ? ((bool) $data['isActive'] ? 1 : 0) : 1;
+        $sortOrder = (int) ($data['sortOrder'] ?? $data['sort_order'] ?? 0);
+
+        if ($id === '') {
+            $id = 'offer-' . bin2hex(random_bytes(8));
+            $stmt = $conn->prepare("INSERT INTO festival_offers (id, title, tagline, description, image_url, discount_text, coupon_code, link_url, ends_at, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('sssssssssii', $id, $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $endsAt, $isActive, $sortOrder);
+            $stmt->execute();
+        } else {
+            $stmt = $conn->prepare("UPDATE festival_offers SET title=?, tagline=?, description=?, image_url=?, discount_text=?, coupon_code=?, link_url=?, ends_at=?, is_active=?, sort_order=? WHERE id=?");
+            $stmt->bind_param('sssssssssiis', $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $endsAt, $isActive, $sortOrder, $id);
+            $stmt->execute();
+        }
+        sendResponse(['success' => true, 'id' => $id, 'message' => 'Offer saved successfully']);
+        break;
+
+    case 'deleteOffer':
+        requirePermission('prices');
+        $data = getPostData();
+        $id = trim((string) ($data['id'] ?? ''));
+        if ($id === '') {
+            sendResponse(['error' => 'Offer ID is required'], 400);
+            break;
+        }
+        $stmt = $conn->prepare("DELETE FROM festival_offers WHERE id = ?");
+        $stmt->bind_param('s', $id);
+        $stmt->execute();
+        sendResponse(['success' => true, 'message' => 'Offer deleted']);
+        break;
+
+    case 'toggleOfferStatus':
+        requirePermission('prices');
+        $data = getPostData();
+        $id = trim((string) ($data['id'] ?? ''));
+        if ($id === '') {
+            sendResponse(['error' => 'Offer ID is required'], 400);
+            break;
+        }
+        $stmt = $conn->prepare("UPDATE festival_offers SET is_active = NOT is_active WHERE id = ?");
+        $stmt->bind_param('s', $id);
+        $stmt->execute();
+        sendResponse(['success' => true, 'message' => 'Offer status updated']);
+        break;
+
+    case 'uploadOfferBanner':
+        requirePermission('prices');
+        if (!isset($_FILES['banner'])) {
+            sendResponse(['error' => 'No banner file received'], 400);
+            break;
+        }
+        $file = $_FILES['banner'];
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            sendResponse(['error' => 'File upload error code ' . $file['error']], 400);
+            break;
+        }
+        if ($file['size'] > 5 * 1024 * 1024) {
+            sendResponse(['error' => 'Banner image must be under 5MB'], 400);
+            break;
+        }
+        $tmpName = $file['tmp_name'];
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $info = @getimagesize($tmpName);
+            $mime = is_array($info) ? ($info['mime'] ?? '') : '';
+        }
+        $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($allowed[$mime])) {
+            sendResponse(['error' => 'Invalid file format. Use JPG, PNG or WEBP.'], 400);
+            break;
+        }
+        $ext = $allowed[$mime];
+        $uploadDir = __DIR__ . '/../uploads/offers/';
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0755, true);
+        }
+        $filename = 'offer_' . time() . '_' . random_int(1000, 9999) . '.' . $ext;
+        $destPath = $uploadDir . $filename;
+        if (!move_uploaded_file($tmpName, $destPath)) {
+            sendResponse(['error' => 'Failed to save banner image on server'], 500);
+            break;
+        }
+        @chmod($destPath, 0644);
+        sendResponse(['success' => true, 'url' => 'uploads/offers/' . $filename]);
         break;
 
     default:

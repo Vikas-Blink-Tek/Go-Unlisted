@@ -5,6 +5,7 @@ import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import ReturnsCalculator from '../components/home/ReturnsCalculator';
 import ListingComparison from '../components/home/ListingComparison';
+import FestivalBannerSlider from '../components/home/FestivalBannerSlider';
 import { formatCurrency } from '../utils/format';
 import type { Share } from '../types';
 
@@ -143,6 +144,10 @@ export default function HomePage() {
 
   return (
     <div className="view active" id="view-home">
+      <div className="container" style={{ paddingTop: '1.25rem', paddingBottom: '0.25rem' }}>
+        <FestivalBannerSlider />
+      </div>
+
       <section className="hero">
         <div className="hero-bg" />
         <div className="hero-grid" />

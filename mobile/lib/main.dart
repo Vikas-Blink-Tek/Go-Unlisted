@@ -7,6 +7,7 @@ import 'core/router.dart';
 import 'core/theme/gu_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/catalog_provider.dart';
+import 'providers/offers_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,18 +28,15 @@ class GoUnlistedApp extends StatefulWidget {
 }
 
 class _GoUnlistedAppState extends State<GoUnlistedApp> {
-  late final AuthProvider _auth;
-  late final CatalogProvider _catalog;
-  late final PortfolioProvider _portfolio;
-  late final GoRouter _router;
+  final AuthProvider _auth = AuthProvider();
+  final CatalogProvider _catalog = CatalogProvider();
+  final PortfolioProvider _portfolio = PortfolioProvider();
+  final OffersProvider _offers = OffersProvider();
+  late final GoRouter _router = createRouter(_auth);
 
   @override
   void initState() {
     super.initState();
-    _auth = AuthProvider();
-    _catalog = CatalogProvider();
-    _portfolio = PortfolioProvider();
-    _router = createRouter(_auth);
   }
 
   @override
@@ -48,6 +46,7 @@ class _GoUnlistedAppState extends State<GoUnlistedApp> {
         ChangeNotifierProvider.value(value: _auth),
         ChangeNotifierProvider.value(value: _catalog),
         ChangeNotifierProvider.value(value: _portfolio),
+        ChangeNotifierProvider.value(value: _offers),
       ],
       child: MaterialApp.router(
         title: 'GO UNLISTED',

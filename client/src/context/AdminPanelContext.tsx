@@ -28,6 +28,7 @@ export type AdminPanelId =
   | 'inventory'
   | 'invoices'
   | 'prices'
+  | 'offers'
   | 'articles'
   | 'reports'
   | 'settings'
@@ -86,6 +87,7 @@ export const EMPLOYEE_PERMISSION_OPTIONS: { id: AdminPanelId; label: string; gro
   { id: 'view-all-kyc', label: 'View All KYC (all codes)', group: 'Data Scope' },
   { id: 'view-all-initiated', label: 'View All Initiate (all codes)', group: 'Data Scope' },
   { id: 'prices', label: 'Stocks & Listings', group: 'Catalog' },
+  { id: 'offers', label: 'Festival Offers & Banners', group: 'Content' },
   { id: 'articles', label: 'Articles / Blog', group: 'Content' },
   { id: 'reports', label: 'Reports & Export', group: 'Analytics' },
   { id: 'settings', label: 'Site Settings', group: 'System' },
@@ -116,6 +118,7 @@ export const ADMIN_PANELS: AdminPanelDef[] = [
   { id: 'inventory', label: 'Inventory', group: 'Back Office', masterOnly: true, hint: 'Qty on hand, cost & margins' },
   { id: 'invoices', label: 'Invoices', group: 'Back Office', masterOnly: true, hint: 'Tax invoices for confirmed orders' },
   { id: 'prices', label: 'Stocks & Listings', group: 'Catalog', hint: 'Description, pricing, inventory' },
+  { id: 'offers', label: 'Festival Offers', group: 'Content', hint: 'Promotions, countdown banners, and deals' },
   { id: 'articles', label: 'Articles / Blog', group: 'Content' },
   { id: 'reports', label: 'Reports & Export', group: 'Analytics' },
   { id: 'settings', label: 'Site Settings', group: 'System' },

@@ -157,4 +157,27 @@ CREATE TABLE IF NOT EXISTS `settings` (
   PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `festival_offers`
+--
+
+CREATE TABLE IF NOT EXISTS `festival_offers` (
+  `id` varchar(64) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `tagline` varchar(255) DEFAULT '',
+  `description` text DEFAULT NULL,
+  `image_url` varchar(500) DEFAULT '',
+  `discount_text` varchar(100) DEFAULT '',
+  `coupon_code` varchar(50) DEFAULT '',
+  `link_url` varchar(500) DEFAULT '',
+  `ends_at` datetime DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT 1,
+  `sort_order` int(11) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 COMMIT;

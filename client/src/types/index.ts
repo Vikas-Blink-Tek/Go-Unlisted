@@ -141,3 +141,18 @@ export interface CheckoutState {
   paymentMethod: string;
   transactionId: string;
 }
+
+export interface FestivalOffer {
+  id: string;
+  title: string;
+  tagline?: string;
+  description?: string;
+  imageUrl?: string;
+  discountText?: string;
+  couponCode?: string;
+  linkUrl?: string;
+  endsAt?: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt?: string;
+}

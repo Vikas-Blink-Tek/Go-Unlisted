@@ -34,6 +34,7 @@ import AdminInventoryPanel from './panels/AdminInventoryPanel';
 import AdminInvoicesPanel from './panels/AdminInvoicesPanel';
 import AdminSignupsPanel from './panels/AdminSignupsPanel';
 import AdminFranchisesPanel from './panels/AdminFranchisesPanel';
+import AdminOffersPanel from './panels/AdminOffersPanel';
 
 type PeriodFilter = 'all' | 'this_month' | 'last_month';
 
@@ -350,6 +351,7 @@ export default function AdminDashboard() {
   if (activePanel === 'articles') return <AdminArticlesPanel />;
   if (activePanel === 'reports') return <AdminReportsPanel />;
   if (activePanel === 'prices') return <AdminSharePricesPanel />;
+  if (activePanel === 'offers') return <AdminOffersPanel />;
   if (activePanel === 'inventory') return <AdminInventoryPanel />;
   if (activePanel === 'invoices') return <AdminInvoicesPanel />;
   if (activePanel === 'employees') return <AdminEmployees />;

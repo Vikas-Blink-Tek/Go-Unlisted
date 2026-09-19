@@ -60,29 +60,33 @@ class ShareDetailScreen extends StatelessWidget {
             children: [
               // Hero Row
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        share.ticker,
-                        style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 16),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: GuColors.limeSoft,
-                          borderRadius: BorderRadius.circular(6),
+                  Expanded(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        Text(
+                          share.ticker,
+                          style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 16),
                         ),
-                        child: Text(
-                          share.sector,
-                          style: GoogleFonts.inter(color: GuColors.limeDark, fontSize: 11, fontWeight: FontWeight.w600),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: GuColors.limeSoft,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            share.sector,
+                            style: GoogleFonts.inter(color: GuColors.limeDark, fontSize: 11, fontWeight: FontWeight.w600),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 12),
                   _BlurredRatesLock(
                     canView: canViewRates,
                     isInline: true,
@@ -763,9 +767,13 @@ class _CompanyWebsiteCard extends StatelessWidget {
                   'SECTOR',
                   style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: GuColors.muted, letterSpacing: 0.5),
                 ),
-                Text(
-                  share.sector.toUpperCase(),
-                  style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w800, color: GuColors.text),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    share.sector.toUpperCase(),
+                    textAlign: TextAlign.end,
+                    style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w800, color: GuColors.text),
+                  ),
                 ),
               ],
             ),

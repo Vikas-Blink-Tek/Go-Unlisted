@@ -313,7 +313,7 @@ export default function StockListingModal({
                       onChange={(e) => set({ minQty: e.target.value })}
                     />
                   </Field>
-                  <Field label="Availability">
+                  <Field label="Stock Status / Availability">
                     <select
                       className="slm-input"
                       value={form.inventoryStatus}
@@ -323,6 +323,27 @@ export default function StockListingModal({
                         <option key={s} value={s}>{s}</option>
                       ))}
                     </select>
+                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                      {INVENTORY_STATUSES.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => set({ inventoryStatus: s })}
+                          style={{
+                            background: form.inventoryStatus === s ? (s === 'Limited' ? '#f59e0b' : 'var(--blue-light)') : 'rgba(255,255,255,0.06)',
+                            border: `1px solid ${form.inventoryStatus === s ? (s === 'Limited' ? '#d97706' : 'var(--primary)') : 'var(--border)'}`,
+                            color: form.inventoryStatus === s ? (s === 'Limited' ? '#000' : '#fff') : 'var(--text)',
+                            padding: '2px 8px',
+                            borderRadius: 12,
+                            fontSize: '0.75rem',
+                            cursor: 'pointer',
+                            fontWeight: form.inventoryStatus === s ? 700 : 500,
+                          }}
+                        >
+                          {s === 'Limited' ? '⏳ Limited' : s}
+                        </button>
+                      ))}
+                    </div>
                   </Field>
                 </div>
               </div>
@@ -342,8 +363,8 @@ export default function StockListingModal({
 
               <label className="slm-toggle-row">
                 <div>
-                  <strong>🏆 Top 10 Share</strong>
-                  <span>Show at the top of the Shares page</span>
+                  <strong>🔥 Trending / Top 10 Share</strong>
+                  <span>Shows &quot;Trending&quot; ribbon badge on website and app cards</span>
                 </div>
                 <input
                   type="checkbox"

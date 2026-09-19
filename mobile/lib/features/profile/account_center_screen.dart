@@ -48,6 +48,113 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  void _showAccountDetails(BuildContext context, dynamic user) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: GuColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Account Details', style: GoogleFonts.manrope(fontSize: 20, fontWeight: FontWeight.w800, color: GuColors.ink)),
+                const SizedBox(height: 24),
+                _DetailRow(label: 'User name', value: user.name.isNotEmpty ? user.name : 'Not provided'),
+                const SizedBox(height: 16),
+                _DetailRow(label: 'Number', value: user.phone.trim().isNotEmpty ? formatIndianPhone(user.phone) : 'Not provided'),
+                const SizedBox(height: 16),
+                _DetailRow(label: 'E-mail', value: user.email.isNotEmpty ? user.email : 'Not provided'),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteAccount(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        bool deleting = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: GuColors.surface,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: GuColors.danger, size: 26),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Delete Account?',
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18, color: GuColors.ink),
+                  ),
+                ],
+              ),
+              content: Text(
+                'Are you sure you want to delete your GO UNLISTED account permanently? All your personal details, KYC verification documents, and purchase history will be erased. This action cannot be undone.',
+                style: GoogleFonts.inter(fontSize: 13.5, height: 1.45, color: GuColors.muted),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: deleting ? null : () => Navigator.of(ctx).pop(),
+                  child: Text('Cancel', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, color: GuColors.muted)),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: GuColors.danger,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: deleting
+                      ? null
+                      : () async {
+                          setDialogState(() => deleting = true);
+                          final auth = context.read<AuthProvider>();
+                          final success = await auth.deleteAccount();
+                          if (ctx.mounted) Navigator.of(ctx).pop();
+                          if (!context.mounted) return;
+                          if (success) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Your account has been deleted successfully.'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                            context.go('/auth');
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(auth.error ?? 'Failed to delete account. Try again.'),
+                                backgroundColor: GuColors.danger,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        },
+                  child: deleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Text('Delete Account', style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -68,7 +175,7 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                 borderRadius: BorderRadius.circular(16),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: () => context.push('/kyc'),
+                  onTap: () => _showAccountDetails(context, user),
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -151,11 +258,19 @@ class _AccountCenterScreenState extends State<AccountCenterScreen> {
                   ProfileMenuTile(
                     icon: Icons.logout_rounded,
                     title: 'Log out',
-                    showDivider: false,
+                    showDivider: true,
                     onTap: () async {
                       await auth.logout();
                       if (context.mounted) context.go('/auth');
                     },
+                  ),
+                  ProfileMenuTile(
+                    icon: Icons.delete_forever_rounded,
+                    title: 'Delete account',
+                    iconColor: GuColors.danger,
+                    textColor: GuColors.danger,
+                    showDivider: false,
+                    onTap: () => _confirmDeleteAccount(context),
                   ),
                 ],
               );
@@ -228,3 +343,22 @@ class _Contacts {
     );
   }
 }
+
+class _DetailRow extends StatelessWidget {
+  const _DetailRow({required this.label, required this.value});
+  final String label;
+  final String value;
+  
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        Text(value, style: GoogleFonts.inter(fontSize: 16, color: GuColors.ink, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+}
+

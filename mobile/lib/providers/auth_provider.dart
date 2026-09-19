@@ -156,6 +156,30 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Permanently deletes user account from server and removes stored credentials from device.
+  Future<bool> deleteAccount() async {
+    _error = null;
+    notifyListeners();
+    try {
+      await GuApi.instance.post('deleteAccount', {});
+      await AuthPrefs.clearRememberedAccount();
+      await GuApi.instance.clearSession();
+      _user = null;
+      _rememberedEmail = null;
+      _rememberedName = null;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Full login again (different email / phone).
   Future<void> switchAccount() async {
     await AuthPrefs.clearRememberedAccount();

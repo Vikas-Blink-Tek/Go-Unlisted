@@ -65,11 +65,16 @@ function isPortfolioPendingVisible(o: { status: string; orderSource?: string; me
 }
 
 export default function DashboardPage() {
-  const { user, setUser, loading: authLoading } = useAuth();
+  const { user, setUser, deleteAccount: authDeleteAccount, loading: authLoading } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'kyc' ? 'kyc' : 'portfolio';
+  const rawTab = params.get('tab');
+  const tab = rawTab === 'kyc' ? 'kyc' : rawTab === 'settings' ? 'settings' : 'portfolio';
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [confirmDeleteText, setConfirmDeleteText] = useState('');
 
   const [kycForm, setKycForm] = useState({
     pan: user?.kycPan || '',
@@ -259,6 +264,9 @@ export default function DashboardPage() {
         </button>
         <button type="button" className={`dashboard-tab${tab === 'kyc' ? ' active' : ''}`} onClick={() => setParams({ tab: 'kyc' })}>
           KYC Verification
+        </button>
+        <button type="button" className={`dashboard-tab${tab === 'settings' ? ' active' : ''}`} onClick={() => setParams({ tab: 'settings' })}>
+          Account Settings
         </button>
         <Link to="/dashboard/support" className="dashboard-tab dashboard-tab-link">
           Support
@@ -714,7 +722,149 @@ export default function DashboardPage() {
           )}
         </div>
       )}
+
+      {tab === 'settings' && (
+        <div id="settings-tab-content" style={{ maxWidth: 640, margin: '0 auto', width: '100%' }}>
+          <div className="card" style={{ padding: '1.75rem', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: '0 0 1rem', fontSize: '1.2rem', fontWeight: 700 }}>Profile Details</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 2 }}>Full Name</span>
+                <strong>{user.name}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 2 }}>Email Address</span>
+                <strong>{user.email}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 2 }}>Mobile Number</span>
+                <strong>{user.phone || '—'}</strong>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: 2 }}>KYC Status</span>
+                <span className={`kyc-status ${user.kycStatus?.toLowerCase().replace(' ', '-')}`}>{user.kycStatus || 'Not Submitted'}</span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="card"
+            style={{
+              padding: '1.75rem',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'rgba(239, 68, 68, 0.03)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+              <span style={{ fontSize: '1.25rem' }}>⚠️</span>
+              <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--danger, #ef4444)', fontWeight: 800 }}>
+                Danger Zone: Delete Account
+              </h3>
+            </div>
+            <p style={{ fontSize: '0.9rem', color: 'var(--muted)', lineHeight: 1.5, margin: '0 0 1.25rem' }}>
+              Permanently delete your GO UNLISTED account, personal details, uploaded KYC documents, and order history. 
+              Once confirmed, this action <strong>cannot be reversed</strong> and you will immediately be signed out.
+            </p>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => {
+                setConfirmDeleteText('');
+                setShowDeleteModal(true);
+              }}
+              style={{
+                background: '#dc2626',
+                borderColor: '#dc2626',
+                color: '#ffffff',
+                fontWeight: 700,
+                padding: '10px 20px',
+              }}
+            >
+              Delete My Account
+            </button>
+          </div>
+        </div>
+      )}
       </div>
+
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={() => !deletingAccount && setShowDeleteModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+              <div
+                style={{
+                  width: 54,
+                  height: 54,
+                  borderRadius: '50%',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  color: '#ef4444',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '1.6rem',
+                  margin: '0 auto 0.75rem',
+                }}
+              >
+                ⚠️
+              </div>
+              <h3 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: 800, color: '#ef4444' }}>
+                Permanently Delete Account?
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--muted)', lineHeight: 1.45 }}>
+                Are you sure you want to delete your account? All your personal information, KYC demat documents, and data will be erased forever.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ fontSize: '0.82rem', color: 'var(--text)', display: 'block', marginBottom: 6, fontWeight: 600 }}>
+                Type <strong style={{ color: '#ef4444' }}>DELETE</strong> to confirm:
+              </label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="DELETE"
+                value={confirmDeleteText}
+                onChange={(e) => setConfirmDeleteText(e.target.value)}
+                disabled={deletingAccount}
+                style={{ textAlign: 'center', letterSpacing: '0.1em', fontWeight: 700 }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ flex: 1 }}
+                disabled={deletingAccount}
+                onClick={() => setShowDeleteModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                style={{ flex: 1, background: '#dc2626', borderColor: '#dc2626' }}
+                disabled={confirmDeleteText.trim().toUpperCase() !== 'DELETE' || deletingAccount}
+                onClick={async () => {
+                  setDeletingAccount(true);
+                  try {
+                    const res = await authDeleteAccount();
+                    showToast(res.message || 'Account deleted successfully', 'info');
+                    setShowDeleteModal(false);
+                    navigate('/');
+                  } catch (err: unknown) {
+                    showToast(err instanceof Error ? err.message : 'Failed to delete account', 'error');
+                  } finally {
+                    setDeletingAccount(false);
+                  }
+                }}
+              >
+                {deletingAccount ? 'Deleting…' : 'Delete Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewingInvoice && (
         <InvoicePrintView

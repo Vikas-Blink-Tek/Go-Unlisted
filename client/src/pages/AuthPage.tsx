@@ -29,9 +29,26 @@ export default function AuthPage() {
   const [showForgotMpin, setShowForgotMpin] = useState(false);
   const [regDevOtp, setRegDevOtp] = useState<string | null>(null);
 
-  // Always start with empty fields — never show browser-saved emails
-  useEffect(() => {
+  const [rememberedId, setRememberedId] = useState<string | null>(() => {
+    try { return localStorage.getItem('gu_remembered_id'); } catch { return null; }
+  });
+  const [rememberedName, setRememberedName] = useState<string | null>(() => {
+    try { return localStorage.getItem('gu_remembered_name'); } catch { return null; }
+  });
+
+  const handleSwitchAccount = () => {
+    try {
+      localStorage.removeItem('gu_remembered_id');
+      localStorage.removeItem('gu_remembered_name');
+    } catch {}
+    setRememberedId(null);
+    setRememberedName(null);
     setLoginForm({ email: '', mpin: '' });
+  };
+
+  // Only clear mpin so email is preserved if user goes back
+  useEffect(() => {
+    setLoginForm((prev) => ({ ...prev, mpin: '' }));
     setError('');
   }, [location.key]);
 
@@ -61,8 +78,20 @@ export default function AuthPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await login(loginForm.email, loginForm.mpin);
+      const loginId = rememberedId && tab === 'login' ? rememberedId : loginForm.email;
+      const res = await login(loginId, loginForm.mpin);
       if (res.success) {
+        try {
+          localStorage.setItem('gu_remembered_id', loginId);
+          // @ts-ignore - res.user added to context return
+          if (res.user?.name) {
+            // @ts-ignore
+            localStorage.setItem('gu_remembered_name', res.user.name);
+            // @ts-ignore
+            setRememberedName(res.user.name);
+          }
+        } catch {}
+        setRememberedId(loginId);
         showToast('Welcome back!', 'success');
         navigate(from);
       } else {
@@ -142,6 +171,13 @@ export default function AuthPage() {
       });
     }
 
+    try {
+      localStorage.setItem('gu_remembered_id', regForm.email);
+      localStorage.setItem('gu_remembered_name', regForm.name);
+    } catch {}
+    setRememberedId(regForm.email);
+    setRememberedName(regForm.name);
+
     setShowOtp(false);
     showToast('Account created! Welcome to Go-Unlisted', 'success');
     navigate('/');
@@ -180,7 +216,53 @@ export default function AuthPage() {
 
           {error && <div className="form-error show" style={{ marginBottom: '0.75rem' }}>{error}</div>}
 
-          {tab === 'login' ? (
+          {tab === 'login' && rememberedId ? (
+            <form id="unlock-form" onSubmit={handleLogin} autoComplete="off" style={{ position: 'relative' }}>
+              <AutofillBlocker />
+              <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                <div style={{
+                  width: 64, height: 64, borderRadius: '50%', backgroundColor: 'var(--lime-soft)',
+                  color: 'var(--lime-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '24px', fontWeight: 'bold', margin: '0 auto 1rem'
+                }}>
+                  {(rememberedName || rememberedId)[0].toUpperCase()}
+                </div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '1.1rem', color: 'var(--ink)' }}>
+                  Welcome back, {rememberedName || 'Investor'}
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--muted)' }}>
+                  {rememberedId}
+                </p>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ textAlign: 'center' }}>Enter MPIN to unlock</label>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  className="form-input mpin-input"
+                  placeholder="4-6 digit MPIN"
+                  required
+                  value={loginForm.mpin}
+                  onChange={(e) => setLoginForm({ ...loginForm, mpin: onMpinInput(e.target.value) })}
+                  {...blockNewPasswordInput({ name: 'login-mpin' })}
+                  autoFocus
+                  style={{ textAlign: 'center', letterSpacing: '0.5em', fontSize: '1.25rem' }}
+                />
+                <p className="auth-forgot-wrap" style={{ justifyContent: 'center', marginTop: '0.75rem' }}>
+                  <button type="button" className="auth-forgot-link" onClick={() => setShowForgotMpin(true)}>
+                    Forgot MPIN?
+                  </button>
+                </p>
+              </div>
+              <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginBottom: '1rem' }}>
+                {loading ? 'Unlocking...' : 'Unlock Account'}
+              </button>
+              <button type="button" className="btn btn-ghost btn-full" onClick={handleSwitchAccount}>
+                Login as another user
+              </button>
+            </form>
+          ) : tab === 'login' ? (
             <form id="login-form" onSubmit={handleLogin} autoComplete="off" style={{ position: 'relative' }}>
               <AutofillBlocker />
               <div className="form-group">

@@ -42,10 +42,11 @@ rm -f "$DEPLOY/api/db_config.local.php" "$DEPLOY/api/deploy.config.php"
 
 # Uploads: only ship .htaccess — never empty upload trees that risk wiping live KYC proofs / logos
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true
-mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc" "$DEPLOY/uploads/articles"
+mkdir -p "$DEPLOY/uploads/shares" "$DEPLOY/uploads/kyc" "$DEPLOY/uploads/articles" "$DEPLOY/uploads/offers"
 cp "$ROOT/uploads/shares/.htaccess" "$DEPLOY/uploads/shares/" 2>/dev/null || true
 cp "$ROOT/uploads/kyc/.htaccess" "$DEPLOY/uploads/kyc/" 2>/dev/null || true
 cp "$ROOT/uploads/articles/.htaccess" "$DEPLOY/uploads/articles/" 2>/dev/null || true
+cp "$ROOT/uploads/offers/.htaccess" "$DEPLOY/uploads/offers/" 2>/dev/null || true
 printf '%s\n' \
   'KEEP THIS FOLDER ON THE SERVER.' \
   'Do not replace public_html/uploads with this empty package folder.' \

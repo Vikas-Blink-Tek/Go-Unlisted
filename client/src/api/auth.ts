@@ -29,6 +29,10 @@ export function logout() {
   return apiRequest<{ success: boolean }>('logout', 'POST');
 }
 
+export function deleteAccount() {
+  return apiRequest<{ success: boolean; message: string }>('deleteAccount', 'POST', {});
+}
+
 export function checkAuth() {
   return apiRequest<{
     authenticated: boolean;

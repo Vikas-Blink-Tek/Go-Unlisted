@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { checkAuth, loginUser, logout as apiLogout } from '../api/auth';
+import { checkAuth, deleteAccount as apiDeleteAccount, loginUser, logout as apiLogout } from '../api/auth';
 import { setCsrfToken } from '../api/csrf';
 import type { User } from '../types';
 
@@ -10,6 +10,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; message: string }>;
   setUser: (user: User | null) => void;
   isAuthenticated: boolean;
 }
@@ -56,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(res.user);
         const auth = await checkAuth();
         if (auth.csrfToken) setCsrfToken(auth.csrfToken);
-        return { success: true };
+        return { success: true, user: res.user };
       }
       return { success: false, error: res.error || 'Login failed' };
     },
@@ -71,16 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setUser]);
 
+  const deleteAccount = useCallback(async () => {
+    try {
+      const res = await apiDeleteAccount();
+      return res;
+    } finally {
+      setUser(null);
+    }
+  }, [setUser]);
+
   const value = useMemo(
     () => ({
       user,
       loading,
       login,
       logout,
+      deleteAccount,
       setUser,
       isAuthenticated: !!user,
     }),
-    [user, loading, login, logout, setUser],
+    [user, loading, login, logout, deleteAccount, setUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

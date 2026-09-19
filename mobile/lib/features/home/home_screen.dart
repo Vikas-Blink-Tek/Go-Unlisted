@@ -4,10 +4,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/gu_theme.dart';
-import '../../core/utils/format.dart';
 import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
+import '../../providers/offers_provider.dart';
+import '../../widgets/festival_slider.dart';
 import '../../widgets/gu_widgets.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -21,11 +22,17 @@ class HomeScreen extends StatelessWidget {
     // Never fall back to buyable stocks under this heading.
     final featured = catalog.featured;
     final firstName = auth.user?.name.isNotEmpty == true ? auth.user!.name.split(' ').first : null;
+    final searchItems = catalog.query.isNotEmpty ? [...catalog.top10Shares, ...catalog.filtered] : <GuShare>[];
 
     return GuPageBackground(
       child: RefreshIndicator(
         color: GuColors.lime,
-        onRefresh: () => catalog.load(),
+        onRefresh: () async {
+          await Future.wait([
+            catalog.load(),
+            context.read<OffersProvider>().load(),
+          ]);
+        },
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -105,8 +112,7 @@ class HomeScreen extends StatelessWidget {
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
-                        final items = catalog.filtered;
-                        if (items.isEmpty) {
+                        if (searchItems.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.all(32),
                             child: Column(
@@ -120,17 +126,20 @@ class HomeScreen extends StatelessWidget {
                         }
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: ShareListTile(share: items[index]),
+                          child: ShareListTile(share: searchItems[index]),
                         );
                       },
-                      childCount: catalog.filtered.isEmpty ? 1 : catalog.filtered.length,
+                      childCount: searchItems.isEmpty ? 1 : searchItems.length,
                     ),
                   ),
                 ),
               ]
             else ...[
-            SliverToBoxAdapter(
-              child: Padding(
+              const SliverToBoxAdapter(
+                child: FestivalSlider(),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                 child: Container(
                   padding: const EdgeInsets.all(24),

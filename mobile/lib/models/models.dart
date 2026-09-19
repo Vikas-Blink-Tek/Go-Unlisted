@@ -480,3 +480,72 @@ class GuSettings {
     );
   }
 }
+
+class GuFestivalOffer {
+  GuFestivalOffer({
+    required this.id,
+    required this.title,
+    this.tagline,
+    this.description,
+    this.imageUrl,
+    this.discountText,
+    this.couponCode,
+    this.linkUrl,
+    this.endsAt,
+    this.isActive = true,
+  });
+
+  final String id;
+  final String title;
+  final String? tagline;
+  final String? description;
+  final String? imageUrl;
+  final String? discountText;
+  final String? couponCode;
+  final String? linkUrl;
+  final DateTime? endsAt;
+  final bool isActive;
+
+  bool get isExpired {
+    if (endsAt == null) return false;
+    return DateTime.now().isAfter(endsAt!);
+  }
+
+  Duration? get remainingDuration {
+    if (endsAt == null) return null;
+    final diff = endsAt!.difference(DateTime.now());
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  String get resolvedImageUrl {
+    if (imageUrl == null || imageUrl!.isEmpty) return '';
+    return ApiConfig.resolveMediaUrl(imageUrl);
+  }
+
+  factory GuFestivalOffer.fromJson(Map<String, dynamic> j) {
+    DateTime? parseDate(dynamic v) {
+      if (v == null) return null;
+      try {
+        final s = v.toString().replaceAll(' ', 'T');
+        return DateTime.tryParse(s);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final activeRaw = j['is_active'] ?? j['isActive'];
+    return GuFestivalOffer(
+      id: (j['id'] ?? '').toString(),
+      title: (j['title'] ?? '').toString(),
+      tagline: j['tagline']?.toString(),
+      description: j['description']?.toString(),
+      imageUrl: (j['image_url'] ?? j['imageUrl'])?.toString(),
+      discountText: (j['discount_text'] ?? j['discountText'])?.toString(),
+      couponCode: (j['coupon_code'] ?? j['couponCode'])?.toString(),
+      linkUrl: (j['link_url'] ?? j['linkUrl'])?.toString(),
+      endsAt: parseDate(j['ends_at'] ?? j['endsAt']),
+      isActive: activeRaw == true || activeRaw == 1 || activeRaw == '1' || activeRaw == null,
+    );
+  }
+}
+

@@ -96,6 +96,8 @@ class ProfileMenuTile extends StatelessWidget {
     this.trailing,
     this.onTap,
     this.showDivider = true,
+    this.iconColor,
+    this.textColor,
   });
 
   final IconData icon;
@@ -104,6 +106,8 @@ class ProfileMenuTile extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool showDivider;
+  final Color? iconColor;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +119,7 @@ class ProfileMenuTile extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
-                Icon(icon, size: 22, color: GuColors.ink),
+                Icon(icon, size: 22, color: iconColor ?? GuColors.ink),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -126,7 +130,7 @@ class ProfileMenuTile extends StatelessWidget {
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: GuColors.ink,
+                          color: textColor ?? GuColors.ink,
                         ),
                       ),
                       if (subtitle != null) ...[
