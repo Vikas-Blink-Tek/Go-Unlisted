@@ -11,6 +11,31 @@ interface ReturnsCalculatorProps {
   embedded?: boolean;
 }
 
+const MAX_INVESTMENT = 500_000;
+
+/** Min INR so that after 1% platform fee the buyer can still take the min lot. */
+function minInvestmentForShare(share: Share): number {
+  const lot = Math.max(1, share.minQty || 1);
+  const lotCost = share.price * lot;
+  // amount * 0.99 >= lotCost  →  amount >= lotCost / 0.99
+  return Math.max(1, Math.ceil(lotCost / 0.99));
+}
+
+function sliderStep(minAmount: number): number {
+  if (minAmount >= 50_000) return 5_000;
+  if (minAmount >= 10_000) return 1_000;
+  if (minAmount >= 2_000) return 500;
+  if (minAmount >= 500) return 100;
+  return 50;
+}
+
+function clampAmount(value: number, minAmount: number): number {
+  const step = sliderStep(minAmount);
+  const max = Math.max(minAmount, MAX_INVESTMENT);
+  const rounded = Math.round(value / step) * step;
+  return Math.min(max, Math.max(minAmount, rounded));
+}
+
 export default function ReturnsCalculator({ shares, initialShareId, embedded }: ReturnsCalculatorProps) {
   const canViewRates = useCanViewShareRates();
   const list = useMemo(
@@ -19,7 +44,7 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
   );
 
   const [shareId, setShareId] = useState(initialShareId || '');
-  const [amount, setAmount] = useState(50000);
+  const [amount, setAmount] = useState(50_000);
   const [gain, setGain] = useState(50);
 
   useEffect(() => {
@@ -35,6 +60,15 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
   }, [list, initialShareId]);
 
   const share = list.find((s) => s.id === shareId) ?? list[0] ?? null;
+  const minAmount = share ? minInvestmentForShare(share) : 5_000;
+  const step = sliderStep(minAmount);
+  const maxAmount = Math.max(minAmount, MAX_INVESTMENT);
+
+  // When company / min lot changes, start from that share's minimum investment.
+  useEffect(() => {
+    if (!share) return;
+    setAmount((prev) => clampAmount(prev < minAmount ? minAmount : prev, minAmount));
+  }, [share?.id, minAmount]);
 
   const calc = useMemo(() => {
     if (!share || !share.price || share.price <= 0) return null;
@@ -77,6 +111,7 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
 
   const dashOffset = 440 - (440 * Math.min(gain, 300)) / 300;
   const unitPrice = share.price;
+  const lotSize = Math.max(1, share.minQty || 1);
 
   const body = (
     <BlurredRatesLock className="calc-rates-lock" message="Login to see the share prices">
@@ -87,7 +122,12 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
             <select
               className="form-input"
               value={share.id}
-              onChange={(e) => setShareId(e.target.value)}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setShareId(nextId);
+                const next = list.find((s) => s.id === nextId);
+                if (next) setAmount(minInvestmentForShare(next));
+              }}
               disabled={!canViewRates}
             >
               {list.map((s) => (
@@ -99,6 +139,7 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
             <div style={{ marginTop: 6, fontSize: '0.78rem', color: 'var(--muted)' }}>
               Live price {formatCurrency(unitPrice)}
               {share.minQty > 0 ? ` · Min ${share.minQty} shares` : ''}
+              {` · Min investment ${formatCurrency(unitPrice * lotSize)}`}
             </div>
           </div>
 
@@ -112,16 +153,16 @@ export default function ReturnsCalculator({ shares, initialShareId, embedded }: 
             <input
               type="range"
               className="price-slider"
-              min={5000}
-              max={500000}
-              step={5000}
-              value={amount}
-              onChange={(e) => setAmount(+e.target.value)}
+              min={minAmount}
+              max={maxAmount}
+              step={step}
+              value={Math.min(maxAmount, Math.max(minAmount, amount))}
+              onChange={(e) => setAmount(clampAmount(+e.target.value, minAmount))}
               disabled={!canViewRates}
             />
             <div className="slider-labels">
-              <span>₹5,000</span>
-              <span>₹5,00,000</span>
+              <span>{formatCurrency(minAmount)}</span>
+              <span>{formatCurrency(maxAmount)}</span>
             </div>
           </div>
 

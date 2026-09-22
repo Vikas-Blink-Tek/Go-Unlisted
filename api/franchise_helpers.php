@@ -205,7 +205,12 @@ function adminUserInScope(mysqli $conn, string $userId): bool {
         return false;
     }
     if ($scope !== '') {
+        // Franchise staff stay franchise-scoped (even if they have view-all-kyc on the role).
         return userBelongsToFranchise($conn, $row, $scope);
+    }
+    // Platform employee with "View All KYC" — same expansion as getUsers.
+    if (adminCan('view-all-kyc') && !isFranchiseMasterSession()) {
+        return true;
     }
     $code = currentEmployeeCode($conn);
     return $code !== '' && strtoupper(trim((string) ($row['referral_code'] ?? ''))) === $code;
