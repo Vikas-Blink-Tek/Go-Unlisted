@@ -71,7 +71,10 @@ export default function AdminEmployees() {
     mutationFn: saveEmployee,
     onSuccess: () => {
       if (!form.isMaster) {
-        showToast(`Saved — direct link: ${staffDirectLoginUrl(siteOrigin, { email: form.email, employee_id: form.employeeId })}`, 'success');
+        showToast(
+          `Saved — employee must refresh or re-login to see new panels. Link: ${staffDirectLoginUrl(siteOrigin, { email: form.email, employee_id: form.employeeId })}`,
+          'success',
+        );
       } else {
         showToast('Master Admin updated', 'success');
       }
@@ -184,7 +187,13 @@ export default function AdminEmployees() {
       email: form.email,
       phone: form.phone,
       employeeId: form.employeeId,
-      permissions: form.isMaster ? ['*'] : filterEmployeePermissionsForFranchise(form.permissions),
+      // Only franchise masters strip catalog/settings from their team.
+      // Platform master must be able to assign Stocks / Articles / Reports / Settings.
+      permissions: form.isMaster
+        ? ['*']
+        : isFranchiseMaster
+          ? filterEmployeePermissionsForFranchise(form.permissions)
+          : form.permissions,
     };
     if (form.password) payload.password = form.password;
     saveMutation.mutate(payload);

@@ -199,15 +199,38 @@ export default function AdminLayout() {
   }, []);
 
   // Re-verify session when tab regains focus (blocks stale UI after logout elsewhere)
+  // Also refresh permissions so newly assigned panels appear without a full re-login.
   useEffect(() => {
     if (authState !== 'ok') return;
     const recheck = () => {
       checkAuth().then((res) => {
-        if (!res.authenticated || res.type !== 'admin') {
+        if (!res.authenticated || res.type !== 'admin' || !res.id) {
           sessionStorage.removeItem('gu_admin');
           setVerifiedAuth(null);
           setAuthState('denied');
+          return;
         }
+        const auth: VerifiedAdminAuth = {
+          id: res.id,
+          isMaster: !!res.isMaster,
+          isFranchiseMaster: !!res.isFranchiseMaster,
+          franchiseId: res.franchiseId || '',
+          franchiseName: res.franchiseName || '',
+          permissions: res.permissions || [],
+          name: res.name || '',
+          employeeCode: res.employeeCode || res.employeeId || '',
+        };
+        sessionStorage.setItem('gu_admin', JSON.stringify({
+          id: auth.id,
+          isMaster: auth.isMaster,
+          isFranchiseMaster: auth.isFranchiseMaster,
+          franchiseId: auth.franchiseId,
+          franchiseName: auth.franchiseName,
+          name: auth.name,
+          employeeCode: auth.employeeCode,
+        }));
+        storeAdminPortal(portalFromAuth(auth.isMaster || !!auth.isFranchiseMaster, res.portal));
+        setVerifiedAuth(auth);
       }).catch(() => {
         sessionStorage.removeItem('gu_admin');
         setVerifiedAuth(null);
