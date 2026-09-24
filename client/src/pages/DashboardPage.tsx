@@ -16,7 +16,7 @@ import { useKycProofViewer } from '../components/kyc/KycProofLightbox';
 import { isPdfProof, kycProofViewUrl } from '../utils/kyc';
 import type { Order } from '../types';
 
-type PeriodFilter = 'all' | 'this_month' | 'last_month';
+type PeriodFilter = 'all' | 'today' | 'this_month' | 'last_month';
 
 function orderInPeriod(order: Order, period: PeriodFilter): boolean {
   if (period === 'all') return true;
@@ -25,6 +25,10 @@ function orderInPeriod(order: Order, period: PeriodFilter): boolean {
   const now = new Date();
   const y = d.getFullYear();
   const m = d.getMonth();
+  const day = d.getDate();
+  if (period === 'today') {
+    return y === now.getFullYear() && m === now.getMonth() && day === now.getDate();
+  }
   if (period === 'this_month') {
     return y === now.getFullYear() && m === now.getMonth();
   }
@@ -303,9 +307,10 @@ export default function DashboardPage() {
 
           {myOrders.length > 0 && (
             <div className="dashboard-orders-toolbar">
-              <div className="dashboard-period-filters" role="group" aria-label="Filter by month">
+              <div className="dashboard-period-filters" role="group" aria-label="Filter by period">
                 {(
                   [
+                    { id: 'today', label: 'Today' },
                     { id: 'this_month', label: 'This month' },
                     { id: 'last_month', label: 'Last month' },
                     { id: 'all', label: 'All' },
@@ -371,7 +376,7 @@ export default function DashboardPage() {
                 <div className="empty-state glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
                   <p style={{ color: 'var(--muted)', margin: 0 }}>
                     {period !== 'all'
-                      ? 'No holdings in this period. Try “All” or another month.'
+                      ? 'No holdings in this period. Try “Today”, “All”, or another month.'
                       : 'No confirmed holdings yet. After you pay and submit UTR, admin verifies payment — then shares appear here as confirmed.'}
                   </p>
                 </div>

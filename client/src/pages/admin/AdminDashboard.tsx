@@ -36,13 +36,20 @@ import AdminSignupsPanel from './panels/AdminSignupsPanel';
 import AdminFranchisesPanel from './panels/AdminFranchisesPanel';
 import AdminOffersPanel from './panels/AdminOffersPanel';
 
-type PeriodFilter = 'all' | 'this_month' | 'last_month';
+type PeriodFilter = 'all' | 'today' | 'this_month' | 'last_month';
 
 function dateInPeriod(iso: string | undefined | null, period: PeriodFilter): boolean {
   if (period === 'all') return true;
   const d = parseDbDateTime(iso);
   if (!d) return false;
   const now = new Date();
+  if (period === 'today') {
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    );
+  }
   if (period === 'this_month') {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   }
@@ -51,6 +58,7 @@ function dateInPeriod(iso: string | undefined | null, period: PeriodFilter): boo
 }
 
 function periodLabel(period: PeriodFilter): string {
+  if (period === 'today') return 'Today';
   if (period === 'this_month') return 'This month';
   if (period === 'last_month') return 'Last month';
   return 'All time';
@@ -370,6 +378,7 @@ export default function AdminDashboard() {
           <div className="dashboard-period-filters admin-dash-period" role="group" aria-label="Dashboard period">
             {(
               [
+                { id: 'today', label: 'Today' },
                 { id: 'this_month', label: 'This month' },
                 { id: 'last_month', label: 'Last month' },
                 { id: 'all', label: 'All' },
