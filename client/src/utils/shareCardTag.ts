@@ -3,15 +3,15 @@ import { isShareUnavailable } from './inventory';
 
 export type ShareCardTag = {
   label: string;
-  kind: 'best-seller' | 'trending' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
+  kind: 'best-seller' | 'trending' | 'most-purchased' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
 };
 
 /**
  * UnlistedZone-style ribbon on share cards:
- * Featured → Best Seller, Top 10 → Trending, else inventory status.
+ * Manual admin badge → Featured → Best Seller, Top 10 → Trending, else inventory status.
  */
 export function getShareCardTag(
-  share: Pick<Share, 'isFeatured' | 'isTop10' | 'inventoryStatus' | 'listingType' | 'listingPrice' | 'purchasable'>,
+  share: Pick<Share, 'isFeatured' | 'isTop10' | 'cardBadge' | 'inventoryStatus' | 'listingType' | 'listingPrice' | 'purchasable'>,
 ): ShareCardTag {
   const type = (share.listingType || '').trim().toLowerCase();
   if (
@@ -22,6 +22,13 @@ export function getShareCardTag(
     || (share.listingPrice != null && share.listingPrice > 0)
   ) {
     return { label: share.isFeatured ? 'Sample' : 'Listed', kind: share.isFeatured ? 'listed' : 'listed' };
+  }
+  const manual = (share.cardBadge || '').trim();
+  if (manual === 'Most Purchased') {
+    return { label: 'Most Purchased', kind: 'most-purchased' };
+  }
+  if (manual === 'Trending') {
+    return { label: 'Trending', kind: 'trending' };
   }
   if (share.isFeatured) {
     return { label: 'Best Seller', kind: 'best-seller' };

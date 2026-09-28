@@ -270,6 +270,7 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
         'website' => trim($fundamentals['website'] ?? $fundamentals['companyWebsite'] ?? ''),
         'isFeatured' => ((int) ($row['is_featured'] ?? 0)) === 1,
         'isTop10' => ((int) ($row['is_top10'] ?? 0)) === 1,
+        'cardBadge' => trim((string) ($row['card_badge'] ?? '')),
         'discountTiers' => (static function ($raw) {
             $tiers = is_string($raw) ? json_decode($raw, true) : $raw;
             if (!is_array($tiers)) {

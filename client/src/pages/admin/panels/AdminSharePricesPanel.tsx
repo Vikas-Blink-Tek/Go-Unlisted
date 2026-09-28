@@ -57,6 +57,7 @@ type FormState = {
   changePositive: boolean;
   isFeatured: boolean;
   isTop10: boolean;
+  cardBadge: string;
   logoGradient: string;
   description: string;
   keyHighlights: string;
@@ -95,6 +96,7 @@ const emptyForm = (): FormState => ({
   changePositive: true,
   isFeatured: false,
   isTop10: false,
+  cardBadge: '',
   logoGradient: GRADIENTS[0],
   description: '',
   keyHighlights: '',
@@ -140,6 +142,7 @@ function shareToForm(share: Share): FormState {
     changePositive: share.changePositive,
     isFeatured: !!share.isFeatured,
     isTop10: !!share.isTop10,
+    cardBadge: share.cardBadge || '',
     logoGradient: share.logoGradient,
     description: share.description || '',
     keyHighlights: (share.keyHighlights || []).join('\n'),
@@ -171,6 +174,7 @@ function shareToSavePayload(share: Share, overrides: Partial<{ isFeatured: boole
     changePositive: share.changePositive,
     isFeatured: overrides.isFeatured ?? !!share.isFeatured,
     isTop10: overrides.isTop10 ?? !!share.isTop10,
+    cardBadge: share.cardBadge || '',
     logoInitials: share.logoInitials,
     logoGradient: share.logoGradient,
     logoUrl: share.logoUrl || '',
@@ -370,6 +374,7 @@ export default function AdminSharePricesPanel() {
         changePositive: form.changePositive,
         isFeatured: form.isFeatured,
         isTop10: form.isTop10,
+        cardBadge: form.cardBadge,
         logoInitials,
         logoGradient: form.logoGradient,
         logoUrl: form.logoUrl || '',

@@ -47,6 +47,8 @@ export interface Share {
   website?: string;
   isFeatured?: boolean;
   isTop10?: boolean;
+  /** Manual card ribbon set by admin: '' (auto) | 'Trending' | 'Most Purchased' */
+  cardBadge?: string;
   /** False for exchange-listed / out-of-stock — no online purchase */
   purchasable?: boolean;
   discountTiers?: { minQty: number; price: number }[];

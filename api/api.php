@@ -311,6 +311,8 @@ function autoMigrateSchema($conn) {
         'listing_price' => 'DECIMAL(12,2) DEFAULT NULL',
         'qty_on_hand' => 'INT NOT NULL DEFAULT 0',
         'is_top10' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        // Manual card ribbon: '' (auto) / Trending / Most Purchased
+        'card_badge' => "VARCHAR(30) DEFAULT ''",
         'discount_tiers' => 'TEXT',
         // SEBI draft: Not Filed / DRHP Pending / DRHP Filed / DRHP Approved
         'drhp_status' => "VARCHAR(40) DEFAULT 'Not Filed'",
@@ -4543,6 +4545,10 @@ switch ($action) {
         $lock_in_months = 0;
         $is_featured = !empty($data['isFeatured']) ? 1 : 0;
         $is_top10 = !empty($data['isTop10']) ? 1 : 0;
+        $card_badge = trim((string) ($data['cardBadge'] ?? ''));
+        if (!in_array($card_badge, ['', 'Trending', 'Most Purchased'], true)) {
+            $card_badge = '';
+        }
         $discount_tiers = '[]';
         if (isset($data['discountTiers']) && is_array($data['discountTiers'])) {
             $cleanTiers = [];
@@ -4718,6 +4724,12 @@ switch ($action) {
         if ($fundStmt) {
             $fundStmt->bind_param('ss', $fundamentals, $share_id);
             $fundStmt->execute();
+        }
+
+        $badgeStmt = $conn->prepare('UPDATE shares SET card_badge=? WHERE share_id=?');
+        if ($badgeStmt) {
+            $badgeStmt->bind_param('ss', $card_badge, $share_id);
+            $badgeStmt->execute();
         }
 
         $drhpStmt = $conn->prepare('UPDATE shares SET drhp_status=? WHERE share_id=?');

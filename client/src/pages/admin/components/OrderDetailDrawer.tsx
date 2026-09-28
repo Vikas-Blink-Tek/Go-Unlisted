@@ -54,7 +54,9 @@ export default function OrderDetailDrawer({
     .filter(Boolean) as Array<{ code: string; name: string }>;
 
   const canTransfer = !!onTransfer && canTransferOrder(order.status) && employeeOptions.length > 0;
+  const employeeCodesKey = employeeOptions.map((o) => o.code.toUpperCase()).join(',');
   const [assignEmployeeCode, setAssignEmployeeCode] = useState<string>('');
+  const [transferring, setTransferring] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
   const [savingRef, setSavingRef] = useState(false);
   const [amountEdit, setAmountEdit] = useState('');
@@ -74,9 +76,11 @@ export default function OrderDetailDrawer({
       return;
     }
     const current = (order.employeeCode || '').trim();
-    const currentIsValid = current && employeeOptions.some((o) => o.code.toUpperCase() === current.toUpperCase());
-    setAssignEmployeeCode(currentIsValid ? current : employeeOptions[0]?.code || '');
-  }, [order.orderId, canTransfer, order.employeeCode, employeeOptions]);
+    const match = employeeOptions.find((o) => o.code.toUpperCase() === current.toUpperCase());
+    setAssignEmployeeCode(match ? match.code : employeeOptions[0]?.code || '');
+    // employeeOptions is rebuilt every render; key on its codes so a manual pick isn't reset
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order.orderId, canTransfer, order.employeeCode, employeeCodesKey]);
 
   const buyer = users.find(
     (u) =>
@@ -306,15 +310,27 @@ export default function OrderDetailDrawer({
                 <button
                   type="button"
                   className="btn btn-primary"
+                  disabled={transferring || !assignEmployeeCode}
                   onClick={async () => {
                     if (!assignEmployeeCode) return;
+                    if ((order.employeeCode || '').trim().toUpperCase() === assignEmployeeCode.toUpperCase()) {
+                      window.alert(`This order is already assigned to ${displayUserCode(assignEmployeeCode)}. Pick a different user.`);
+                      return;
+                    }
                     const ok = confirm(`Transfer this order to ${displayUserCode(assignEmployeeCode)}?`);
                     if (!ok) return;
-                    await Promise.resolve(onTransfer?.(order.orderId, assignEmployeeCode));
-                    onClose();
+                    setTransferring(true);
+                    try {
+                      await Promise.resolve(onTransfer?.(order.orderId, assignEmployeeCode));
+                      onClose();
+                    } catch {
+                      // error toast is shown by the caller's mutation
+                    } finally {
+                      setTransferring(false);
+                    }
                   }}
                 >
-                  Transfer
+                  {transferring ? 'Transferring…' : 'Transfer'}
                 </button>
               </div>
               <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: 'var(--muted)' }}>

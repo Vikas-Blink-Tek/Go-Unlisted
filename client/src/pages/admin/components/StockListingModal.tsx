@@ -54,6 +54,7 @@ export type StockFormState = {
   changePositive: boolean;
   isFeatured: boolean;
   isTop10: boolean;
+  cardBadge: string;
   logoGradient: string;
   description: string;
   keyHighlights: string;
@@ -343,6 +344,20 @@ export default function StockListingModal({
                           {s === 'Limited' ? '⏳ Limited' : s}
                         </button>
                       ))}
+                    </div>
+                  </Field>
+                  <Field label="Card Badge (manual)">
+                    <select
+                      className="slm-input"
+                      value={form.cardBadge}
+                      onChange={(e) => set({ cardBadge: e.target.value })}
+                    >
+                      <option value="">Auto (stock status)</option>
+                      <option value="Trending">🔥 Trending</option>
+                      <option value="Most Purchased">🛒 Most Purchased</option>
+                    </select>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 6 }}>
+                      Ribbon shown on website &amp; app share cards
                     </div>
                   </Field>
                 </div>

@@ -103,6 +103,7 @@ class GuShare {
     this.ratesVisible,
     this.featured = false,
     this.isTop10 = false,
+    this.cardBadge = '',
     this.highlights = const [],
     this.valuation,
     this.ipoTimeline,
@@ -146,6 +147,8 @@ class GuShare {
   final bool? ratesVisible;
   final bool featured;
   final bool isTop10;
+  /// Manual card ribbon from admin: '' (auto) / Trending / Most Purchased.
+  final String cardBadge;
   final List<String> highlights;
   final String? valuation;
   final String? ipoTimeline;
@@ -278,6 +281,7 @@ class GuShare {
           j['is_top10'] == '1' ||
           j['top10'] == true ||
           j['top10'] == 1,
+      cardBadge: (j['cardBadge'] ?? j['card_badge'] ?? '').toString().trim(),
       highlights: highlights,
       valuation: (j['valuation'] ?? j['marketCap'])?.toString(),
       ipoTimeline: (j['ipoTimeline'] ?? j['ipo_timeline'])?.toString(),
