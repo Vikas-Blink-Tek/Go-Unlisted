@@ -3617,7 +3617,7 @@ button.footer-link {
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
   background: transparent;
   cursor: pointer;
-  color: inherit;
+  color: #0f172a;
 }
 .shares-search-hit:last-of-type {
   border-bottom: 0;
@@ -3632,14 +3632,15 @@ button.footer-link {
   font-size: 0.7rem !important;
 }
 .shares-search-hit-name {
-  font-weight: 700;
-  font-size: 0.92rem;
-  color: var(--navy, #003478);
+  font-weight: 800;
+  font-size: 0.95rem;
+  /* --navy is a light surface tint in this theme — never use it for text */
+  color: #0f172a;
   line-height: 1.25;
 }
 .shares-search-hit-meta {
   font-size: 0.75rem;
-  color: var(--muted, #64748b);
+  color: #475569;
   margin-top: 0.15rem;
 }
 .shares-search-hit-price {
@@ -3650,7 +3651,7 @@ button.footer-link {
 }
 .shares-search-hit-price strong {
   font-size: 0.95rem;
-  color: var(--text, #0f172a);
+  color: #0f172a;
 }
 .shares-search-hit-price span {
   font-size: 0.65rem;
