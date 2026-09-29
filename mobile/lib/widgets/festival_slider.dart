@@ -181,7 +181,328 @@ class _FestivalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final countdownStr = _formatCountdown(offer.endsAt);
     final hasImage = offer.resolvedImageUrl.isNotEmpty;
+    final mode = hasImage ? offer.displayMode : 'background';
 
+    // --- Shared widgets ---
+    Widget buildBadges() {
+      return Row(
+        children: [
+          if (offer.tagline != null && offer.tagline!.isNotEmpty)
+            Flexible(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: GuColors.lime.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: GuColors.lime, width: 1),
+                ),
+                child: Text(
+                  '✨ ${offer.tagline}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.manrope(
+                    color: const Color(0xFFA5F36A),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          if (countdownStr.isNotEmpty && countdownStr != 'Ended') ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.7)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    countdownStr,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    Widget buildTitleAndDiscount() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            offer.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.manrope(
+              fontSize: mode == 'split' ? 16 : 18,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: -0.3,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Row(
+            children: [
+              if (offer.discountText != null && offer.discountText!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text(
+                    offer.discountText!,
+                    style: GoogleFonts.manrope(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: GuColors.lime,
+                    ),
+                  ),
+                ),
+              if (offer.description != null && offer.description!.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    offer.description!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    Widget buildActionRow() {
+      return Row(
+        children: [
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: GuColors.lime,
+              foregroundColor: const Color(0xFF082208),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: () => _handleAction(context),
+            child: Text(
+              'Grab Deal →',
+              style: GoogleFonts.manrope(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          if (offer.couponCode != null && offer.couponCode!.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            InkWell(
+              onTap: () => _copyCoupon(context, offer.couponCode!),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.3),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      offer.couponCode!,
+                      style: GoogleFonts.manrope(
+                        color: const Color(0xFFA5F36A),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.copy_rounded,
+                      size: 12,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    // ========================
+    // MODE: SPLIT — text left, image right (never crops)
+    // ========================
+    if (mode == 'split') {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF061A3A),
+              Color(0xFF003478),
+              Color(0xFF084C38),
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF003478).withValues(alpha: 0.25),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Row(
+          children: [
+            // Left: Text content (55%)
+            Expanded(
+              flex: 55,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    buildBadges(),
+                    buildTitleAndDiscount(),
+                    buildActionRow(),
+                  ],
+                ),
+              ),
+            ),
+            // Right: Image (45%) — never cropped
+            Expanded(
+              flex: 45,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.15),
+                padding: const EdgeInsets.all(10),
+                child: CachedNetworkImage(
+                  imageUrl: offer.resolvedImageUrl,
+                  fit: BoxFit.contain,
+                  errorWidget: (context, error, stackTrace) => const SizedBox(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ========================
+    // MODE: FULL-IMAGE — image fills card, text at bottom
+    // ========================
+    if (mode == 'full-image') {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF003478).withValues(alpha: 0.25),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Full image
+            if (hasImage)
+              CachedNetworkImage(
+                imageUrl: offer.resolvedImageUrl,
+                fit: BoxFit.cover,
+                errorWidget: (context, error, stackTrace) => const SizedBox(),
+              ),
+
+            // Bottom gradient for text readability
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.0, 0.4, 0.7, 1.0],
+                  colors: [
+                    Colors.transparent,
+                    Color(0x0D000000),
+                    Color(0x66000000),
+                    Color(0xDD000000),
+                  ],
+                ),
+              ),
+            ),
+
+            // Text at bottom
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  buildBadges(),
+                  const SizedBox(height: 4),
+                  Text(
+                    offer.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.manrope(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      shadows: [
+                        const Shadow(blurRadius: 8, color: Colors.black54),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  buildActionRow(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ========================
+    // MODE: BACKGROUND (default) — image behind text with overlay
+    // ========================
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
@@ -207,12 +528,12 @@ class _FestivalCard extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Background Image with dark overlay gradient
+          // Background Image
           if (hasImage)
             CachedNetworkImage(
               imageUrl: offer.resolvedImageUrl,
               fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => const SizedBox(),
+              errorWidget: (context, error, stackTrace) => const SizedBox(),
             ),
 
           // Gradient overlay for contrast
@@ -222,9 +543,9 @@ class _FestivalCard extends StatelessWidget {
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  const Color(0xFF071428).withValues(alpha: hasImage ? 0.90 : 0.7),
-                  const Color(0xFF00224E).withValues(alpha: hasImage ? 0.82 : 0.6),
-                  const Color(0xFF0B3A2C).withValues(alpha: hasImage ? 0.88 : 0.7),
+                  const Color(0xFF071428).withValues(alpha: hasImage ? 0.65 : 0.7),
+                  const Color(0xFF00224E).withValues(alpha: hasImage ? 0.50 : 0.6),
+                  const Color(0xFF0B3A2C).withValues(alpha: hasImage ? 0.55 : 0.7),
                 ],
               ),
             ),
@@ -237,179 +558,9 @@ class _FestivalCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Top Row: Tagline + Countdown Timer
-                Row(
-                  children: [
-                    if (offer.tagline != null && offer.tagline!.isNotEmpty)
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: GuColors.lime.withValues(alpha: 0.25),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: GuColors.lime, width: 1),
-                          ),
-                          child: Text(
-                            '✨ ${offer.tagline}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.manrope(
-                              color: const Color(0xFFA5F36A),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (countdownStr.isNotEmpty && countdownStr != 'Ended') ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.7)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Colors.redAccent,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 5),
-                            Text(
-                              countdownStr,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'monospace',
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-
-                // Middle: Title + Discount + Description
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      offer.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.manrope(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        if (offer.discountText != null && offer.discountText!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Text(
-                              offer.discountText!,
-                              style: GoogleFonts.manrope(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: GuColors.lime,
-                              ),
-                            ),
-                          ),
-                        if (offer.description != null && offer.description!.isNotEmpty)
-                          Expanded(
-                            child: Text(
-                              offer.description!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-
-                // Bottom: Action Button & Optional Coupon
-                Row(
-                  children: [
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: GuColors.lime,
-                        foregroundColor: const Color(0xFF082208),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () => _handleAction(context),
-                      child: Text(
-                        'Grab Deal →',
-                        style: GoogleFonts.manrope(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    if (offer.couponCode != null && offer.couponCode!.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      InkWell(
-                        onTap: () => _copyCoupon(context, offer.couponCode!),
-                        borderRadius: BorderRadius.circular(10),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.3),
-                              style: BorderStyle.solid,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                offer.couponCode!,
-                                style: GoogleFonts.manrope(
-                                  color: const Color(0xFFA5F36A),
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 11.5,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.copy_rounded,
-                                size: 12,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                buildBadges(),
+                buildTitleAndDiscount(),
+                buildActionRow(),
               ],
             ),
           ),

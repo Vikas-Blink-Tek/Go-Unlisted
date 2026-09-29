@@ -3,7 +3,7 @@ import { isShareUnavailable } from './inventory';
 
 export type ShareCardTag = {
   label: string;
-  kind: 'best-seller' | 'trending' | 'most-purchased' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
+  kind: 'best-deal' | 'best-seller' | 'trending' | 'most-purchased' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
 };
 
 /**
@@ -24,6 +24,9 @@ export function getShareCardTag(
     return { label: share.isFeatured ? 'Sample' : 'Listed', kind: share.isFeatured ? 'listed' : 'listed' };
   }
   const manual = (share.cardBadge || '').trim();
+  if (manual === 'Best Deal' || manual.toLowerCase() === 'best deal') {
+    return { label: 'Best Deal', kind: 'best-deal' };
+  }
   if (manual === 'Most Purchased') {
     return { label: 'Most Purchased', kind: 'most-purchased' };
   }

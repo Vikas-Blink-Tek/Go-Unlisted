@@ -3,6 +3,7 @@ import { useState } from 'react';
 import PriceChart from '../components/shares/PriceChart';
 import CompanyLogo from '../components/shares/CompanyLogo';
 import ReturnsCalculator from '../components/home/ReturnsCalculator';
+import FestivalBannerSlider from '../components/home/FestivalBannerSlider';
 import { useShareSearch } from '../components/shares/GlobalShareSearch';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
@@ -143,6 +144,8 @@ export default function ShareDetailPage() {
             </div>
           </div>
         </div>
+
+        <FestivalBannerSlider variant="compact" />
 
         <div className="detail-invest-cta">
           <div>

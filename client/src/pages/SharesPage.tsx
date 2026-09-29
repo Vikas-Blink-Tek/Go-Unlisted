@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useShares, useWatchlist } from '../hooks/useShares';
 import ShareCard from '../components/shares/ShareCard';
 import CompanyLogo from '../components/shares/CompanyLogo';
+import FestivalBannerSlider from '../components/home/FestivalBannerSlider';
 import { formatCurrency } from '../utils/format';
 import { sectorMatches } from '../utils/sectorFilter';
 import { useCanViewShareRates } from '../utils/shareRates';
@@ -164,8 +165,9 @@ export default function SharesPage() {
         </div>
       </div>
 
-      <div className="section" style={{ paddingTop: '2rem' }}>
+      <div className="section" style={{ paddingTop: '1.25rem' }}>
         <div className="container">
+          <FestivalBannerSlider variant="catalog" />
           <div className="filter-bar">
             <div className="shares-search-row" ref={searchWrapRef}>
               <div className={`search-wrap shares-search-wrap${dropdownOpen && q ? ' has-dropdown' : ''}`}>

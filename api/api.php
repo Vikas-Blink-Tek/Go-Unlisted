@@ -387,12 +387,18 @@ function autoMigrateSchema($conn) {
         discount_text VARCHAR(100) DEFAULT '',
         coupon_code VARCHAR(50) DEFAULT '',
         link_url VARCHAR(500) DEFAULT '',
+        cta_text VARCHAR(100) DEFAULT '',
         ends_at DATETIME DEFAULT NULL,
         is_active TINYINT(1) DEFAULT 1,
         sort_order INT DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $res = $conn->query("SHOW COLUMNS FROM festival_offers LIKE 'cta_text'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE festival_offers ADD COLUMN cta_text VARCHAR(100) DEFAULT '' AFTER link_url");
+    }
 
     seedDefaultSharesIfEmpty($conn);
     migrateFranchiseSchema($conn);
@@ -5237,6 +5243,8 @@ switch ($action) {
                     'discountText' => $row['discount_text'] ?? '',
                     'couponCode' => $row['coupon_code'] ?? '',
                     'linkUrl' => $row['link_url'] ?? '',
+                    'ctaText' => $row['cta_text'] ?? '',
+                    'displayMode' => $row['display_mode'] ?? 'split',
                     'endsAt' => $row['ends_at'],
                     'isActive' => (bool) $row['is_active'],
                     'sortOrder' => (int) $row['sort_order'],
@@ -5262,6 +5270,8 @@ switch ($action) {
                     'discountText' => $row['discount_text'] ?? '',
                     'couponCode' => $row['coupon_code'] ?? '',
                     'linkUrl' => $row['link_url'] ?? '',
+                    'ctaText' => $row['cta_text'] ?? '',
+                    'displayMode' => $row['display_mode'] ?? 'split',
                     'endsAt' => $row['ends_at'],
                     'isActive' => (bool) $row['is_active'],
                     'sortOrder' => (int) $row['sort_order'],
@@ -5287,19 +5297,22 @@ switch ($action) {
         $discountText = trim((string) ($data['discountText'] ?? $data['discount_text'] ?? ''));
         $couponCode = strtoupper(trim((string) ($data['couponCode'] ?? $data['coupon_code'] ?? '')));
         $linkUrl = trim((string) ($data['linkUrl'] ?? $data['link_url'] ?? '/shares'));
+        $ctaText = trim((string) ($data['ctaText'] ?? $data['cta_text'] ?? ''));
         $endsAt = trim((string) ($data['endsAt'] ?? $data['ends_at'] ?? ''));
         $endsAt = $endsAt !== '' ? $endsAt : null;
         $isActive = isset($data['isActive']) ? ((bool) $data['isActive'] ? 1 : 0) : 1;
         $sortOrder = (int) ($data['sortOrder'] ?? $data['sort_order'] ?? 0);
+        $displayMode = trim((string) ($data['displayMode'] ?? $data['display_mode'] ?? 'split'));
+        if (!in_array($displayMode, ['split', 'background', 'full-image'])) $displayMode = 'split';
 
         if ($id === '') {
             $id = 'offer-' . bin2hex(random_bytes(8));
-            $stmt = $conn->prepare("INSERT INTO festival_offers (id, title, tagline, description, image_url, discount_text, coupon_code, link_url, ends_at, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param('sssssssssii', $id, $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $endsAt, $isActive, $sortOrder);
+            $stmt = $conn->prepare("INSERT INTO festival_offers (id, title, tagline, description, image_url, discount_text, coupon_code, link_url, cta_text, display_mode, ends_at, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('sssssssssssii', $id, $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $ctaText, $displayMode, $endsAt, $isActive, $sortOrder);
             $stmt->execute();
         } else {
-            $stmt = $conn->prepare("UPDATE festival_offers SET title=?, tagline=?, description=?, image_url=?, discount_text=?, coupon_code=?, link_url=?, ends_at=?, is_active=?, sort_order=? WHERE id=?");
-            $stmt->bind_param('sssssssssiis', $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $endsAt, $isActive, $sortOrder, $id);
+            $stmt = $conn->prepare("UPDATE festival_offers SET title=?, tagline=?, description=?, image_url=?, discount_text=?, coupon_code=?, link_url=?, cta_text=?, display_mode=?, ends_at=?, is_active=?, sort_order=? WHERE id=?");
+            $stmt->bind_param('ssssssssssiis', $title, $tagline, $description, $imageUrl, $discountText, $couponCode, $linkUrl, $ctaText, $displayMode, $endsAt, $isActive, $sortOrder, $id);
             $stmt->execute();
         }
         sendResponse(['success' => true, 'id' => $id, 'message' => 'Offer saved successfully']);

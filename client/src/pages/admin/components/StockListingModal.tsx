@@ -353,6 +353,7 @@ export default function StockListingModal({
                       onChange={(e) => set({ cardBadge: e.target.value })}
                     >
                       <option value="">Auto (stock status)</option>
+                      <option value="Best Deal">⭐ Best Deal</option>
                       <option value="Trending">🔥 Trending</option>
                       <option value="Most Purchased">🛒 Most Purchased</option>
                     </select>

@@ -21,6 +21,8 @@ type OfferFormState = {
   discountText: string;
   couponCode: string;
   linkUrl: string;
+  ctaText: string;
+  displayMode: 'split' | 'background' | 'full-image';
   endsAt: string;
   isActive: boolean;
   sortOrder: number;
@@ -29,12 +31,14 @@ type OfferFormState = {
 const emptyForm: OfferFormState = {
   id: '',
   title: '',
-  tagline: '',
+  tagline: '⭐ Best Deal',
   description: '',
   imageUrl: '',
-  discountText: '',
+  discountText: 'BEST DEAL',
   couponCode: '',
   linkUrl: '/shares',
+  ctaText: 'Claim Best Deal →',
+  displayMode: 'split',
   endsAt: '',
   isActive: true,
   sortOrder: 0,
@@ -69,7 +73,7 @@ export default function AdminOffersPanel() {
     const q = search.trim().toLowerCase();
     if (!q) return offers;
     return offers.filter((o) => {
-      const hay = [o.title, o.tagline, o.discountText, o.couponCode, o.linkUrl].filter(Boolean).join(' ').toLowerCase();
+      const hay = [o.title, o.tagline, o.discountText, o.couponCode, o.linkUrl, o.ctaText].filter(Boolean).join(' ').toLowerCase();
       return hay.includes(q);
     });
   }, [offers, search]);
@@ -77,13 +81,13 @@ export default function AdminOffersPanel() {
   const saveMut = useMutation({
     mutationFn: saveOffer,
     onSuccess: () => {
-      showToast(form.id ? 'Offer updated successfully' : 'New festival offer published', 'success');
+      showToast(form.id ? 'Deal updated successfully' : 'New deal published successfully', 'success');
       queryClient.invalidateQueries({ queryKey: ['admin-offers'] });
       queryClient.invalidateQueries({ queryKey: ['active-offers'] });
       setShowModal(false);
       setForm(emptyForm);
     },
-    onError: (e: Error) => showToast(e.message || 'Failed to save offer', 'error'),
+    onError: (e: Error) => showToast(e.message || 'Failed to save deal', 'error'),
   });
 
   const deleteMut = useMutation({
@@ -133,6 +137,8 @@ export default function AdminOffersPanel() {
       discountText: o.discountText || '',
       couponCode: o.couponCode || '',
       linkUrl: o.linkUrl || '/shares',
+      ctaText: o.ctaText || '',
+      displayMode: (o.displayMode as OfferFormState['displayMode']) || 'split',
       endsAt: formattedEndsAt,
       isActive: o.isActive,
       sortOrder: o.sortOrder || 0,
@@ -164,7 +170,7 @@ export default function AdminOffersPanel() {
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.title.trim()) {
-      showToast('Please enter an offer title', 'error');
+      showToast('Please enter a deal or offer title', 'error');
       return;
     }
     saveMut.mutate({
@@ -176,6 +182,8 @@ export default function AdminOffersPanel() {
       discountText: form.discountText.trim(),
       couponCode: form.couponCode.trim(),
       linkUrl: form.linkUrl.trim() || '/shares',
+      ctaText: form.ctaText.trim(),
+      displayMode: form.displayMode,
       endsAt: form.endsAt ? form.endsAt.replace('T', ' ') + ':00' : null,
       isActive: form.isActive,
       sortOrder: Number(form.sortOrder) || 0,
@@ -185,11 +193,11 @@ export default function AdminOffersPanel() {
   return (
     <div className="admin-offers-panel">
       <AdminSectionHeader
-        title="Festival Offers & Countdown Banners"
-        subtitle="Create flash deals, festival banners (Ganesh Chaturthi, Diwali, etc.), and running countdown discounts visible across Web & Mobile app."
+        title="Best Deals & Countdown Banners"
+        subtitle="Create Best Deals, flash offers, festival banners (Diwali, etc.), and running countdown discounts visible across Web & Mobile app."
         action={
           <button type="button" className="btn btn-primary" onClick={openNew}>
-            + Add Festival Offer
+            + Add Best Deal / Offer
           </button>
         }
       />
@@ -198,7 +206,7 @@ export default function AdminOffersPanel() {
         <input
           type="search"
           className="form-input"
-          placeholder="Search offers by title, promo code, discount..."
+          placeholder="Search deals by title, promo code, discount..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ maxWidth: 360 }}
@@ -209,7 +217,7 @@ export default function AdminOffersPanel() {
       </div>
 
       {isLoading ? (
-        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading festival offers...</div>
+        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>Loading active deals &amp; offers...</div>
       ) : filtered.length === 0 ? (
         <div
           style={{
@@ -220,13 +228,13 @@ export default function AdminOffersPanel() {
             border: '1px dashed var(--border)',
           }}
         >
-          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎉</div>
-          <h3 style={{ margin: '0 0 0.5rem', color: 'var(--ink)' }}>No Festival Offers Yet</h3>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>⭐</div>
+          <h3 style={{ margin: '0 0 0.5rem', color: 'var(--ink)' }}>No Active Deals Yet</h3>
           <p style={{ margin: '0 0 1.25rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Add a 24-hour Ganesh Chaturthi deal, festive banner, or promotional discount to attract investors.
+            Add a Best Deal, 24-hour flash sale, festive banner, or promotional discount to attract investors on Home and Shares pages.
           </p>
           <button type="button" className="btn btn-primary" onClick={openNew}>
-            Create First Offer
+            + Create First Deal
           </button>
         </div>
       ) : (
@@ -271,11 +279,14 @@ export default function AdminOffersPanel() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: '#fff',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.03em',
+                            textAlign: 'center',
+                            padding: '2px 4px',
                           }}
                         >
-                          FESTIVAL
+                          {o.tagline ? o.tagline.replace(/[^\w\s]/gi, '').trim().slice(0, 10).toUpperCase() || 'BEST DEAL' : 'BEST DEAL'}
                         </div>
                       )}
                     </td>
@@ -409,7 +420,7 @@ export default function AdminOffersPanel() {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--ink)' }}>
-                {form.id ? 'Edit Festival Offer' : 'Add New Festival Offer'}
+                {form.id ? 'Edit Deal / Offer' : 'Add New Best Deal / Offer'}
               </h3>
               <button
                 type="button"
@@ -424,12 +435,12 @@ export default function AdminOffersPanel() {
             <form onSubmit={onSubmit}>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  Offer / Festival Title *
+                  Offer / Deal Title *
                 </label>
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. Ganesh Chaturthi Flash Deal, Diwali Dhamaka Offer"
+                  placeholder="e.g. Best Deal on Pre-IPO Shares, Mega Festival Discount, Diwali Dhamaka"
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
@@ -444,12 +455,12 @@ export default function AdminOffersPanel() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Trending, Limited Deal, 24-Hour Special"
+                    placeholder="e.g. ⭐ Best Deal, Limited Deal, 24-Hour Special"
                     value={form.tagline}
                     onChange={(e) => setForm({ ...form, tagline: e.target.value })}
                   />
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['🔥 Trending', '⏳ Limited Deal', '⚡ Flash Deal', '✨ Festival Special', '💥 Best Seller', '💎 Exclusive'].map((badge) => (
+                    {['⭐ Best Deal', '🔥 Trending Deal', '⏳ Limited Deal', '⚡ Flash Deal', '✨ Festival Special', '💥 Best Seller', '💎 Exclusive'].map((badge) => (
                       <button
                         key={badge}
                         type="button"
@@ -478,12 +489,12 @@ export default function AdminOffersPanel() {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. Flat ₹50 OFF / Extra 5%"
+                    placeholder="e.g. BEST DEAL / Extra 5% / Flat ₹500 OFF"
                     value={form.discountText}
                     onChange={(e) => setForm({ ...form, discountText: e.target.value })}
                   />
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['FLAT 10% OFF', 'FLAT 20% OFF', 'FLAT ₹500 OFF', 'EXTRA 5% OFF', 'BEST FESTIVE PRICE'].map((disc) => (
+                    {['BEST DEAL', 'BEST PRICE', 'EXTRA 5% OFF', 'FLAT 10% OFF', 'FLAT 20% OFF', 'FLAT ₹500 OFF', 'BEST FESTIVE PRICE'].map((disc) => (
                       <button
                         key={disc}
                         type="button"
@@ -510,28 +521,65 @@ export default function AdminOffersPanel() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                    Button Label (CTA)
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Claim Best Deal →"
+                    value={form.ctaText}
+                    onChange={(e) => setForm({ ...form, ctaText: e.target.value })}
+                  />
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                    {['Claim Best Deal →', 'Grab Deal →', 'Claim Offer →', 'Claim Festival Offer →', 'Explore Shares →'].map((cta) => (
+                      <button
+                        key={cta}
+                        type="button"
+                        onClick={() => setForm({ ...form, ctaText: cta })}
+                        style={{
+                          background: form.ctaText === cta ? 'var(--blue-light)' : 'rgba(255,255,255,0.06)',
+                          border: `1px solid ${form.ctaText === cta ? 'var(--primary)' : 'var(--border)'}`,
+                          color: form.ctaText === cta ? '#ffffff' : 'var(--text)',
+                          padding: '2px 8px',
+                          borderRadius: 12,
+                          fontSize: '0.72rem',
+                          cursor: 'pointer',
+                          fontWeight: form.ctaText === cta ? 700 : 500,
+                        }}
+                      >
+                        {cta}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
                     Coupon / Promo Code (optional)
                   </label>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="e.g. GANESH24, DIWALI50"
+                    placeholder="e.g. BESTDEAL, DIWALI50"
                     value={form.couponCode}
                     onChange={(e) => setForm({ ...form, couponCode: e.target.value.toUpperCase() })}
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                    Redirect Link
-                  </label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. /shares or /shares/custom-xxx"
-                    value={form.linkUrl}
-                    onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
-                  />
-                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1rem' }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  Redirect Link (CTA Destination)
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. /shares, /shares/custom-xxx or https://example.com/deal"
+                  value={form.linkUrl}
+                  onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
+                />
+                <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
+                  Internal path (e.g. <code>/shares</code>) or full external URL (e.g. <code>https://example.com</code>). External links open in a new tab.
+                </p>
               </div>
 
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -601,10 +649,10 @@ export default function AdminOffersPanel() {
                 }}
               >
                 <label className="form-label" style={{ fontWeight: 700, display: 'block', marginBottom: 4 }}>
-                  🖼 Festival Banner Image
+                  🖼 Banner Image
                 </label>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  Upload high-res festival banner (PNG, JPG, WEBP, max 5MB). Displays in carousel on Web and Mobile.
+                  Upload any image (PNG, JPG, WEBP, max 5MB). Image will be shown based on the Layout Mode selected below.
                 </p>
 
                 {form.imageUrl && (
@@ -662,6 +710,55 @@ export default function AdminOffersPanel() {
                   />
                 </div>
               </div>
+
+              {/* Display Mode Selector — only shown when image is present */}
+              {form.imageUrl && (
+                <div
+                  style={{
+                    background: 'var(--surface)',
+                    padding: '1rem',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    marginBottom: '1.25rem',
+                  }}
+                >
+                  <label className="form-label" style={{ fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                    🎨 Image Layout Mode
+                  </label>
+                  <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
+                    Choose how the uploaded image appears in the deal banner. <strong>"Alongside Text"</strong> is recommended — it works perfectly with any image size.
+                  </p>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {[
+                      { value: 'split' as const, label: '📐 Alongside Text', desc: 'Image shown on right side, never gets cut' },
+                      { value: 'background' as const, label: '🖼 As Background', desc: 'Image fills banner behind text overlay' },
+                      { value: 'full-image' as const, label: '📸 Full Image', desc: 'Image fills banner, text at bottom' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm({ ...form, displayMode: opt.value })}
+                        style={{
+                          flex: '1 1 140px',
+                          padding: '10px 12px',
+                          borderRadius: 10,
+                          border: `2px solid ${form.displayMode === opt.value ? '#7ac142' : 'var(--border)'}`,
+                          background: form.displayMode === opt.value ? 'rgba(122,193,66,0.1)' : 'var(--bg)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: form.displayMode === opt.value ? '#7ac142' : 'var(--ink)', marginBottom: 2 }}>
+                          {opt.label}
+                          {opt.value === 'split' && <span style={{ fontSize: '0.7rem', color: '#7ac142', marginLeft: 4 }}>✓ BEST</span>}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', lineHeight: 1.3 }}>{opt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Status & Sort */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

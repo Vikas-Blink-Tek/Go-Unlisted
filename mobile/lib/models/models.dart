@@ -495,6 +495,7 @@ class GuFestivalOffer {
     this.discountText,
     this.couponCode,
     this.linkUrl,
+    this.displayMode = 'split',
     this.endsAt,
     this.isActive = true,
   });
@@ -507,6 +508,7 @@ class GuFestivalOffer {
   final String? discountText;
   final String? couponCode;
   final String? linkUrl;
+  final String displayMode;
   final DateTime? endsAt;
   final bool isActive;
 
@@ -547,6 +549,7 @@ class GuFestivalOffer {
       discountText: (j['discount_text'] ?? j['discountText'])?.toString(),
       couponCode: (j['coupon_code'] ?? j['couponCode'])?.toString(),
       linkUrl: (j['link_url'] ?? j['linkUrl'])?.toString(),
+      displayMode: (j['display_mode'] ?? j['displayMode'] ?? 'split').toString(),
       endsAt: parseDate(j['ends_at'] ?? j['endsAt']),
       isActive: activeRaw == true || activeRaw == 1 || activeRaw == '1' || activeRaw == null,
     );

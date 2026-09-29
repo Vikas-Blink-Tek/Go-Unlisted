@@ -1936,6 +1936,7 @@ button.footer-link {
   color: #e11d48;
   pointer-events: none;
 }
+.share-card-tag--best-deal { color: #16a34a; font-weight: 800; }
 .share-card-tag--best-seller { color: #e11d48; }
 .share-card-tag--trending { color: #db2777; }
 .share-card-tag--most-purchased { color: #7c3aed; }

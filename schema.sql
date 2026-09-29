@@ -172,6 +172,8 @@ CREATE TABLE IF NOT EXISTS `festival_offers` (
   `discount_text` varchar(100) DEFAULT '',
   `coupon_code` varchar(50) DEFAULT '',
   `link_url` varchar(500) DEFAULT '',
+  `cta_text` varchar(100) DEFAULT '',
+  `display_mode` varchar(20) DEFAULT 'split',
   `ends_at` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT 1,
   `sort_order` int(11) DEFAULT 0,

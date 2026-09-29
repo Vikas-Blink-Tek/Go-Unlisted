@@ -153,6 +153,8 @@ export interface FestivalOffer {
   discountText?: string;
   couponCode?: string;
   linkUrl?: string;
+  ctaText?: string;
+  displayMode?: 'split' | 'background' | 'full-image';
   endsAt?: string | null;
   isActive: boolean;
   sortOrder: number;
