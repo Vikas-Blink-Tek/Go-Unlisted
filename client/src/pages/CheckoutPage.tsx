@@ -14,7 +14,7 @@ type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
 const PAYMENT_MODES: { id: PaymentMode; label: string; desc: string; icon: string }[] = [
   { id: 'neft', label: 'NEFT', desc: 'Transfer via NEFT to our bank account', icon: '🏦' },
   { id: 'imps', label: 'IMPS', desc: 'Instant transfer using IMPS', icon: '⚡' },
-  { id: 'upi', label: 'UPI Apps', desc: 'Copy UPI ID → pay in GPay / PhonePe / Paytm', icon: '📱' },
+  { id: 'upi', label: 'UPI Apps', desc: 'Pay using GPay / PhonePe / Paytm', icon: '📱' },
   { id: 'qr', label: 'Scan QR Code', desc: 'Scan QR or pay using our UPI ID', icon: '📷' },
 ];
 
@@ -135,18 +135,9 @@ export default function CheckoutPage() {
   const total = calcOrderTotal(activePrice, safeQty, settings);
   const chargesBreakdown = calcOrderChargesBreakdown(activePrice, safeQty, settings);
 
-  const copyUpiId = () => {
-    if (!settings.bank_upi?.trim()) {
-      showToast('UPI ID not configured. Contact support.', 'error');
-      return;
-    }
-    navigator.clipboard.writeText(settings.bank_upi);
-    showToast('UPI ID copied — open GPay / PhonePe and pay', 'success');
-  };
-
   const renderUpiSteps = () => (
     <ol className="pay-step-list">
-      <li>Copy our <strong>UPI ID</strong> below.</li>
+      <li>Send payment to our <strong>UPI ID</strong> below.</li>
       <li>
         Open <strong>GPay, PhonePe, or Paytm</strong> and send <strong>{formatCurrency(total)}</strong> to that UPI ID.
       </li>
@@ -162,9 +153,6 @@ export default function CheckoutPage() {
       <span>Merchant UPI</span>
       <strong>{settings.bank_ac_name}</strong>
       <div className="pay-upi-id">{settings.bank_upi || '—'}</div>
-      <button type="button" className="btn btn-primary btn-sm pay-copy-upi-btn" onClick={copyUpiId}>
-        Copy UPI ID
-      </button>
       <div className="pay-amount-box pay-amount-box--inline">
         <span>Pay exactly</span>
         <strong>{formatCurrency(total)}</strong>
@@ -299,7 +287,7 @@ export default function CheckoutPage() {
         {paymentMode === 'qr' && (
           <div className="pay-qr-card">
             <ol className="pay-step-list">
-              <li>Scan the QR below in any UPI app, or copy the UPI ID.</li>
+              <li>Scan the QR below in any UPI app, or use our UPI ID.</li>
               <li>
                 Pay <strong>{formatCurrency(total)}</strong> to <strong>{settings.bank_ac_name}</strong>.
               </li>

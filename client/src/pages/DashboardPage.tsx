@@ -220,6 +220,7 @@ export default function DashboardPage() {
           kycPan: kycForm.pan.toUpperCase(),
           kycDemat: demat,
           kycDematProof: kycForm.dematProof,
+          kycDematProofExists: true,
           bankName: kycForm.bankName.trim(),
           bankAccount: accountDigits,
           ifsc: kycForm.ifsc.toUpperCase(),

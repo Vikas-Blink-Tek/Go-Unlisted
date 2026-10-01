@@ -70,10 +70,8 @@ class _KycScreenState extends State<KycScreen> {
         _proofBytes = result.bytes;
         _proofContentType = result.contentType;
       });
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
+    } on ApiException {
+      // Ignored: document preview could not be streamed
     } finally {
       if (mounted) setState(() => _loadingProof = false);
     }
@@ -117,6 +115,7 @@ class _KycScreenState extends State<KycScreen> {
             ? 'application/pdf'
             : 'image/${file.extension ?? 'jpeg'}';
       });
+      if (!mounted) return;
       await context.read<AuthProvider>().refreshUser();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,6 +147,7 @@ class _KycScreenState extends State<KycScreen> {
         'ifsc': _ifsc.text.trim().toUpperCase(),
         'kycDematProof': _proofPath,
       });
+      if (!mounted) return;
       await context.read<AuthProvider>().refreshUser();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,6 +248,42 @@ class _KycScreenState extends State<KycScreen> {
                     ),
                   ),
                   TextButton(onPressed: _loadProofPreview, child: const Text('Reload')),
+                ],
+              ),
+            )
+          else if (_proofPath != null && _proofPath!.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: GuColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: GuColors.border),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _isPdf ? Icons.picture_as_pdf_rounded : Icons.description_rounded,
+                    color: GuColors.navy,
+                    size: 32,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _proofPath?.split('/').last ?? 'CMR document',
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Document uploaded & on file',
+                          style: TextStyle(color: GuColors.muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(onPressed: _loadProofPreview, child: const Text('View')),
                 ],
               ),
             )

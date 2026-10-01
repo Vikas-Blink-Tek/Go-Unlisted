@@ -644,17 +644,7 @@ class _UpiIdCard extends StatelessWidget {
               settings!.upiId!,
               style: GoogleFonts.robotoMono(fontWeight: FontWeight.w700, fontSize: 16),
             ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: settings!.upiId!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('UPI ID copied — open GPay / PhonePe and pay')),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded, size: 16),
-              label: const Text('Copy UPI ID'),
-            ),
+
           ],
           if (total != null) ...[
             const SizedBox(height: 12),

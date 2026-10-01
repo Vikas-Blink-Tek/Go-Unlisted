@@ -152,6 +152,15 @@ function autoMigrateSchema($conn) {
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE users ADD COLUMN kyc_demat_proof VARCHAR(255) DEFAULT NULL AFTER kyc_demat");
     }
+    // Proof data stored in DB so it survives server redeploys
+    $res = $conn->query("SHOW COLUMNS FROM users LIKE 'kyc_demat_proof_data'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN kyc_demat_proof_data LONGBLOB DEFAULT NULL AFTER kyc_demat_proof");
+    }
+    $res = $conn->query("SHOW COLUMNS FROM users LIKE 'kyc_demat_proof_mime'");
+    if ($res && $res->num_rows === 0) {
+        $conn->query("ALTER TABLE users ADD COLUMN kyc_demat_proof_mime VARCHAR(50) DEFAULT NULL AFTER kyc_demat_proof_data");
+    }
 
     $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'ops_note'");
     if ($res && $res->num_rows === 0) {
@@ -938,7 +947,7 @@ function mapUserRow(array $row): array {
         'kycPan' => $row['kyc_pan'],
         'kycDemat' => $row['kyc_demat'],
         'kycDematProof' => $proof,
-        'kycDematProofExists' => $proof !== '' && resolveKycProofAbsolutePath($proof) !== null,
+        'kycDematProofExists' => $proof !== '' || !empty($row['kyc_demat_proof_data']),
         'bankAccount' => $row['bank_account'],
         'bankName' => $row['bank_name'] ?? '',
         'ifsc' => $row['ifsc'],
@@ -1032,11 +1041,13 @@ function storeUploadedKycProofFile(string $userIdForName): array {
     $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', $userIdForName) ?: 'user';
     $filename = 'kyc_' . $safeUser . '_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
     $target = $uploadDir . $filename;
+    // Read file bytes before move so we can store in DB
+    $fileBytes = file_get_contents($tmpName);
     if (!move_uploaded_file($tmpName, $target)) {
         return ['ok' => false, 'error' => 'Failed to save file', 'http' => 500];
     }
     @chmod($target, 0644);
-    return ['ok' => true, 'url' => 'uploads/kyc/' . $filename];
+    return ['ok' => true, 'url' => 'uploads/kyc/' . $filename, 'bytes' => $fileBytes, 'mime' => $mime];
 }
 
 /** Stream a KYC proof file (exits). Call after auth + path checks. */
@@ -1792,7 +1803,7 @@ switch ($action) {
         $userRow = resolveUserByLoginId($conn, $loginId);
         if ($userRow) {
             $uid = $userRow['id'];
-            $stmt = $conn->prepare("SELECT id, password, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc FROM users WHERE id = ? LIMIT 1");
+            $stmt = $conn->prepare("SELECT id, password, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, (kyc_demat_proof_data IS NOT NULL) AS kyc_demat_proof_data FROM users WHERE id = ? LIMIT 1");
             $stmt->bind_param('s', $uid);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -1924,7 +1935,7 @@ switch ($action) {
             ]);
         } else if (isset($_SESSION['user_id'])) {
             $uid = $_SESSION['user_id'];
-            $stmt = $conn->prepare('SELECT id, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc FROM users WHERE id = ?');
+            $stmt = $conn->prepare('SELECT id, name, email, phone, referral_code, kyc_status, kyc_reject_reason, kyc_pan, kyc_demat, kyc_demat_proof, bank_account, bank_name, ifsc, (kyc_demat_proof_data IS NOT NULL) AS kyc_demat_proof_data FROM users WHERE id = ?');
             $stmt->bind_param('s', $uid);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -2450,7 +2461,8 @@ switch ($action) {
         $data = [];
         while ($row = $res->fetch_assoc()) {
             $proof = trim((string) ($row['kyc_demat_proof'] ?? ''));
-            $row['kyc_demat_proof_exists'] = ($proof !== '' && resolveKycProofAbsolutePath($proof) !== null) ? 1 : 0;
+            $row['kyc_demat_proof_exists'] = ($proof !== '' || !empty($row['kyc_demat_proof_data'])) ? 1 : 0;
+            unset($row['kyc_demat_proof_data']); // Don't send blob in list responses
             $data[] = $row;
         }
         sendResponse($data);
@@ -2777,9 +2789,14 @@ switch ($action) {
         }
         $proofPath = __DIR__ . '/../' . $kyc_demat_proof;
         if (!is_file($proofPath)) {
-            http_response_code(400);
-            sendResponse(['error' => 'Demat proof file not found. Please upload again.']);
-            break;
+            $dbChk = $conn->prepare('SELECT id FROM users WHERE id = ? AND kyc_demat_proof_data IS NOT NULL LIMIT 1');
+            $dbChk->bind_param('s', $user_id);
+            $dbChk->execute();
+            if (!$dbChk->get_result()->fetch_assoc()) {
+                http_response_code(400);
+                sendResponse(['error' => 'Demat proof file not found. Please upload again.']);
+                break;
+            }
         }
 
         $kyc_pan = htmlspecialchars($kyc_pan);
@@ -2813,6 +2830,14 @@ switch ($action) {
             break;
         }
         $url = (string) $stored['url'];
+        // Also persist proof bytes + mime in DB so they survive redeploys
+        if (!empty($stored['bytes']) && !empty($stored['mime'])) {
+            $upd = $conn->prepare('UPDATE users SET kyc_demat_proof_data = ?, kyc_demat_proof_mime = ? WHERE id = ?');
+            $null = null;
+            $upd->bind_param('bss', $null, $stored['mime'], $user_id);
+            $upd->send_long_data(0, $stored['bytes']);
+            $upd->execute();
+        }
         logAudit($conn, 'Upload KYC Demat Proof', (string) $user_id, ['file' => basename($url)]);
         sendResponse(['success' => true, 'url' => $url]);
         break;
@@ -2848,6 +2873,14 @@ switch ($action) {
             break;
         }
         $url = (string) $stored['url'];
+        // Also persist proof bytes + mime in DB so they survive redeploys
+        if (!empty($stored['bytes']) && !empty($stored['mime'])) {
+            $upd2 = $conn->prepare('UPDATE users SET kyc_demat_proof_data = ?, kyc_demat_proof_mime = ? WHERE id = ?');
+            $null2 = null;
+            $upd2->bind_param('bss', $null2, $stored['mime'], $targetUserId);
+            $upd2->send_long_data(0, $stored['bytes']);
+            $upd2->execute();
+        }
         $upd = $conn->prepare('UPDATE users SET kyc_demat_proof = ? WHERE id = ?');
         $upd->bind_param('ss', $url, $targetUserId);
         if (!$upd->execute()) {
@@ -2887,12 +2920,12 @@ switch ($action) {
         $fileParam = ltrim(str_replace('\\', '/', trim((string) ($_GET['file'] ?? ''))), '/');
         $relative = '';
 
+        if (!$isAdmin) {
+            // Non-admin user can only view their own proof — always set target to session user
+            $targetUserId = $sessionUserId;
+        }
+
         if ($targetUserId !== '') {
-            if (!$isAdmin && $targetUserId !== $sessionUserId) {
-                http_response_code(403);
-                sendResponse(['error' => 'Forbidden']);
-                break;
-            }
             if ($isAdmin && !adminUserInScope($conn, $targetUserId)) {
                 http_response_code(403);
                 sendResponse(['error' => 'You can only view proofs for your referral clients']);
@@ -2908,21 +2941,14 @@ switch ($action) {
                 break;
             }
             $relative = trim((string) ($urow['kyc_demat_proof'] ?? ''));
+            if ($relative === '' && $fileParam !== '') {
+                $relative = $fileParam;
+            }
         } elseif ($fileParam !== '') {
-            // Preview right after upload (path not yet saved on user row)
             if (!preg_match('#^uploads/kyc/[a-zA-Z0-9._-]+$#', $fileParam)) {
                 http_response_code(400);
                 sendResponse(['error' => 'Invalid proof path']);
                 break;
-            }
-            if (!$isAdmin) {
-                $safeUser = preg_replace('/[^a-zA-Z0-9_-]/', '', $sessionUserId) ?: 'user';
-                $base = basename($fileParam);
-                if (strpos($base, 'kyc_' . $safeUser . '_') !== 0) {
-                    http_response_code(403);
-                    sendResponse(['error' => 'Forbidden']);
-                    break;
-                }
             }
             $relative = $fileParam;
         } else {
@@ -2932,15 +2958,47 @@ switch ($action) {
         }
 
         if ($relative === '') {
+            // No file path — check if we have proof data stored in DB
+            $lookupId = $targetUserId !== '' ? $targetUserId : $sessionUserId;
+            $dbChk = $conn->prepare('SELECT kyc_demat_proof_data, kyc_demat_proof_mime FROM users WHERE id = ? AND kyc_demat_proof_data IS NOT NULL LIMIT 1');
+            $dbChk->bind_param('s', $lookupId);
+            $dbChk->execute();
+            $dbRow = $dbChk->get_result()->fetch_assoc();
+            if ($dbRow && !empty($dbRow['kyc_demat_proof_data'])) {
+                $mime = $dbRow['kyc_demat_proof_mime'] ?: 'application/octet-stream';
+                header_remove('Content-Type');
+                header('Content-Type: ' . $mime);
+                header('Content-Length: ' . strlen($dbRow['kyc_demat_proof_data']));
+                header('Cache-Control: private, max-age=300');
+                header('X-Content-Type-Options: nosniff');
+                echo $dbRow['kyc_demat_proof_data'];
+                exit;
+            }
             http_response_code(404);
             sendResponse(['error' => 'No demat proof on file. Ask the client to re-upload CMR.']);
             break;
         }
         $abs = resolveKycProofAbsolutePath($relative);
         if ($abs === null) {
+            // File missing on disk — try serving from DB instead
+            $lookupId = $targetUserId !== '' ? $targetUserId : $sessionUserId;
+            $dbChk = $conn->prepare('SELECT kyc_demat_proof_data, kyc_demat_proof_mime FROM users WHERE id = ? AND kyc_demat_proof_data IS NOT NULL LIMIT 1');
+            $dbChk->bind_param('s', $lookupId);
+            $dbChk->execute();
+            $dbRow = $dbChk->get_result()->fetch_assoc();
+            if ($dbRow && !empty($dbRow['kyc_demat_proof_data'])) {
+                $mime = $dbRow['kyc_demat_proof_mime'] ?: 'application/octet-stream';
+                header_remove('Content-Type');
+                header('Content-Type: ' . $mime);
+                header('Content-Length: ' . strlen($dbRow['kyc_demat_proof_data']));
+                header('Cache-Control: private, max-age=300');
+                header('X-Content-Type-Options: nosniff');
+                echo $dbRow['kyc_demat_proof_data'];
+                exit;
+            }
             http_response_code(404);
             sendResponse([
-                'error' => 'Proof file missing on server (often deleted during redeploy). Ask the client to re-upload CMR from their dashboard.',
+                'error' => 'Proof file missing on server. Please re-upload CMR from your KYC screen.',
                 'path' => $relative,
             ]);
             break;

@@ -103,20 +103,16 @@ export default function KycDetailsCard({ user, mode }: Props) {
                 <dt>CMR / Demat proof</dt>
                 <dd>
                   {user.kycDematProof ? (
-                    user.kycDematProofExists === false ? (
-                      <span style={{ color: 'var(--danger, #dc2626)' }}>File missing — please re-upload</span>
-                    ) : (
-                      <button type="button" className="kyc-proof-open-btn" onClick={openViewer}>
-                        {proofIsPdf ? 'View PDF proof' : 'View uploaded proof'}
-                      </button>
-                    )
+                    <button type="button" className="kyc-proof-open-btn" onClick={openViewer}>
+                      {proofIsPdf ? 'View PDF proof' : 'View uploaded proof'}
+                    </button>
                   ) : (
                     '—'
                   )}
                 </dd>
               </div>
             </dl>
-            {user.kycDematProof && user.kycDematProofExists !== false && !proofIsPdf && (
+            {user.kycDematProof && !proofIsPdf && (
               <div className="kyc-proof-preview">
                 <img
                   src={proofSrc || undefined}
@@ -125,6 +121,10 @@ export default function KycDetailsCard({ user, mode }: Props) {
                   tabIndex={0}
                   title="Click to zoom"
                   onClick={openViewer}
+                  onError={(e) => {
+                    // Hide empty preview if image fails to load
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
