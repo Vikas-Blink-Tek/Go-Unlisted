@@ -310,6 +310,7 @@ ul {
   padding: 6px 14px;
   border-radius: 8px;
   position: relative;
+  white-space: nowrap;
 }
 
 .nav-link:hover {

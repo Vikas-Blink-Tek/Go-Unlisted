@@ -13,7 +13,7 @@ import { formatIndianPhoneDisplay } from '../../utils/format';
 
 const navLinks = [
   { to: '/', label: 'Home' },
-  { to: '/shares', label: 'Shares' },
+  { to: '/shares', label: 'Unlisted Shares' },
   { to: '/dashboard', label: 'Portfolio' },
   { to: '/articles', label: 'Articles' },
   { to: '/about', label: 'About' },

@@ -36,7 +36,22 @@ function useCountdown(targetIso: string | null | undefined) {
   }, [targetIso, now]);
 }
 
-function OfferCard({ offer, variant = 'hero' }: { offer: FestivalOffer; variant?: 'hero' | 'catalog' | 'compact' }) {
+const FESTIVE_RE = /festiv/i;
+
+/** Client positions every promo as a "Best Deal" — never surface festival wording. */
+function toBestDealWording(value: string | null | undefined, fallback: string): string {
+  const v = (value || '').trim();
+  if (!v) return '';
+  return FESTIVE_RE.test(v) ? fallback : v;
+}
+
+function OfferCard({ offer: rawOffer, variant = 'hero' }: { offer: FestivalOffer; variant?: 'hero' | 'catalog' | 'compact' }) {
+  const offer: FestivalOffer = {
+    ...rawOffer,
+    tagline: toBestDealWording(rawOffer.tagline, '⭐ Best Deal') || '⭐ Best Deal',
+    discountText: toBestDealWording(rawOffer.discountText, 'BEST PRICE'),
+    ctaText: toBestDealWording(rawOffer.ctaText, 'Claim Best Deal →'),
+  };
   const countdown = useCountdown(offer.endsAt);
   const [copied, setCopied] = useState(false);
 
@@ -61,7 +76,6 @@ function OfferCard({ offer, variant = 'hero' }: { offer: FestivalOffer; variant?
   const ctaLabel = useMemo(() => {
     if (offer.ctaText?.trim()) return offer.ctaText.trim();
     const hay = `${offer.title} ${offer.tagline || ''}`.toLowerCase();
-    if (hay.includes('festiv')) return 'Claim Festival Offer →';
     if (hay.includes('bulk')) return 'Claim Bulk Deal →';
     if (hay.includes('flash')) return 'Claim Flash Deal →';
     return 'Claim Best Deal →';

@@ -194,7 +194,7 @@ export default function AdminOffersPanel() {
     <div className="admin-offers-panel">
       <AdminSectionHeader
         title="Best Deals & Countdown Banners"
-        subtitle="Create Best Deals, flash offers, festival banners (Diwali, etc.), and running countdown discounts visible across Web & Mobile app."
+        subtitle="Create Best Deals, flash offers, bulk deals, and running countdown discounts visible on Home & Unlisted Shares pages (Web & Mobile app)."
         action={
           <button type="button" className="btn btn-primary" onClick={openNew}>
             + Add Best Deal / Offer
@@ -231,7 +231,7 @@ export default function AdminOffersPanel() {
           <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>⭐</div>
           <h3 style={{ margin: '0 0 0.5rem', color: 'var(--ink)' }}>No Active Deals Yet</h3>
           <p style={{ margin: '0 0 1.25rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
-            Add a Best Deal, 24-hour flash sale, festive banner, or promotional discount to attract investors on Home and Shares pages.
+            Add a Best Deal, 24-hour flash sale, bulk deal, or promotional discount to attract investors on Home and Shares pages.
           </p>
           <button type="button" className="btn btn-primary" onClick={openNew}>
             + Create First Deal
@@ -440,7 +440,7 @@ export default function AdminOffersPanel() {
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. Best Deal on Pre-IPO Shares, Mega Festival Discount, Diwali Dhamaka"
+                  placeholder="e.g. Best Deal on Pre-IPO Shares, Bulk Deal, Weekend Best Price"
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   required
@@ -460,7 +460,7 @@ export default function AdminOffersPanel() {
                     onChange={(e) => setForm({ ...form, tagline: e.target.value })}
                   />
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['⭐ Best Deal', '🔥 Trending Deal', '⏳ Limited Deal', '⚡ Flash Deal', '✨ Festival Special', '💥 Best Seller', '💎 Exclusive'].map((badge) => (
+                    {['⭐ Best Deal', '🔥 Trending Deal', '⏳ Limited Deal', '⚡ Flash Deal', '💥 Best Seller', '💎 Exclusive'].map((badge) => (
                       <button
                         key={badge}
                         type="button"
@@ -494,7 +494,7 @@ export default function AdminOffersPanel() {
                     onChange={(e) => setForm({ ...form, discountText: e.target.value })}
                   />
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['BEST DEAL', 'BEST PRICE', 'EXTRA 5% OFF', 'FLAT 10% OFF', 'FLAT 20% OFF', 'FLAT ₹500 OFF', 'BEST FESTIVE PRICE'].map((disc) => (
+                    {['BEST DEAL', 'BEST PRICE', 'EXTRA 5% OFF', 'FLAT 10% OFF', 'FLAT 20% OFF', 'FLAT ₹500 OFF'].map((disc) => (
                       <button
                         key={disc}
                         type="button"
@@ -531,7 +531,7 @@ export default function AdminOffersPanel() {
                     onChange={(e) => setForm({ ...form, ctaText: e.target.value })}
                   />
                   <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
-                    {['Claim Best Deal →', 'Grab Deal →', 'Claim Offer →', 'Claim Festival Offer →', 'Explore Shares →'].map((cta) => (
+                    {['Claim Best Deal →', 'Grab Deal →', 'Claim Offer →', 'Explore Shares →'].map((cta) => (
                       <button
                         key={cta}
                         type="button"

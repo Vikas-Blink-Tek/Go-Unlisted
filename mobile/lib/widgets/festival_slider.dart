@@ -129,6 +129,21 @@ class _FestivalCard extends StatelessWidget {
 
   final GuFestivalOffer offer;
 
+  static final _festive = RegExp('festiv', caseSensitive: false);
+
+  /// Client positions every promo as a "Best Deal" — never surface festival wording.
+  String get _tagline {
+    final t = (offer.tagline ?? '').trim();
+    if (t.isEmpty || _festive.hasMatch(t)) return '⭐ Best Deal';
+    if (RegExp(r'^[⭐🔥⏳⚡✨💥💎]', unicode: true).hasMatch(t)) return t;
+    return '⭐ $t';
+  }
+
+  String get _discountText {
+    final d = (offer.discountText ?? '').trim();
+    return _festive.hasMatch(d) ? 'BEST PRICE' : d;
+  }
+
   String _formatCountdown(DateTime? target) {
     if (target == null) return '';
     final diff = target.difference(DateTime.now());
@@ -187,7 +202,7 @@ class _FestivalCard extends StatelessWidget {
     Widget buildBadges() {
       return Row(
         children: [
-          if (offer.tagline != null && offer.tagline!.isNotEmpty)
+          if (_tagline.isNotEmpty)
             Flexible(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -197,7 +212,7 @@ class _FestivalCard extends StatelessWidget {
                   border: Border.all(color: GuColors.lime, width: 1),
                 ),
                 child: Text(
-                  '✨ ${offer.tagline}',
+                  _tagline,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.manrope(
@@ -265,11 +280,11 @@ class _FestivalCard extends StatelessWidget {
           const SizedBox(height: 3),
           Row(
             children: [
-              if (offer.discountText != null && offer.discountText!.isNotEmpty)
+              if (_discountText.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: Text(
-                    offer.discountText!,
+                    _discountText,
                     style: GoogleFonts.manrope(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
