@@ -320,7 +320,7 @@ function autoMigrateSchema($conn) {
         'listing_price' => 'DECIMAL(12,2) DEFAULT NULL',
         'qty_on_hand' => 'INT NOT NULL DEFAULT 0',
         'is_top10' => 'TINYINT(1) NOT NULL DEFAULT 0',
-        // Manual card ribbon: '' (auto) / Trending / Most Purchased
+        // Manual card ribbon: '' (auto) / Trending / Most Purchased / New
         'card_badge' => "VARCHAR(30) DEFAULT ''",
         'discount_tiers' => 'TEXT',
         // SEBI draft: Not Filed / DRHP Pending / DRHP Filed / DRHP Approved
@@ -4610,7 +4610,7 @@ switch ($action) {
         $is_featured = !empty($data['isFeatured']) ? 1 : 0;
         $is_top10 = !empty($data['isTop10']) ? 1 : 0;
         $card_badge = trim((string) ($data['cardBadge'] ?? ''));
-        if (!in_array($card_badge, ['', 'Trending', 'Most Purchased'], true)) {
+        if (!in_array($card_badge, ['', 'Trending', 'Most Purchased', 'New'], true)) {
             $card_badge = '';
         }
         $discount_tiers = '[]';

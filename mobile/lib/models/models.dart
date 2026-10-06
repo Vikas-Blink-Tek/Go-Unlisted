@@ -147,7 +147,7 @@ class GuShare {
   final bool? ratesVisible;
   final bool featured;
   final bool isTop10;
-  /// Manual card ribbon from admin: '' (auto) / Trending / Most Purchased.
+  /// Manual card ribbon from admin: '' (auto) / Trending / Most Purchased / New.
   final String cardBadge;
   final List<String> highlights;
   final String? valuation;

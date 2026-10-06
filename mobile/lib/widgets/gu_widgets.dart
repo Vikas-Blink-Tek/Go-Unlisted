@@ -158,6 +158,7 @@ class GuBrandMark extends StatelessWidget {
 String getShareCardTag(GuShare share) {
   if (share.isTrackRecordOnly) return 'Sample';
   if (share.cardBadge == 'Most Purchased') return 'Most Purchased';
+  if (share.cardBadge == 'New') return 'New';
   if (share.cardBadge == 'Trending') return 'Trending';
   if (share.featured) return 'Best Seller';
   if (share.isTop10) return 'Trending';
@@ -174,6 +175,8 @@ Color shareCardTagColor(String label) {
       return const Color(0xFFDB2777);
     case 'Most Purchased':
       return const Color(0xFF7C3AED);
+    case 'New':
+      return const Color(0xFF059669);
     case 'Limited':
     case 'On Request':
       return const Color(0xFFD97706);

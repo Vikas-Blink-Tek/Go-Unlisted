@@ -356,6 +356,7 @@ export default function StockListingModal({
                       <option value="Best Deal">⭐ Best Deal</option>
                       <option value="Trending">🔥 Trending</option>
                       <option value="Most Purchased">🛒 Most Purchased</option>
+                      <option value="New">✨ New</option>
                     </select>
                     <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: 6 }}>
                       Ribbon shown on website &amp; app share cards

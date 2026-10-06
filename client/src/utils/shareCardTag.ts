@@ -3,7 +3,7 @@ import { isShareUnavailable } from './inventory';
 
 export type ShareCardTag = {
   label: string;
-  kind: 'best-deal' | 'best-seller' | 'trending' | 'most-purchased' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
+  kind: 'best-deal' | 'best-seller' | 'trending' | 'most-purchased' | 'new' | 'active' | 'limited' | 'on-request' | 'out-of-stock' | 'listed';
 };
 
 /**
@@ -29,6 +29,9 @@ export function getShareCardTag(
   }
   if (manual === 'Most Purchased') {
     return { label: 'Most Purchased', kind: 'most-purchased' };
+  }
+  if (manual === 'New') {
+    return { label: 'New', kind: 'new' };
   }
   if (manual === 'Trending') {
     return { label: 'Trending', kind: 'trending' };
