@@ -99,11 +99,17 @@ class CatalogProvider extends ChangeNotifier {
   }
 
   GuShare? byId(String id) {
-    try {
-      return _shares.firstWhere((s) => s.id == id);
-    } catch (_) {
-      return null;
+    for (final s in _shares) {
+      if (s.id == id) return s;
     }
+    // Deal / shared links may use ticker or company-name slug instead of the internal id
+    String slug(String v) => v.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '');
+    final key = slug(Uri.decodeComponent(id));
+    if (key.isEmpty) return null;
+    for (final s in _shares) {
+      if (slug(s.id) == key || slug(s.ticker) == key || slug(s.name) == key) return s;
+    }
+    return null;
   }
 
   void setQuery(String q) {

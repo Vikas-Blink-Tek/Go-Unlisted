@@ -3990,3 +3990,100 @@ button.footer-link {
   color: inherit;
   font: inherit;
 }
+
+/* ── Deal banner (Home / Unlisted Shares / detail) — artwork 3:1, info strip below ── */
+.deal-banner {
+  border-radius: 20px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #071933 0%, #0c2b53 55%, #0a2f2b 100%);
+  border: 1px solid rgba(122, 193, 66, 0.28);
+  box-shadow: 0 14px 36px rgba(7, 25, 51, 0.18);
+  color: #fff;
+}
+.deal-banner-image-link { display: block; line-height: 0; background: #0b1a33; }
+.deal-banner-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+.deal-banner-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.4rem;
+}
+.deal-banner-bar--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 1.6rem 1.8rem;
+}
+.deal-banner-details { min-width: 0; flex: 1 1 320px; }
+.deal-banner-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.45rem; }
+.deal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+.deal-badge--tag { background: #facc15; color: #1c1917; }
+.deal-badge--timer { background: #dc2626; color: #fff; }
+.deal-badge--timer strong { font-family: ui-monospace, Menlo, monospace; font-weight: 800; letter-spacing: 0; text-transform: none; }
+.deal-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; }
+.deal-banner-title {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.2vw, 1.5rem);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.deal-banner--text .deal-banner-title { font-size: clamp(1.35rem, 3vw, 2rem); }
+.deal-banner-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.7rem; margin-top: 0.35rem; }
+.deal-banner-discount {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #0f2a0a;
+  background: #9ff562;
+  padding: 1px 8px;
+  border-radius: 6px;
+}
+.deal-banner-desc { font-size: 0.88rem; color: rgba(255, 255, 255, 0.88); line-height: 1.4; }
+.deal-banner-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; flex-shrink: 0; }
+.deal-banner-cta {
+  padding: 0.6rem 1.3rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.deal-banner-coupon {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px dashed rgba(255, 255, 255, 0.5);
+  color: #fff;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.deal-banner-coupon strong { color: #9ff562; letter-spacing: 0.05em; }
+.deal-banner-coupon span { margin-left: 0.3rem; opacity: 0.8; font-size: 0.74rem; }
+.deal-banner--compact .deal-banner-bar { padding: 0.75rem 1.1rem; }
+
+@media (max-width: 640px) {
+  .deal-banner { border-radius: 14px; }
+  .deal-banner-bar { padding: 0.8rem 0.95rem; gap: 0.7rem; }
+  .deal-banner-details { flex-basis: 100%; }
+  .deal-banner-actions { width: 100%; }
+  .deal-banner-cta { flex: 1; text-align: center; }
+  .deal-badge { font-size: 0.68rem; padding: 2px 9px; }
+}

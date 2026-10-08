@@ -23,8 +23,16 @@ class ShareDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final share = context.watch<CatalogProvider>().byId(shareId);
+    final catalog = context.watch<CatalogProvider>();
+    final share = catalog.byId(shareId);
     final auth = context.watch<AuthProvider>();
+
+    if (share == null && catalog.loading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Share')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     if (share == null) {
       return Scaffold(

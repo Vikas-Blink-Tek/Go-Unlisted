@@ -18,6 +18,10 @@ class FestivalSlider extends StatefulWidget {
   State<FestivalSlider> createState() => _FestivalSliderState();
 }
 
+/// Deal artwork is uploaded at 1800×600 (3:1) — shown uncropped, details in a strip below.
+const double kDealBannerRatio = 3;
+const double kDealInfoStripHeight = 118;
+
 class _FestivalSliderState extends State<FestivalSlider> {
   late final PageController _pageController;
   Timer? _autoScrollTimer;
@@ -81,9 +85,10 @@ class _FestivalSliderState extends State<FestivalSlider> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 220,
-            child: PageView.builder(
+          LayoutBuilder(
+            builder: (context, constraints) => SizedBox(
+              height: (constraints.maxWidth - 4) / kDealBannerRatio + kDealInfoStripHeight,
+              child: PageView.builder(
               controller: _pageController,
               itemCount: offers.length,
               onPageChanged: (index) {
@@ -93,6 +98,7 @@ class _FestivalSliderState extends State<FestivalSlider> {
                 final offer = offers[index];
                 return _FestivalCard(offer: offer);
               },
+            ),
             ),
           ),
           if (offers.length > 1) ...[
@@ -164,20 +170,41 @@ class _FestivalCard extends StatelessWidget {
     return '${hStr}h : ${mStr}m : ${sStr}s';
   }
 
+  static const _siteHosts = {'go-unlisted.com', 'www.go-unlisted.com', 'gounlisted.in', 'www.gounlisted.in'};
+
+  /// Admin pastes website links (full URL or path). Map them to in-app screens so guests
+  /// and logged-in users both land on the stock — only foreign sites open the browser.
   void _handleAction(BuildContext context) {
-    final link = offer.linkUrl?.trim();
-    if (link != null && link.isNotEmpty) {
-      if (link.startsWith('http://') || link.startsWith('https://')) {
-        launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication);
-        return;
-      }
-      if (link.startsWith('/')) {
-        context.go(link);
-        return;
-      }
+    var link = (offer.linkUrl ?? '').trim();
+    if (RegExp(r'^(www\.)?[a-z0-9-]+\.[a-z]{2,}(/|$)', caseSensitive: false).hasMatch(link)) {
+      link = 'https://$link';
     }
-    // Default: navigate to browse shares
-    context.go('/app/shares');
+    if (link.startsWith('http://') || link.startsWith('https://')) {
+      final uri = Uri.tryParse(link);
+      if (uri == null) {
+        context.go('/app/shares');
+        return;
+      }
+      if (!_siteHosts.contains(uri.host.toLowerCase())) {
+        launchUrl(uri, mode: LaunchMode.externalApplication);
+        return;
+      }
+      link = uri.path;
+    }
+    if (link.isNotEmpty && !link.startsWith('/')) link = '/$link';
+
+    final segments = link.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.length >= 2 && segments[0] == 'shares') {
+      context.push('/shares/${segments[1]}');
+    } else if (segments.isEmpty) {
+      context.go('/app');
+    } else if (segments[0] == 'shares') {
+      context.go('/app/shares');
+    } else if (segments[0] == 'dashboard') {
+      context.go('/app/portfolio');
+    } else {
+      context.go('/app/shares');
+    }
   }
 
   void _copyCoupon(BuildContext context, String code) {
@@ -196,389 +223,158 @@ class _FestivalCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final countdownStr = _formatCountdown(offer.endsAt);
     final hasImage = offer.resolvedImageUrl.isNotEmpty;
-    final mode = hasImage ? offer.displayMode : 'background';
+    final showTimer = countdownStr.isNotEmpty && countdownStr != 'Ended';
 
-    // --- Shared widgets ---
-    Widget buildBadges() {
-      return Row(
-        children: [
-          if (_tagline.isNotEmpty)
-            Flexible(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: GuColors.lime.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: GuColors.lime, width: 1),
-                ),
-                child: Text(
-                  _tagline,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.manrope(
-                    color: const Color(0xFFA5F36A),
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-          if (countdownStr.isNotEmpty && countdownStr != 'Ended') ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: Colors.redAccent.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.7)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Colors.redAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    countdownStr,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
+    Widget badge(String text, Color bg, Color fg, {bool mono = false}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: mono
+              ? TextStyle(color: fg, fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w800)
+              : GoogleFonts.manrope(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+        ),
       );
     }
 
-    Widget buildTitleAndDiscount() {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
+    final badges = Row(
+      children: [
+        Flexible(child: badge(_tagline.toUpperCase(), const Color(0xFFFACC15), const Color(0xFF1C1917))),
+        if (showTimer) ...[
+          const SizedBox(width: 6),
+          Flexible(child: badge('ENDS IN $countdownStr', const Color(0xFFDC2626), Colors.white, mono: true)),
+        ],
+      ],
+    );
+
+    final titleRow = Row(
+      children: [
+        Flexible(
+          child: Text(
             offer.title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.manrope(
-              fontSize: mode == 'split' ? 16 : 18,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
               color: Colors.white,
-              letterSpacing: -0.3,
+              letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(height: 3),
-          Row(
-            children: [
-              if (_discountText.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(
-                    _discountText,
-                    style: GoogleFonts.manrope(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: GuColors.lime,
-                    ),
-                  ),
-                ),
-              if (offer.description != null && offer.description!.isNotEmpty)
-                Expanded(
-                  child: Text(
-                    offer.description!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
-                ),
-            ],
+        ),
+        if (_discountText.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(color: const Color(0xFF9FF562), borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              _discountText,
+              maxLines: 1,
+              style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF0F2A0A)),
+            ),
           ),
         ],
-      );
-    }
+      ],
+    );
 
-    Widget buildActionRow() {
-      return Row(
-        children: [
-          FilledButton(
+    final actionRow = Row(
+      children: [
+        Expanded(
+          child: FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: GuColors.lime,
               foregroundColor: const Color(0xFF082208),
               elevation: 0,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              minimumSize: Size.zero,
+              minimumSize: const Size(0, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => _handleAction(context),
-            child: Text(
-              'Grab Deal →',
-              style: GoogleFonts.manrope(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
-              ),
-            ),
+            child: Text('Claim Best Deal →', style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 12.5)),
           ),
-          if (offer.couponCode != null && offer.couponCode!.isNotEmpty) ...[
-            const SizedBox(width: 8),
-            InkWell(
-              onTap: () => _copyCoupon(context, offer.couponCode!),
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.3),
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      offer.couponCode!,
-                      style: GoogleFonts.manrope(
-                        color: const Color(0xFFA5F36A),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 11.5,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.copy_rounded,
-                      size: 12,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      );
-    }
-
-    // ========================
-    // MODE: SPLIT — text left, image right (never crops)
-    // ========================
-    if (mode == 'split') {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF061A3A),
-              Color(0xFF003478),
-              Color(0xFF084C38),
-            ],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF003478).withValues(alpha: 0.25),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            // Left: Text content (55%)
-            Expanded(
-              flex: 55,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    buildBadges(),
-                    buildTitleAndDiscount(),
-                    buildActionRow(),
-                  ],
-                ),
+        if (offer.couponCode != null && offer.couponCode!.isNotEmpty) ...[
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: () => _copyCoupon(context, offer.couponCode!),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
               ),
-            ),
-            // Right: Image (45%) — never cropped
-            Expanded(
-              flex: 45,
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.15),
-                padding: const EdgeInsets.all(10),
-                child: CachedNetworkImage(
-                  imageUrl: offer.resolvedImageUrl,
-                  fit: BoxFit.contain,
-                  errorWidget: (context, error, stackTrace) => const SizedBox(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // ========================
-    // MODE: FULL-IMAGE — image fills card, text at bottom
-    // ========================
-    if (mode == 'full-image') {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF003478).withValues(alpha: 0.25),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Full image
-            if (hasImage)
-              CachedNetworkImage(
-                imageUrl: offer.resolvedImageUrl,
-                fit: BoxFit.cover,
-                errorWidget: (context, error, stackTrace) => const SizedBox(),
-              ),
-
-            // Bottom gradient for text readability
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  stops: [0.0, 0.4, 0.7, 1.0],
-                  colors: [
-                    Colors.transparent,
-                    Color(0x0D000000),
-                    Color(0x66000000),
-                    Color(0xDD000000),
-                  ],
-                ),
-              ),
-            ),
-
-            // Text at bottom
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  buildBadges(),
-                  const SizedBox(height: 4),
                   Text(
-                    offer.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    offer.couponCode!,
                     style: GoogleFonts.manrope(
-                      fontSize: 17,
+                      color: const Color(0xFFA5F36A),
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      shadows: [
-                        const Shadow(blurRadius: 8, color: Colors.black54),
-                      ],
+                      fontSize: 11.5,
+                      letterSpacing: 0.5,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  buildActionRow(),
+                  const SizedBox(width: 4),
+                  Icon(Icons.copy_rounded, size: 12, color: Colors.white.withValues(alpha: 0.8)),
                 ],
               ),
             ),
-          ],
-        ),
-      );
-    }
+          ),
+        ],
+      ],
+    );
 
-    // ========================
-    // MODE: BACKGROUND (default) — image behind text with overlay
-    // ========================
+    final strip = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [badges, titleRow, actionRow],
+      ),
+    );
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(18),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF061A3A),
-            Color(0xFF003478),
-            Color(0xFF084C38),
-          ],
+          colors: [Color(0xFF071933), Color(0xFF0C2B53), Color(0xFF0A2F2B)],
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF003478).withValues(alpha: 0.25),
-            blurRadius: 20,
+            color: const Color(0xFF003478).withValues(alpha: 0.22),
+            blurRadius: 18,
             offset: const Offset(0, 8),
           ),
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Background Image
           if (hasImage)
-            CachedNetworkImage(
-              imageUrl: offer.resolvedImageUrl,
-              fit: BoxFit.cover,
-              errorWidget: (context, error, stackTrace) => const SizedBox(),
-            ),
-
-          // Gradient overlay for contrast
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF071428).withValues(alpha: hasImage ? 0.65 : 0.7),
-                  const Color(0xFF00224E).withValues(alpha: hasImage ? 0.50 : 0.6),
-                  const Color(0xFF0B3A2C).withValues(alpha: hasImage ? 0.55 : 0.7),
-                ],
+            AspectRatio(
+              aspectRatio: kDealBannerRatio,
+              child: GestureDetector(
+                onTap: () => _handleAction(context),
+                child: CachedNetworkImage(
+                  imageUrl: offer.resolvedImageUrl,
+                  fit: BoxFit.cover,
+                  errorWidget: (context, error, stackTrace) => const SizedBox(),
+                ),
               ),
             ),
-          ),
-
-          // Content
-          Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                buildBadges(),
-                buildTitleAndDiscount(),
-                buildActionRow(),
-              ],
-            ),
-          ),
+          Expanded(child: strip),
         ],
       ),
     );

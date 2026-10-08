@@ -18,7 +18,7 @@ import type { ChartPeriod } from '../types';
 
 export default function ShareDetailPage() {
   const { shareId } = useParams<{ shareId: string }>();
-  const { shares, getShareById } = useShares();
+  const { shares, getShareById, isLoading } = useShares();
   const { settings } = useSiteSettings();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -27,6 +27,14 @@ export default function ShareDetailPage() {
   const [period, setPeriod] = useState<ChartPeriod>('3M');
 
   const share = shareId ? getShareById(shareId) : null;
+
+  if (!share && isLoading) {
+    return (
+      <div className="detail-page-wrap">
+        <div className="no-results"><p>Loading company details…</p></div>
+      </div>
+    );
+  }
 
   if (!share) {
     return (

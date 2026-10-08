@@ -62,6 +62,7 @@ export default function AdminOffersPanel() {
   const [form, setForm] = useState<OfferFormState>(emptyForm);
   const [showModal, setShowModal] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [bannerSize, setBannerSize] = useState<{ w: number; h: number } | null>(null);
   const [search, setSearch] = useState('');
 
   const { data: offers = [], isLoading } = useQuery({
@@ -573,12 +574,13 @@ export default function AdminOffersPanel() {
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="e.g. /shares, /shares/custom-xxx or https://example.com/deal"
+                  placeholder="e.g. https://go-unlisted.com/shares/zepto or /shares/zepto"
                   value={form.linkUrl}
                   onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
                 />
                 <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
-                  Internal path (e.g. <code>/shares</code>) or full external URL (e.g. <code>https://example.com</code>). External links open in a new tab.
+                  Paste the stock page link copied from the website (open the stock → copy the address bar). Works for
+                  logged-in and logged-out visitors on web and app. Links to other websites open in a new tab.
                 </p>
               </div>
 
@@ -652,7 +654,9 @@ export default function AdminOffersPanel() {
                   🖼 Banner Image
                 </label>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  Upload any image (PNG, JPG, WEBP, max 5MB). Image will be shown based on the Layout Mode selected below.
+                  <strong>Recommended size: 1800 × 600 px (ratio 3:1)</strong> — JPG / PNG / WEBP, under 500 KB (max 5 MB).
+                  The full image is shown as-is on Home, Unlisted Shares and the app; badges, timer and button appear in a strip
+                  below the image, so the artwork is never covered. Keep a ~60 px safe margin on all sides.
                 </p>
 
                 {form.imageUrl && (
@@ -660,17 +664,34 @@ export default function AdminOffersPanel() {
                     <img
                       src={mediaUrl(form.imageUrl)}
                       alt="Banner Preview"
+                      onLoad={(e) => setBannerSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
                       style={{
                         width: '100%',
-                        maxHeight: 160,
+                        aspectRatio: '3 / 1',
                         objectFit: 'cover',
                         borderRadius: 8,
                         border: '1px solid var(--border)',
+                        display: 'block',
                       }}
                     />
+                    {bannerSize && (() => {
+                      const ratio = bannerSize.w / bannerSize.h;
+                      const ok = Math.abs(ratio - 3) <= 0.15;
+                      const small = bannerSize.w < 1200;
+                      return (
+                        <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', fontWeight: 600, color: ok && !small ? '#15803d' : '#b45309' }}>
+                          {bannerSize.w} × {bannerSize.h} px (ratio {ratio.toFixed(2)}:1) —{' '}
+                          {ok && !small
+                            ? 'Perfect fit ✓'
+                            : !ok
+                              ? 'Not 3:1 — edges will be trimmed as in this preview. Re-export at 1800 × 600 px.'
+                              : 'Ratio OK but low resolution — may look blurry. Use 1800 × 600 px.'}
+                        </p>
+                      );
+                    })()}
                     <button
                       type="button"
-                      onClick={() => setForm({ ...form, imageUrl: '' })}
+                      onClick={() => { setForm({ ...form, imageUrl: '' }); setBannerSize(null); }}
                       style={{
                         position: 'absolute',
                         top: 8,
@@ -710,55 +731,6 @@ export default function AdminOffersPanel() {
                   />
                 </div>
               </div>
-
-              {/* Display Mode Selector — only shown when image is present */}
-              {form.imageUrl && (
-                <div
-                  style={{
-                    background: 'var(--surface)',
-                    padding: '1rem',
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                    marginBottom: '1.25rem',
-                  }}
-                >
-                  <label className="form-label" style={{ fontWeight: 700, display: 'block', marginBottom: 8 }}>
-                    🎨 Image Layout Mode
-                  </label>
-                  <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                    Choose how the uploaded image appears in the deal banner. <strong>"Alongside Text"</strong> is recommended — it works perfectly with any image size.
-                  </p>
-                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    {[
-                      { value: 'split' as const, label: '📐 Alongside Text', desc: 'Image shown on right side, never gets cut' },
-                      { value: 'background' as const, label: '🖼 As Background', desc: 'Image fills banner behind text overlay' },
-                      { value: 'full-image' as const, label: '📸 Full Image', desc: 'Image fills banner, text at bottom' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setForm({ ...form, displayMode: opt.value })}
-                        style={{
-                          flex: '1 1 140px',
-                          padding: '10px 12px',
-                          borderRadius: 10,
-                          border: `2px solid ${form.displayMode === opt.value ? '#7ac142' : 'var(--border)'}`,
-                          background: form.displayMode === opt.value ? 'rgba(122,193,66,0.1)' : 'var(--bg)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          transition: 'all 0.15s ease',
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: form.displayMode === opt.value ? '#7ac142' : 'var(--ink)', marginBottom: 2 }}>
-                          {opt.label}
-                          {opt.value === 'split' && <span style={{ fontSize: '0.7rem', color: '#7ac142', marginLeft: 4 }}>✓ BEST</span>}
-                        </div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--muted)', lineHeight: 1.3 }}>{opt.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Status & Sort */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

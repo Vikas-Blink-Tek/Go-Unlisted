@@ -4,6 +4,7 @@ import { mergeSharesWithPrices } from '../data/sharesCatalog';
 import { getSharesConfig } from '../api/shares';
 import { useAuth } from '../context/AuthContext';
 import type { Share } from '../types';
+import { shareSlug } from '../utils/dealLink';
 
 export function useShares() {
   const { user } = useAuth();
@@ -30,7 +31,18 @@ export function useShares() {
     ? sharesQuery.data
     : mergeSharesWithPrices(fallbackQuery.data || {});
 
-  const getShareById = (id: string) => shares.find((s) => s.id === id) ?? null;
+  const getShareById = (id: string) => {
+    const exact = shares.find((s) => s.id === id);
+    if (exact) return exact;
+    // Deal / shared links may use ticker or company-name slug instead of the internal id
+    const key = shareSlug(decodeURIComponent(id));
+    if (!key) return null;
+    return shares.find((s) => (
+      shareSlug(s.id) === key
+      || shareSlug(s.ticker || '') === key
+      || shareSlug(s.name || '') === key
+    )) ?? null;
+  };
 
   const refetch = async () => {
     await sharesQuery.refetch();
