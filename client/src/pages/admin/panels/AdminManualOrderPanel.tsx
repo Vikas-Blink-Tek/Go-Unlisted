@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { normalizePaymentRefs } from '../../../utils/paymentRefs';
 import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { saveOrder, getAdminOrders, softDeleteOrder, restoreOrder } from '../../../api/orders';
 import { getUsers, mapApiUser } from '../../../api/admin';
@@ -180,11 +181,12 @@ export default function AdminManualOrderPanel() {
       showToast('Fill all required fields correctly', 'error');
       return;
     }
-    const utrClean = form.utr.trim().replace(/\s+/g, '').toUpperCase();
-    if (utrClean && (utrClean.length < 6 || utrClean.length > 30)) {
-      showToast('UTR / reference must be 6–30 characters', 'error');
+    const refs = normalizePaymentRefs(form.utr);
+    if (!refs.ok) {
+      showToast(refs.error, 'error');
       return;
     }
+    const utrClean = refs.value;
     if (!form.orderDate) {
       showToast('Select order date', 'error');
       return;
@@ -428,7 +430,7 @@ export default function AdminManualOrderPanel() {
               <label className="report-filter-label">Bank UTR / Reference (optional)</label>
               <input
                 className="report-filter-input"
-                placeholder="Only if you have bank UTR — not buyer UPI ID"
+                placeholder="Bank UTR — part payments: separate with / or comma"
                 value={form.utr}
                 onChange={(e) => setForm({ ...form, utr: e.target.value.toUpperCase() })}
                 {...blockTextInput({ name: 'manual-order-utr' })}

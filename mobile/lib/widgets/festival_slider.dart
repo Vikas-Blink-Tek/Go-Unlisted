@@ -87,18 +87,20 @@ class _FestivalSliderState extends State<FestivalSlider> {
         children: [
           LayoutBuilder(
             builder: (context, constraints) => SizedBox(
-              height: (constraints.maxWidth - 4) / kDealBannerRatio + kDealInfoStripHeight,
+              height:
+                  (constraints.maxWidth - 4) / kDealBannerRatio +
+                  kDealInfoStripHeight,
               child: PageView.builder(
-              controller: _pageController,
-              itemCount: offers.length,
-              onPageChanged: (index) {
-                setState(() => _currentPage = index);
-              },
-              itemBuilder: (context, index) {
-                final offer = offers[index];
-                return _FestivalCard(offer: offer);
-              },
-            ),
+                controller: _pageController,
+                itemCount: offers.length,
+                onPageChanged: (index) {
+                  setState(() => _currentPage = index);
+                },
+                itemBuilder: (context, index) {
+                  final offer = offers[index];
+                  return _FestivalCard(offer: offer);
+                },
+              ),
             ),
           ),
           if (offers.length > 1) ...[
@@ -114,7 +116,9 @@ class _FestivalSliderState extends State<FestivalSlider> {
                   height: 6,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(3),
-                    color: active ? GuColors.lime : Colors.black.withValues(alpha: 0.15),
+                    color: active
+                        ? GuColors.lime
+                        : Colors.black.withValues(alpha: 0.15),
                   ),
                 );
               }),
@@ -170,13 +174,21 @@ class _FestivalCard extends StatelessWidget {
     return '${hStr}h : ${mStr}m : ${sStr}s';
   }
 
-  static const _siteHosts = {'go-unlisted.com', 'www.go-unlisted.com', 'gounlisted.in', 'www.gounlisted.in'};
+  static const _siteHosts = {
+    'go-unlisted.com',
+    'www.go-unlisted.com',
+    'gounlisted.in',
+    'www.gounlisted.in',
+  };
 
   /// Admin pastes website links (full URL or path). Map them to in-app screens so guests
   /// and logged-in users both land on the stock — only foreign sites open the browser.
   void _handleAction(BuildContext context) {
     var link = (offer.linkUrl ?? '').trim();
-    if (RegExp(r'^(www\.)?[a-z0-9-]+\.[a-z]{2,}(/|$)', caseSensitive: false).hasMatch(link)) {
+    if (RegExp(
+      r'^(www\.)?[a-z0-9-]+\.[a-z]{2,}(/|$)',
+      caseSensitive: false,
+    ).hasMatch(link)) {
       link = 'https://$link';
     }
     if (link.startsWith('http://') || link.startsWith('https://')) {
@@ -228,24 +240,50 @@ class _FestivalCard extends StatelessWidget {
     Widget badge(String text, Color bg, Color fg, {bool mono = false}) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+        ),
         child: Text(
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: mono
-              ? TextStyle(color: fg, fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w800)
-              : GoogleFonts.manrope(color: fg, fontSize: 10.5, fontWeight: FontWeight.w800, letterSpacing: 0.3),
+              ? TextStyle(
+                  color: fg,
+                  fontFamily: 'monospace',
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                )
+              : GoogleFonts.manrope(
+                  color: fg,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
+                ),
         ),
       );
     }
 
     final badges = Row(
       children: [
-        Flexible(child: badge(_tagline.toUpperCase(), const Color(0xFFFACC15), const Color(0xFF1C1917))),
+        Flexible(
+          child: badge(
+            _tagline.toUpperCase(),
+            const Color(0xFFFACC15),
+            const Color(0xFF1C1917),
+          ),
+        ),
         if (showTimer) ...[
           const SizedBox(width: 6),
-          Flexible(child: badge('ENDS IN $countdownStr', const Color(0xFFDC2626), Colors.white, mono: true)),
+          Flexible(
+            child: badge(
+              'ENDS IN $countdownStr',
+              const Color(0xFFDC2626),
+              Colors.white,
+              mono: true,
+            ),
+          ),
         ],
       ],
     );
@@ -269,11 +307,18 @@ class _FestivalCard extends StatelessWidget {
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(color: const Color(0xFF9FF562), borderRadius: BorderRadius.circular(6)),
+            decoration: BoxDecoration(
+              color: const Color(0xFF9FF562),
+              borderRadius: BorderRadius.circular(6),
+            ),
             child: Text(
               _discountText,
               maxLines: 1,
-              style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF0F2A0A)),
+              style: GoogleFonts.manrope(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF0F2A0A),
+              ),
             ),
           ),
         ],
@@ -291,10 +336,18 @@ class _FestivalCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               minimumSize: const Size(0, 34),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
             onPressed: () => _handleAction(context),
-            child: Text('Claim Best Deal →', style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 12.5)),
+            child: Text(
+              'Claim Best Deal →',
+              style: GoogleFonts.manrope(
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+              ),
+            ),
           ),
         ),
         if (offer.couponCode != null && offer.couponCode!.isNotEmpty) ...[
@@ -323,7 +376,11 @@ class _FestivalCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.copy_rounded, size: 12, color: Colors.white.withValues(alpha: 0.8)),
+                  Icon(
+                    Icons.copy_rounded,
+                    size: 12,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
                 ],
               ),
             ),
@@ -359,24 +416,57 @@ class _FestivalCard extends StatelessWidget {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (hasImage)
-            AspectRatio(
-              aspectRatio: kDealBannerRatio,
-              child: GestureDetector(
-                onTap: () => _handleAction(context),
-                child: CachedNetworkImage(
-                  imageUrl: offer.resolvedImageUrl,
-                  fit: BoxFit.cover,
-                  errorWidget: (context, error, stackTrace) => const SizedBox(),
-                ),
+      child: hasImage && offer.displayMode == 'full-image'
+          ? GestureDetector(
+              onTap: () => _handleAction(context),
+              child: CachedNetworkImage(
+                imageUrl: offer.resolvedImageUrl,
+                fit: BoxFit.contain,
+                errorWidget: (context, error, stackTrace) => const SizedBox(),
               ),
+            )
+          : hasImage && offer.displayMode == 'split'
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(flex: 58, child: strip),
+                Expanded(
+                  flex: 42,
+                  child: GestureDetector(
+                    onTap: () => _handleAction(context),
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      padding: const EdgeInsets.all(8),
+                      child: CachedNetworkImage(
+                        imageUrl: offer.resolvedImageUrl,
+                        fit: BoxFit.contain,
+                        errorWidget: (context, error, stackTrace) =>
+                            const SizedBox(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (hasImage)
+                  AspectRatio(
+                    aspectRatio: kDealBannerRatio,
+                    child: GestureDetector(
+                      onTap: () => _handleAction(context),
+                      child: CachedNetworkImage(
+                        imageUrl: offer.resolvedImageUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (context, error, stackTrace) =>
+                            const SizedBox(),
+                      ),
+                    ),
+                  ),
+                Expanded(child: strip),
+              ],
             ),
-          Expanded(child: strip),
-        ],
-      ),
     );
   }
 }

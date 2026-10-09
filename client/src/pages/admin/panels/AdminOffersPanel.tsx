@@ -9,6 +9,7 @@ import {
 } from '../../../api/offers';
 import { useToast } from '../../../context/ToastContext';
 import AdminSectionHeader from '../components/AdminSectionHeader';
+import DealBannerPreview from '../components/DealBannerPreview';
 import { mediaUrl } from '../../../utils/mediaUrl';
 import type { FestivalOffer } from '../../../types';
 
@@ -38,7 +39,7 @@ const emptyForm: OfferFormState = {
   couponCode: '',
   linkUrl: '/shares',
   ctaText: 'Claim Best Deal →',
-  displayMode: 'split',
+  displayMode: 'background',
   endsAt: '',
   isActive: true,
   sortOrder: 0,
@@ -139,7 +140,7 @@ export default function AdminOffersPanel() {
       couponCode: o.couponCode || '',
       linkUrl: o.linkUrl || '/shares',
       ctaText: o.ctaText || '',
-      displayMode: (o.displayMode as OfferFormState['displayMode']) || 'split',
+      displayMode: (o.displayMode as OfferFormState['displayMode']) || 'background',
       endsAt: formattedEndsAt,
       isActive: o.isActive,
       sortOrder: o.sortOrder || 0,
@@ -412,7 +413,7 @@ export default function AdminOffersPanel() {
           <div
             className="modal-card"
             style={{
-              maxWidth: 620,
+              maxWidth: 800,
               width: '94%',
               maxHeight: '90vh',
               overflowY: 'auto',
@@ -654,9 +655,9 @@ export default function AdminOffersPanel() {
                   🖼 Banner Image
                 </label>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
-                  <strong>Recommended size: 1800 × 600 px (ratio 3:1)</strong> — JPG / PNG / WEBP, under 500 KB (max 5 MB).
-                  The full image is shown as-is on Home, Unlisted Shares and the app; badges, timer and button appear in a strip
-                  below the image, so the artwork is never covered. Keep a ~60 px safe margin on all sides.
+                  JPG / PNG / WEBP, under 500 KB (max 5 MB). Size depends on the layout chosen below —{' '}
+                  <strong>Full Banner 1800 × 600 px (3:1)</strong>, <strong>Side Poster 1200 × 1200 or 1200 × 900 px</strong>,{' '}
+                  <strong>Image Only</strong> any size. Badges, timer and button never sit on top of your artwork.
                 </p>
 
                 {form.imageUrl && (
@@ -667,8 +668,9 @@ export default function AdminOffersPanel() {
                       onLoad={(e) => setBannerSize({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
                       style={{
                         width: '100%',
-                        aspectRatio: '3 / 1',
-                        objectFit: 'cover',
+                        aspectRatio: form.displayMode === 'background' ? '3 / 1' : 'auto',
+                        maxHeight: form.displayMode === 'background' ? undefined : 220,
+                        objectFit: form.displayMode === 'background' ? 'cover' : 'contain',
                         borderRadius: 8,
                         border: '1px solid var(--border)',
                         display: 'block',
@@ -676,16 +678,16 @@ export default function AdminOffersPanel() {
                     />
                     {bannerSize && (() => {
                       const ratio = bannerSize.w / bannerSize.h;
-                      const ok = Math.abs(ratio - 3) <= 0.15;
-                      const small = bannerSize.w < 1200;
+                      const ok = form.displayMode !== 'background' || Math.abs(ratio - 3) <= 0.15;
+                      const small = bannerSize.w < (form.displayMode === 'split' ? 800 : 1200);
                       return (
                         <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', fontWeight: 600, color: ok && !small ? '#15803d' : '#b45309' }}>
                           {bannerSize.w} × {bannerSize.h} px (ratio {ratio.toFixed(2)}:1) —{' '}
                           {ok && !small
                             ? 'Perfect fit ✓'
                             : !ok
-                              ? 'Not 3:1 — edges will be trimmed as in this preview. Re-export at 1800 × 600 px.'
-                              : 'Ratio OK but low resolution — may look blurry. Use 1800 × 600 px.'}
+                              ? 'Not 3:1 — Full Banner will trim the edges. Re-export at 1800 × 600 px, or pick Side Poster / Image Only.'
+                              : 'Low resolution — may look blurry on large screens.'}
                         </p>
                       );
                     })()}
@@ -731,6 +733,72 @@ export default function AdminOffersPanel() {
                   />
                 </div>
               </div>
+
+              {/* Layout + live preview */}
+              {form.imageUrl && (
+                <div
+                  style={{
+                    background: 'var(--surface)',
+                    padding: '1rem',
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                    marginBottom: '1.25rem',
+                  }}
+                >
+                  <label className="form-label" style={{ fontWeight: 700, display: 'block', marginBottom: 8 }}>
+                    🎨 Banner Layout
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {[
+                      { value: 'background' as const, label: '🖼 Full Banner', size: '1800 × 600 px (3:1)', desc: 'Wide image on top, deal details in a strip below' },
+                      { value: 'split' as const, label: '📐 Side Poster', size: '1200 × 1200 or 1200 × 900 px', desc: 'Details on the left, poster on the right — never cropped' },
+                      { value: 'full-image' as const, label: '📸 Image Only', size: 'Any size (1800 px wide best)', desc: 'Only your artwork, whole banner clickable' },
+                    ].map((opt) => {
+                      const active = form.displayMode === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setForm({ ...form, displayMode: opt.value })}
+                          style={{
+                            flex: '1 1 150px',
+                            padding: '10px 12px',
+                            borderRadius: 10,
+                            border: `2px solid ${active ? '#7ac142' : 'var(--border)'}`,
+                            background: active ? 'rgba(122,193,66,0.1)' : 'var(--bg)',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: active ? '#4d7c0f' : 'var(--ink)', marginBottom: 2 }}>
+                            {opt.label}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>{opt.size}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--muted)', lineHeight: 1.3 }}>{opt.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <DealBannerPreview
+                offer={{
+                  id: form.id || 'preview',
+                  title: form.title.trim() || 'Your deal title',
+                  tagline: form.tagline,
+                  description: form.description,
+                  imageUrl: form.imageUrl.trim(),
+                  discountText: form.discountText,
+                  couponCode: form.couponCode,
+                  linkUrl: form.linkUrl,
+                  ctaText: form.ctaText,
+                  displayMode: form.displayMode,
+                  endsAt: form.endsAt || null,
+                  isActive: true,
+                  sortOrder: form.sortOrder,
+                }}
+              />
 
               {/* Status & Sort */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>

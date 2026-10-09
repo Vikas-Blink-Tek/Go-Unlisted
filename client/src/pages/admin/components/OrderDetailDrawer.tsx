@@ -12,6 +12,7 @@ import {
   canRejectOrder,
 } from '../../../utils/orderStatus';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
+import { normalizePaymentRefs } from '../../../utils/paymentRefs';
 
 type Props = {
   order: Order | null;
@@ -98,14 +99,15 @@ export default function OrderDetailDrawer({
 
   const savePaymentRef = async () => {
     if (!onSavePaymentRef) return;
-    const clean = paymentRef.trim().replace(/\s+/g, '').toUpperCase();
-    if (clean.length < 6 || clean.length > 30) {
-      window.alert('Payment reference must be 6–30 characters (UTR from bank / UPI app).');
+    const refs = normalizePaymentRefs(paymentRef);
+    if (!refs.ok || !refs.value) {
+      window.alert(refs.error || 'Enter the UTR from bank / UPI app (6–30 characters).');
       return;
     }
+    setPaymentRef(refs.value);
     setSavingRef(true);
     try {
-      await Promise.resolve(onSavePaymentRef(order.orderId, clean));
+      await Promise.resolve(onSavePaymentRef(order.orderId, refs.value));
     } finally {
       setSavingRef(false);
     }
@@ -256,14 +258,15 @@ export default function OrderDetailDrawer({
               </label>
               {onSavePaymentRef ? (
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input
+                  <textarea
                     id={`payment-ref-${order.orderId}`}
                     className="form-input"
                     value={paymentRef}
-                    onChange={(e) => setPaymentRef(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-                    placeholder="Enter bank / UPI UTR"
-                    maxLength={30}
-                    style={{ flex: '1 1 160px', fontFamily: 'monospace' }}
+                    onChange={(e) => setPaymentRef(e.target.value.toUpperCase())}
+                    placeholder={'Enter bank / UPI UTR\nPart payments: one UTR per line, or separate with /'}
+                    rows={Math.min(5, Math.max(2, normalizePaymentRefs(paymentRef).parts.length + 1))}
+                    maxLength={260}
+                    style={{ flex: '1 1 220px', fontFamily: 'monospace', resize: 'vertical', lineHeight: 1.5 }}
                   />
                   <button
                     type="button"
@@ -280,13 +283,16 @@ export default function OrderDetailDrawer({
                 </div>
               ) : (
                 <strong className="admin-utr-code" style={{ display: 'block', marginTop: '0.25rem' }}>
-                  {order.transactionId || order.utr || '—'}
+                  {(order.transactionId || order.utr || '—').split(' / ').map((ref) => (
+                    <span key={ref} style={{ display: 'block' }}>{ref}</span>
+                  ))}
                 </strong>
               )}
               <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
                 {canMarkOrderComplete(order.status)
                   ? 'Enter UTR / transfer reference, then Save & Complete — status becomes Order Complete.'
                   : 'Paste the UTR from the buyer’s UPI / bank SMS here if missing.'}
+                {' '}Paid in parts? Add every UTR — one per line or separated by “/” (max 8).
               </p>
             </div>
           </section>

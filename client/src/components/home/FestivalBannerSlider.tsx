@@ -49,7 +49,23 @@ function toBestDealWording(value: string | null | undefined, fallback: string): 
 /** Deal banner artwork ratio — admin uploads 1800×600 (3:1) so the image is never cropped or covered. */
 export const DEAL_BANNER_RATIO = 3;
 
-function OfferCard({ offer: rawOffer, variant = 'hero' }: { offer: FestivalOffer; variant?: 'hero' | 'catalog' | 'compact' }) {
+/**
+ * Stored display_mode values (kept for API compatibility):
+ *  background → Full Banner: 3:1 artwork on top, details strip below
+ *  split      → Side Poster: details left, poster right (any ratio, never cropped)
+ *  full-image → Image Only: artwork at its own ratio, whole banner clickable
+ */
+export type DealLayout = 'background' | 'split' | 'full-image';
+
+export function OfferCard({
+  offer: rawOffer,
+  variant = 'hero',
+  preview = false,
+}: {
+  offer: FestivalOffer;
+  variant?: 'hero' | 'catalog' | 'compact';
+  preview?: boolean;
+}) {
   const offer: FestivalOffer = {
     ...rawOffer,
     tagline: toBestDealWording(rawOffer.tagline, '⭐ Best Deal') || '⭐ Best Deal',
@@ -67,7 +83,7 @@ function OfferCard({ offer: rawOffer, variant = 'hero' }: { offer: FestivalOffer
     return 'Claim Best Deal →';
   }, [offer.ctaText, offer.title, offer.tagline]);
 
-  if (countdown?.expired) {
+  if (countdown?.expired && !preview) {
     return null;
   }
 
@@ -136,22 +152,47 @@ function OfferCard({ offer: rawOffer, variant = 'hero' }: { offer: FestivalOffer
     </div>
   );
 
-  if (bannerImage) {
-    const imageEl = (
-      <img
-        src={bannerImage}
-        alt={offer.title}
-        className="deal-banner-image"
-        style={{ aspectRatio: `${DEAL_BANNER_RATIO} / 1` }}
-        loading="lazy"
-      />
+  const layout: DealLayout = (['background', 'split', 'full-image'] as const).includes(offer.displayMode as DealLayout)
+    ? (offer.displayMode as DealLayout)
+    : 'background';
+
+  const wrapLink = (child: React.ReactNode, className: string) => (isExternalLink ? (
+    <a href={linkTarget} target="_blank" rel="noopener noreferrer" className={className}>{child}</a>
+  ) : (
+    <Link to={linkTarget} className={className}>{child}</Link>
+  ));
+
+  if (bannerImage && layout === 'full-image') {
+    return (
+      <div className={`deal-banner deal-banner--image-only deal-banner--${variant}`}>
+        {wrapLink(<img src={bannerImage} alt={offer.title} className="deal-banner-image deal-banner-image--natural" />, 'deal-banner-image-link')}
+      </div>
     );
+  }
+
+  if (bannerImage && layout === 'split') {
+    return (
+      <div className={`deal-banner deal-banner--side deal-banner--${variant}`}>
+        <div className="deal-banner-bar deal-banner-bar--stacked">
+          {details}
+          {actions}
+        </div>
+        {wrapLink(<img src={bannerImage} alt={offer.title} className="deal-banner-poster" />, 'deal-banner-poster-link')}
+      </div>
+    );
+  }
+
+  if (bannerImage) {
     return (
       <div className={`deal-banner deal-banner--image deal-banner--${variant}`}>
-        {isExternalLink ? (
-          <a href={linkTarget} target="_blank" rel="noopener noreferrer" className="deal-banner-image-link">{imageEl}</a>
-        ) : (
-          <Link to={linkTarget} className="deal-banner-image-link">{imageEl}</Link>
+        {wrapLink(
+          <img
+            src={bannerImage}
+            alt={offer.title}
+            className="deal-banner-image"
+            style={{ aspectRatio: `${DEAL_BANNER_RATIO} / 1` }}
+          />,
+          'deal-banner-image-link',
         )}
         <div className="deal-banner-bar">
           {details}

@@ -99,6 +99,11 @@ function autoMigrateSchema($conn) {
         $conn->query("ALTER TABLE employees ADD COLUMN phone VARCHAR(20) DEFAULT NULL AFTER email");
     }
     
+    $res = $conn->query("SHOW COLUMNS FROM orders WHERE Field = 'transaction_id' AND Type LIKE 'varchar(%' AND CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(Type, '(', -1), ')', 1) AS UNSIGNED) < 255");
+    if ($res && $res->num_rows > 0) {
+        // Part payments: several UTRs per order ("A / B / C")
+        $conn->query("ALTER TABLE orders MODIFY COLUMN transaction_id VARCHAR(255) DEFAULT NULL");
+    }
     $res = $conn->query("SHOW COLUMNS FROM orders LIKE 'transaction_id'");
     if ($res && $res->num_rows === 0) {
         $conn->query("ALTER TABLE orders ADD COLUMN transaction_id VARCHAR(100) AFTER method");
@@ -916,6 +921,27 @@ function allocateNextOrderId(mysqli $conn): string {
         return 'GU' . strtoupper(bin2hex(random_bytes(3)));
     }
     return $id;
+}
+
+/**
+ * One order can be paid in parts (several UTRs). Accepts "A/B", "A, B", "A B" or one per line;
+ * returns ['ok' => bool, 'value' => 'A / B', 'parts' => [...], 'error' => string].
+ */
+function normalizePaymentRefs(string $raw): array {
+    $parts = preg_split('/[\s,\/;|+]+/', strtoupper(trim($raw))) ?: [];
+    $parts = array_values(array_unique(array_filter($parts, static fn ($p) => $p !== '')));
+    if ($parts === []) {
+        return ['ok' => true, 'value' => '', 'parts' => [], 'error' => ''];
+    }
+    if (count($parts) > 8) {
+        return ['ok' => false, 'value' => '', 'parts' => $parts, 'error' => 'Maximum 8 payment references per order'];
+    }
+    foreach ($parts as $p) {
+        if (strlen($p) < 6 || strlen($p) > 30 || !preg_match('/^[A-Z0-9\-_.]+$/', $p)) {
+            return ['ok' => false, 'value' => '', 'parts' => $parts, 'error' => "Invalid payment reference \"$p\" — each UTR must be 6–30 letters/numbers"];
+        }
+    }
+    return ['ok' => true, 'value' => implode(' / ', $parts), 'parts' => $parts, 'error' => ''];
 }
 
 function isValidOrderId(string $orderId): bool {
@@ -3825,7 +3851,13 @@ switch ($action) {
             $status = trim($data['status'] ?? $existingOrder['status']);
             requireOrderStatusChange($status);
             $ops_note = trim($data['opsNote'] ?? $data['ops_note'] ?? '');
-            $transaction_id = trim($data['transactionId'] ?? '');
+            $refs = normalizePaymentRefs((string) ($data['transactionId'] ?? ''));
+            if (!$refs['ok']) {
+                http_response_code(400);
+                sendResponse(['error' => $refs['error']]);
+                break;
+            }
+            $transaction_id = $refs['value'];
             // Keep existing UTR unless admin explicitly sends a new one
             if ($transaction_id === '') {
                 $transaction_id = $existingOrder['transaction_id'] ?? '';
@@ -3910,7 +3942,8 @@ switch ($action) {
         $quantity = (int) ($data['qty'] ?? 0);
         $method = trim($data['method'] ?? $data['paymentMethod'] ?? 'Online');
         $order_source = trim($data['orderSource'] ?? $data['source'] ?? 'Online');
-        $transaction_id = strtoupper(preg_replace('/\s+/', '', trim($data['transactionId'] ?? $data['utr'] ?? '')));
+        $refs = normalizePaymentRefs((string) ($data['transactionId'] ?? $data['utr'] ?? ''));
+        $transaction_id = $refs['ok'] ? $refs['value'] : '';
         // Offline/manual = phone/WhatsApp deals — need payment verify. Online checkout = self-confirm pay → share transfer queue.
         $isManualAdmin = $isAdmin && !$isUser && (
             strcasecmp($order_source, 'Offline') === 0
@@ -3936,7 +3969,7 @@ switch ($action) {
                 sendResponse(['error' => 'Please confirm that you have completed the payment']);
                 break;
             }
-            if ($transaction_id === '' || strlen($transaction_id) < 6 || strlen($transaction_id) > 30) {
+            if (!$refs['ok'] || $transaction_id === '') {
                 http_response_code(400);
                 sendResponse(['error' => 'Enter your UTR / UPI reference from the payment app (6–30 characters)']);
                 break;
@@ -3961,9 +3994,9 @@ switch ($action) {
             sendResponse(["error" => "Invalid share or quantity"]);
             break;
         }
-        if ($transaction_id !== '' && (strlen($transaction_id) < 6 || strlen($transaction_id) > 30)) {
+        if (!$refs['ok']) {
             http_response_code(400);
-            sendResponse(["error" => "Payment reference must be 6–30 characters"]);
+            sendResponse(["error" => $refs['error']]);
             break;
         }
 
@@ -4016,21 +4049,26 @@ switch ($action) {
             break;
         }
 
-        // Block duplicate payment reference (UTR) — ignore soft-deleted + allow same order on update
+        // Block duplicate payment reference (UTR) — any part already used on another live order
         if ($transaction_id !== '') {
-            if (!empty($order_id) && $existingOrder) {
-                $dupUtr = $conn->prepare(
-                    "SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL AND order_id <> ? LIMIT 1"
-                );
-                $dupUtr->bind_param("ss", $transaction_id, $order_id);
-            } else {
-                $dupUtr = $conn->prepare(
-                    "SELECT order_id FROM orders WHERE transaction_id = ? AND deleted_at IS NULL LIMIT 1"
-                );
-                $dupUtr->bind_param("s", $transaction_id);
+            $dupFound = false;
+            $excludeId = (!empty($order_id) && $existingOrder) ? $order_id : '';
+            $dupUtr = $conn->prepare(
+                "SELECT order_id FROM orders
+                 WHERE deleted_at IS NULL AND order_id <> ?
+                   AND CONCAT(' / ', transaction_id, ' / ') LIKE ?
+                 LIMIT 1"
+            );
+            foreach ($refs['parts'] as $part) {
+                $like = '% / ' . $part . ' / %';
+                $dupUtr->bind_param("ss", $excludeId, $like);
+                $dupUtr->execute();
+                if ($dupUtr->get_result()->num_rows > 0) {
+                    $dupFound = true;
+                    break;
+                }
             }
-            $dupUtr->execute();
-            if ($dupUtr->get_result()->num_rows > 0) {
+            if ($dupFound) {
                 http_response_code(409);
                 sendResponse(["error" => "This payment reference is already registered. Contact support if you need help."]);
                 break;
