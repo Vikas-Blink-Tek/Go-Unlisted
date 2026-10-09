@@ -270,15 +270,11 @@ export default function OrderDetailDrawer({
                   />
                   <button
                     type="button"
-                    className={canMarkOrderComplete(order.status) ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                    className="btn btn-secondary btn-sm"
                     disabled={savingRef}
                     onClick={() => void savePaymentRef()}
                   >
-                    {savingRef
-                      ? 'Saving…'
-                      : canMarkOrderComplete(order.status)
-                        ? 'Save & Complete'
-                        : 'Save ref'}
+                    {savingRef ? 'Saving…' : 'Save UTR'}
                   </button>
                 </div>
               ) : (
@@ -290,7 +286,7 @@ export default function OrderDetailDrawer({
               )}
               <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)' }}>
                 {canMarkOrderComplete(order.status)
-                  ? 'Enter UTR / transfer reference, then Save & Complete — status becomes Order Complete.'
+                  ? 'Save UTR only stores the reference. Order completes only when you click “Mark complete (share transferred)” after shares reach the buyer’s demat.'
                   : 'Paste the UTR from the buyer’s UPI / bank SMS here if missing.'}
                 {' '}Paid in parts? Add every UTR — one per line or separated by “/” (max 8).
               </p>

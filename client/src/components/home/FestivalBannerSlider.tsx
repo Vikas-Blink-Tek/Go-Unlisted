@@ -162,6 +162,10 @@ export function OfferCard({
     <Link to={linkTarget} className={className}>{child}</Link>
   ));
 
+  const backdrop = bannerImage ? (
+    <span className="deal-banner-backdrop" aria-hidden style={{ backgroundImage: `url("${bannerImage}")` }} />
+  ) : null;
+
   if (bannerImage && layout === 'full-image') {
     return (
       <div className={`deal-banner deal-banner--image-only deal-banner--${variant}`}>
@@ -186,12 +190,15 @@ export function OfferCard({
     return (
       <div className={`deal-banner deal-banner--image deal-banner--${variant}`}>
         {wrapLink(
-          <img
-            src={bannerImage}
-            alt={offer.title}
-            className="deal-banner-image"
-            style={{ aspectRatio: `${DEAL_BANNER_RATIO} / 1` }}
-          />,
+          <>
+            {backdrop}
+            <img
+              src={bannerImage}
+              alt={offer.title}
+              className="deal-banner-image"
+              style={{ aspectRatio: `${DEAL_BANNER_RATIO} / 1` }}
+            />
+          </>,
           'deal-banner-image-link',
         )}
         <div className="deal-banner-bar">

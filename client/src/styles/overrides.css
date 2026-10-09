@@ -4105,8 +4105,33 @@ button.footer-link {
 }
 
 /* Image Only — artwork at its natural ratio, no crop, no overlay */
+/* Blurred copy of the artwork fills the width, so a capped-height banner never leaves empty sides */
+.deal-banner-image-link { position: relative; overflow: hidden; }
+.deal-banner-backdrop {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(34px) saturate(1.25) brightness(0.85);
+  transform: scale(1.1);
+  pointer-events: none;
+}
+.deal-banner-image-link > img { position: relative; z-index: 1; }
+
 .deal-banner--image-only { background: transparent; border: none; }
-.deal-banner-image--natural { aspect-ratio: auto; height: auto; max-height: 560px; object-fit: contain; margin: 0 auto; }
+.deal-banner--image-only .deal-banner-image-link { background: transparent; }
+/* Full width, 3:1 (1800×600) artwork fits exactly; taller artwork is trimmed top/bottom from the centre */
+.deal-banner-image--natural {
+  aspect-ratio: auto;
+  width: 100%;
+  height: auto;
+  max-height: 400px;
+  object-fit: cover;
+  object-position: center;
+}
+/* Full Banner artwork: keep the first screen visible below the banner */
+.deal-banner--image .deal-banner-image { max-height: 400px; object-fit: contain; }
+
 
 @container (max-width: 640px) {
   .deal-banner { border-radius: 14px; }

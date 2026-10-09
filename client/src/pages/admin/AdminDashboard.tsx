@@ -546,19 +546,16 @@ export default function AdminDashboard() {
             onSavePaymentRef={(orderId, transactionId) => {
               const order = allOrders.find((o) => o.orderId === orderId);
               const status = order?.status || ORDER_STATUS.TRANSFER_PENDING;
-              // Share Transfer: saving UTR / transfer ref marks the order Complete
-              if (canMarkOrderComplete(status)) {
-                return updateOrderStatus(orderId, ORDER_STATUS.COMPLETED, undefined, transactionId).then(() => {
-                  showToast('UTR saved — order marked Complete', 'success');
-                  queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
-                  queryClient.invalidateQueries({ queryKey: ['admin-invoices'] });
-                  queryClient.invalidateQueries({ queryKey: ['orders'] });
-                });
-              }
-              // Pending Verification (legacy): save ref only — use Verify to move to Share Transfer
+              // Saving UTR never completes the order — ops use "Mark complete" once shares hit the demat
               return updateOrderPaymentRef(orderId, transactionId, status).then(() => {
-                showToast('Payment reference saved', 'success');
+                showToast(
+                  canMarkOrderComplete(status)
+                    ? 'UTR saved — click Mark complete once shares are transferred'
+                    : 'Payment reference saved',
+                  'success',
+                );
                 queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+                queryClient.invalidateQueries({ queryKey: ['orders'] });
               });
             }}
             onAdjustTotal={isMaster ? (orderId, totalAmount) => {
