@@ -656,8 +656,8 @@ export default function AdminOffersPanel() {
                 </label>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
                   JPG / PNG / WEBP, under 500 KB (max 5 MB). Size depends on the layout chosen below —{' '}
-                  <strong>Full Banner 1800 × 600 px (3:1)</strong>, <strong>Side Poster 1200 × 1200 or 1200 × 900 px</strong>,{' '}
-                  <strong>Image Only 1800 × 600 px (3:1)</strong>. Badges, timer and button never sit on top of your artwork.
+                  <strong>Full Banner 1600 × 400 px (4:1)</strong>, <strong>Side Poster 1200 × 1200 or 1200 × 900 px</strong>,{' '}
+                  <strong>Image Only 1600 × 400 px (4:1)</strong>. Badges, timer and button never sit on top of your artwork.
                 </p>
 
                 {form.imageUrl && (
@@ -678,7 +678,7 @@ export default function AdminOffersPanel() {
                     />
                     {bannerSize && (() => {
                       const ratio = bannerSize.w / bannerSize.h;
-                      const ok = form.displayMode === 'split' || Math.abs(ratio - 3) <= 0.15;
+                      const ok = form.displayMode === 'split' || Math.abs(ratio - 4) <= 0.2;
                       const small = bannerSize.w < (form.displayMode === 'split' ? 800 : 1200);
                       return (
                         <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', fontWeight: 600, color: ok && !small ? '#15803d' : '#b45309' }}>
@@ -686,7 +686,7 @@ export default function AdminOffersPanel() {
                           {ok && !small
                             ? 'Perfect fit ✓'
                             : !ok
-                              ? 'Not 3:1 — the banner will be trimmed to fit. Re-export at 1800 × 600 px, or pick Side Poster.'
+                              ? 'Not 4:1 — the banner will be trimmed to fit. Re-export at 1600 × 400 px, or pick Side Poster.'
                               : 'Low resolution — may look blurry on large screens.'}
                         </p>
                       );
@@ -750,9 +750,9 @@ export default function AdminOffersPanel() {
                   </label>
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {[
-                      { value: 'background' as const, label: '🖼 Full Banner', size: '1800 × 600 px (3:1)', desc: 'Wide image on top, deal details in a strip below' },
+                      { value: 'background' as const, label: '🖼 Full Banner', size: '1600 × 400 px (4:1)', desc: 'Wide image on top, deal details in a strip below' },
                       { value: 'split' as const, label: '📐 Side Poster', size: '1200 × 1200 or 1200 × 900 px', desc: 'Details on the left, poster on the right — never cropped' },
-                      { value: 'full-image' as const, label: '📸 Image Only', size: '1800 × 600 px (3:1)', desc: 'Only your artwork, whole banner clickable' },
+                      { value: 'full-image' as const, label: '📸 Image Only', size: '1600 × 400 px (4:1)', desc: 'Only your artwork, whole banner clickable' },
                     ].map((opt) => {
                       const active = form.displayMode === opt.value;
                       return (

@@ -46,12 +46,12 @@ function toBestDealWording(value: string | null | undefined, fallback: string): 
   return FESTIVE_RE.test(v) ? fallback : v;
 }
 
-/** Deal banner artwork ratio — admin uploads 1800×600 (3:1) so the image is never cropped or covered. */
-export const DEAL_BANNER_RATIO = 3;
+/** Deal banner artwork ratio — admin uploads 1600×400 (4:1) so the image is never cropped or covered. */
+export const DEAL_BANNER_RATIO = 4;
 
 /**
  * Stored display_mode values (kept for API compatibility):
- *  background → Full Banner: 3:1 artwork on top, details strip below
+ *  background → Full Banner: 4:1 artwork on top, details strip below
  *  split      → Side Poster: details left, poster right (any ratio, never cropped)
  *  full-image → Image Only: artwork at its own ratio, whole banner clickable
  */

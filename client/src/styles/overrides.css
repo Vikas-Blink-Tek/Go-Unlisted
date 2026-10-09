@@ -3991,7 +3991,7 @@ button.footer-link {
   font: inherit;
 }
 
-/* ── Deal banner (Home / Unlisted Shares / detail) — artwork 3:1, info strip below ── */
+/* ── Deal banner (Home / Unlisted Shares / detail) — artwork 4:1, info strip below ── */
 .deal-banner {
   border-radius: 20px;
   overflow: hidden;
@@ -4120,17 +4120,17 @@ button.footer-link {
 
 .deal-banner--image-only { background: transparent; border: none; }
 .deal-banner--image-only .deal-banner-image-link { background: transparent; }
-/* Full width, 3:1 (1800×600) artwork fits exactly; taller artwork is trimmed top/bottom from the centre */
+/* Full width, 4:1 (1600×400) artwork fits exactly; taller artwork is trimmed top/bottom from the centre */
 .deal-banner-image--natural {
   aspect-ratio: auto;
   width: 100%;
   height: auto;
-  max-height: 400px;
+  max-height: 300px;
   object-fit: cover;
   object-position: center;
 }
 /* Full Banner artwork: keep the first screen visible below the banner */
-.deal-banner--image .deal-banner-image { max-height: 400px; object-fit: contain; }
+.deal-banner--image .deal-banner-image { max-height: 300px; object-fit: contain; }
 
 
 @container (max-width: 640px) {

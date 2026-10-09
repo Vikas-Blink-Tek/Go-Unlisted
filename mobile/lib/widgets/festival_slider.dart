@@ -18,8 +18,8 @@ class FestivalSlider extends StatefulWidget {
   State<FestivalSlider> createState() => _FestivalSliderState();
 }
 
-/// Deal artwork is uploaded at 1800×600 (3:1) — shown uncropped, details in a strip below.
-const double kDealBannerRatio = 3;
+/// Deal artwork is uploaded at 1600×400 (4:1) — shown uncropped, details in a strip below.
+const double kDealBannerRatio = 4;
 const double kDealInfoStripHeight = 118;
 
 class _FestivalSliderState extends State<FestivalSlider> {
