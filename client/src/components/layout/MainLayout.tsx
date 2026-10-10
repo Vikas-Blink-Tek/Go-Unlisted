@@ -20,6 +20,13 @@ const navLinks = [
   { to: '/contact', label: 'Contact' },
 ];
 
+const memberNavLinks = [
+  { to: '/shares', label: 'Unlisted Shares' },
+  { to: '/dashboard', label: 'Orders' },
+  { to: '/articles', label: 'News' },
+  { to: '/about', label: 'About' },
+];
+
 const mobileIcons: Record<string, ReactNode> = {
   '/': (
     <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
@@ -99,12 +106,14 @@ function MainLayoutInner() {
   };
 
   const profilePath = user ? '/dashboard' : '/login';
+  const links = user ? memberNavLinks : navLinks;
+  const homePath = user ? '/shares' : '/';
 
   return (
     <>
       <nav id="main-nav">
         <div className="nav-inner">
-          <Link to="/" className="nav-logo">
+          <Link to={homePath} className="nav-logo">
             <img src="/logo.png" alt="Go-Unlisted Logo" className="nav-logo-img" />
             <span className="nav-logo-text">
               <span className="logo-go">GO</span>{' '}
@@ -113,7 +122,7 @@ function MainLayoutInner() {
           </Link>
 
           <ul className="nav-links" id="nav-links">
-            {navLinks.map((l) => {
+            {links.map((l) => {
               const isPortfolio = l.to === '/dashboard';
               const to = isPortfolio && !user ? '/login' : l.to;
               const state = isPortfolio && !user ? { from: '/dashboard', reason: 'portfolio' } : undefined;
@@ -236,7 +245,7 @@ function MainLayoutInner() {
           </svg>
           Search shares
         </button>
-        {navLinks.map((l) => {
+        {links.map((l) => {
           const isPortfolio = l.to === '/dashboard';
           const to = isPortfolio && !user ? '/login' : l.to;
           const state = isPortfolio && !user ? { from: '/dashboard', reason: 'portfolio' } : undefined;
@@ -265,10 +274,17 @@ function MainLayoutInner() {
       <WelcomeAuthModal pathname={location.pathname} />
 
       <nav className="bottom-nav">
-        <Link to="/" className={`bottom-nav-item${location.pathname === '/' ? ' active' : ''}`}>
-          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
-          <span>Home</span>
-        </Link>
+        {user ? (
+          <Link to="/shares" className={`bottom-nav-item${location.pathname.startsWith('/shares') ? ' active' : ''}`}>
+            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
+            <span>Shares</span>
+          </Link>
+        ) : (
+          <Link to="/" className={`bottom-nav-item${location.pathname === '/' ? ' active' : ''}`}>
+            <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>
+            <span>Home</span>
+          </Link>
+        )}
         <button type="button" className="bottom-nav-item" onClick={openSearch}>
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
             <circle cx="11" cy="11" r="8" />
@@ -282,7 +298,7 @@ function MainLayoutInner() {
           className={`bottom-nav-item${location.pathname.startsWith('/dashboard') || (!user && location.pathname === '/login') ? ' active' : ''}`}
         >
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-          <span>Portfolio</span>
+          <span>{user ? 'Orders' : 'Portfolio'}</span>
         </Link>
         <Link to={profilePath} className={`bottom-nav-item${location.pathname === '/login' ? ' active' : ''}`}>
           <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>

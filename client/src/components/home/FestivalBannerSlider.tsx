@@ -74,6 +74,7 @@ export function OfferCard({
   };
   const countdown = useCountdown(offer.endsAt);
   const [copied, setCopied] = useState(false);
+  const [posterRatio, setPosterRatio] = useState<number | null>(null);
 
   const ctaLabel = useMemo(() => {
     if (offer.ctaText?.trim()) return offer.ctaText.trim();
@@ -176,12 +177,29 @@ export function OfferCard({
 
   if (bannerImage && layout === 'split') {
     return (
-      <div className={`deal-banner deal-banner--side deal-banner--${variant}`}>
+      <div
+        className={`deal-banner deal-banner--side deal-banner--${variant}`}
+        style={posterRatio ? ({ '--deal-poster-ratio': posterRatio } as React.CSSProperties) : undefined}
+      >
         <div className="deal-banner-bar deal-banner-bar--stacked">
           {details}
           {actions}
         </div>
-        {wrapLink(<img src={bannerImage} alt={offer.title} className="deal-banner-poster" />, 'deal-banner-poster-link')}
+        {wrapLink(
+          <>
+            {backdrop}
+            <img
+              src={bannerImage}
+              alt={offer.title}
+              className="deal-banner-poster"
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+                if (w && h) setPosterRatio(Math.min(4.5, Math.max(1.5, w / h)));
+              }}
+            />
+          </>,
+          'deal-banner-poster-link',
+        )}
       </div>
     );
   }
@@ -261,7 +279,7 @@ export default function FestivalBannerSlider({
     <div
       className={`festival-slider-container ${className}`}
       style={{
-        margin: variant === 'compact' ? '0.75rem 0 1.25rem' : '1.25rem 0 2rem',
+        margin: variant === 'compact' ? '0.75rem 0 1.25rem' : '0 0 1rem',
       }}
     >
       <div style={{ position: 'relative' }}>

@@ -158,16 +158,13 @@ export default function SharesPage() {
 
   return (
     <div className="view active">
-      <div className="page-header">
-        <div className="page-header-inner">
-          <h1 className="page-title">Pre-IPO Listings</h1>
-          <p className="page-subtitle">Invest in India&apos;s most promising unlisted companies before they go public.</p>
-        </div>
-      </div>
-
-      <div className="section" style={{ paddingTop: '1.25rem' }}>
+      <div className="section" style={{ paddingTop: '1rem' }}>
         <div className="container">
           <FestivalBannerSlider variant="catalog" />
+          <div className="shares-heading-row">
+            <h1 className="shares-heading">Pre-IPO Listings</h1>
+            <span className="shares-heading-sub">Invest in India&apos;s most promising unlisted companies before they go public.</span>
+          </div>
           <div className="filter-bar">
             <div className="shares-search-row" ref={searchWrapRef}>
               <div className={`search-wrap shares-search-wrap${dropdownOpen && q ? ' has-dropdown' : ''}`}>

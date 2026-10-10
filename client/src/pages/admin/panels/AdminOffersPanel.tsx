@@ -656,7 +656,7 @@ export default function AdminOffersPanel() {
                 </label>
                 <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: 'var(--muted)' }}>
                   JPG / PNG / WEBP, under 500 KB (max 5 MB). Size depends on the layout chosen below —{' '}
-                  <strong>Full Banner 1600 × 400 px (4:1)</strong>, <strong>Side Poster 1200 × 1200 or 1200 × 900 px</strong>,{' '}
+                  <strong>Full Banner 1600 × 400 px (4:1)</strong>, <strong>Side Poster 1200 × 400 px (3:1)</strong>,{' '}
                   <strong>Image Only 1600 × 400 px (4:1)</strong>. Badges, timer and button never sit on top of your artwork.
                 </p>
 
@@ -751,7 +751,7 @@ export default function AdminOffersPanel() {
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {[
                       { value: 'background' as const, label: '🖼 Full Banner', size: '1600 × 400 px (4:1)', desc: 'Wide image on top, deal details in a strip below' },
-                      { value: 'split' as const, label: '📐 Side Poster', size: '1200 × 1200 or 1200 × 900 px', desc: 'Details on the left, poster on the right — never cropped' },
+                      { value: 'split' as const, label: '📐 Side Poster', size: '1200 × 400 px (3:1)', desc: 'Thin strip — details on the left, artwork fills the rest, never cropped' },
                       { value: 'full-image' as const, label: '📸 Image Only', size: '1600 × 400 px (4:1)', desc: 'Only your artwork, whole banner clickable' },
                     ].map((opt) => {
                       const active = form.displayMode === opt.value;

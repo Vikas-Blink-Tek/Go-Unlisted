@@ -4,7 +4,29 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../core/theme/gu_theme.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/auth_provider.dart';
 import '../auth/welcome_auth_sheet.dart';
+
+/// Branch indexes match the StatefulShellRoute order in router.dart.
+typedef _Tab = ({int branch, IconData icon, IconData activeIcon, String label});
+
+const List<_Tab> _guestTabs = [
+  (branch: 0, icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home'),
+  (branch: 1, icon: Icons.grid_view_outlined, activeIcon: Icons.grid_view_rounded, label: 'Shares'),
+  (branch: 2, icon: Icons.pie_chart_outline_rounded, activeIcon: Icons.pie_chart_rounded, label: 'Portfolio'),
+  (branch: 3, icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Profile'),
+];
+
+/// Signed-in investors: no marketing home — same order as the website nav.
+const List<_Tab> _memberTabs = [
+  (branch: 1, icon: Icons.grid_view_outlined, activeIcon: Icons.grid_view_rounded, label: 'Shares'),
+  (branch: 2, icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long_rounded, label: 'Orders'),
+  (branch: 4, icon: Icons.newspaper_outlined, activeIcon: Icons.newspaper_rounded, label: 'News'),
+  (branch: 5, icon: Icons.info_outline_rounded, activeIcon: Icons.info_rounded, label: 'About'),
+  (branch: 3, icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: 'Profile'),
+];
 
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.navigationShell});
@@ -22,6 +44,8 @@ class AppShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final index = navigationShell.currentIndex;
+    final loggedIn = context.watch<AuthProvider>().isLoggedIn;
+    final tabs = loggedIn ? _memberTabs : _guestTabs;
 
     return WelcomeAuthHost(
       child: Scaffold(
@@ -45,34 +69,14 @@ class AppShell extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
             child: Row(
               children: [
-                _NavItem(
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home_rounded,
-                  label: 'Home',
-                  selected: index == 0,
-                  onTap: () => _onTap(0),
-                ),
-                _NavItem(
-                  icon: Icons.grid_view_outlined,
-                  activeIcon: Icons.grid_view_rounded,
-                  label: 'Shares',
-                  selected: index == 1,
-                  onTap: () => _onTap(1),
-                ),
-                _NavItem(
-                  icon: Icons.pie_chart_outline_rounded,
-                  activeIcon: Icons.pie_chart_rounded,
-                  label: 'Portfolio',
-                  selected: index == 2,
-                  onTap: () => _onTap(2),
-                ),
-                _NavItem(
-                  icon: Icons.person_outline_rounded,
-                  activeIcon: Icons.person_rounded,
-                  label: 'Profile',
-                  selected: index == 3,
-                  onTap: () => _onTap(3),
-                ),
+                for (final t in tabs)
+                  _NavItem(
+                    icon: t.icon,
+                    activeIcon: t.activeIcon,
+                    label: t.label,
+                    selected: index == t.branch,
+                    onTap: () => _onTap(t.branch),
+                  ),
               ],
             ),
           ),

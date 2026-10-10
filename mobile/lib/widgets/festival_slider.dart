@@ -18,8 +18,8 @@ class FestivalSlider extends StatefulWidget {
   State<FestivalSlider> createState() => _FestivalSliderState();
 }
 
-/// Deal artwork is uploaded at 1600×400 (4:1) — shown uncropped, details in a strip below.
-const double kDealBannerRatio = 4;
+/// Deal artwork band (wide 3:1–4:1 uploads) — artwork is letterboxed, never cropped; details in a strip below.
+const double kDealBannerRatio = 3.5;
 const double kDealInfoStripHeight = 118;
 
 class _FestivalSliderState extends State<FestivalSlider> {
@@ -425,29 +425,6 @@ class _FestivalCard extends StatelessWidget {
                 errorWidget: (context, error, stackTrace) => const SizedBox(),
               ),
             )
-          : hasImage && offer.displayMode == 'split'
-          ? Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(flex: 58, child: strip),
-                Expanded(
-                  flex: 42,
-                  child: GestureDetector(
-                    onTap: () => _handleAction(context),
-                    child: Container(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      padding: const EdgeInsets.all(8),
-                      child: CachedNetworkImage(
-                        imageUrl: offer.resolvedImageUrl,
-                        fit: BoxFit.contain,
-                        errorWidget: (context, error, stackTrace) =>
-                            const SizedBox(),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -458,7 +435,7 @@ class _FestivalCard extends StatelessWidget {
                       onTap: () => _handleAction(context),
                       child: CachedNetworkImage(
                         imageUrl: offer.resolvedImageUrl,
-                        fit: BoxFit.cover,
+                        fit: BoxFit.contain,
                         errorWidget: (context, error, stackTrace) =>
                             const SizedBox(),
                       ),

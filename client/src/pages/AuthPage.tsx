@@ -17,7 +17,7 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const navState = (location.state as { from?: string; reason?: string; tab?: 'login' | 'register' } | null) ?? {};
-  const from = navState.from || '/';
+  const from = navState.from && navState.from !== '/' ? navState.from : '/shares';
   const portfolioGate = navState.reason === 'portfolio';
   const paymentGate = navState.reason === 'payment';
 

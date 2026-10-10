@@ -10,11 +10,13 @@ class ProfileSubScaffold extends StatelessWidget {
     required this.title,
     required this.child,
     this.subtitle,
+    this.showBack = true,
   });
 
   final String title;
   final String? subtitle;
   final Widget child;
+  final bool showBack;
 
   @override
   Widget build(BuildContext context) {
@@ -28,11 +30,14 @@ class ProfileSubScaffold extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(8, 4, 16, 0),
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.chevron_left_rounded, size: 28),
-                    color: GuColors.ink,
-                  ),
+                  if (showBack)
+                    IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.chevron_left_rounded, size: 28),
+                      color: GuColors.ink,
+                    )
+                  else
+                    const SizedBox(width: 48),
                   Expanded(
                     child: Text(
                       title,

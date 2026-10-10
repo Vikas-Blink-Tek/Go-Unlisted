@@ -18,13 +18,21 @@ import RiskDisclosurePage from './pages/RiskDisclosurePage';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminLayout from './pages/admin/AdminLayout';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import { useAuth } from './context/AuthContext';
+
+/** Logged-in investors skip the marketing home page and land on the catalog. */
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  return user ? <Navigate to="/shares" replace /> : <HomePage />;
+}
 
 export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
         <Route element={<MainLayout />}>
-          <Route index element={<HomePage />} />
+          <Route index element={<HomeRoute />} />
           <Route path="shares" element={<SharesPage />} />
           <Route path="shares/:shareId" element={<ShareDetailPage />} />
           <Route path="checkout/:shareId" element={<CheckoutPage />} />

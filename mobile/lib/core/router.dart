@@ -5,6 +5,7 @@ import '../features/auth/auth_screen.dart';
 import '../features/checkout/checkout_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/kyc/kyc_screen.dart';
+import '../features/news/news_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/portfolio/portfolio_screen.dart';
 import '../features/profile/profile_screen.dart';
@@ -40,6 +41,8 @@ GoRouter createRouter(AuthProvider auth) {
         final redirect = Uri.encodeComponent(state.uri.toString());
         return '/auth?redirect=$redirect';
       }
+      // Signed-in investors skip the marketing home and land on the catalog (matches website).
+      if (loc == '/app' && auth.isLoggedIn) return '/app/shares';
       return null;
     },
     routes: [
@@ -159,6 +162,15 @@ GoRouter createRouter(AuthProvider auth) {
           ]),
           StatefulShellBranch(routes: [
             GoRoute(path: '/app/profile', pageBuilder: (c, s) => NoTransitionPage(key: s.pageKey, child: const ProfileScreen())),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(path: '/app/news', pageBuilder: (c, s) => NoTransitionPage(key: s.pageKey, child: const NewsScreen())),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: '/app/about',
+              pageBuilder: (c, s) => NoTransitionPage(key: s.pageKey, child: const AboutHubScreen(asTab: true)),
+            ),
           ]),
         ],
       ),

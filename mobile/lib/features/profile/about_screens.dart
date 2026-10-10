@@ -7,12 +7,16 @@ import 'profile_content.dart';
 import 'profile_widgets.dart';
 
 class AboutHubScreen extends StatelessWidget {
-  const AboutHubScreen({super.key});
+  const AboutHubScreen({super.key, this.asTab = false});
+
+  /// Shown as a bottom-nav tab for signed-in investors (no back button).
+  final bool asTab;
 
   @override
   Widget build(BuildContext context) {
     return ProfileSubScaffold(
       title: 'About Us',
+      showBack: !asTab,
       subtitle: GuProfileCopy.aboutIntro,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(0, 8, 0, 32),
