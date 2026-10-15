@@ -194,7 +194,9 @@ export default function AdminDashboard() {
 
   const complete = (id: string) => statusMutation.mutate({ orderId: id, status: ORDER_STATUS.COMPLETED });
   const undoComplete = (id: string) => {
-    if (confirm('Undo Completed? Order goes back to Pending Share Transfer.')) {
+    const status = allOrders.find((o) => o.orderId === id)?.status || '';
+    const what = /reject/i.test(status) ? 'Undo Reject' : 'Undo Completed';
+    if (confirm(`${what}? Order goes back to Pending Share Transfer — then Save UTR / Mark complete.`)) {
       statusMutation.mutate({ orderId: id, status: ORDER_STATUS.TRANSFER_PENDING });
     }
   };

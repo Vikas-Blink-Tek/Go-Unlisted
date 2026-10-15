@@ -380,7 +380,7 @@ export default function OrderDetailDrawer({
             )}
             {onUndoComplete && canUndoOrderComplete(order.status) && (
               <button type="button" className="btn btn-ghost btn-full" onClick={() => onUndoComplete(order.orderId)}>
-                Undo complete → Share transfer
+                {/reject/i.test(order.status) ? 'Undo reject → Share transfer' : 'Undo complete → Share transfer'}
               </button>
             )}
             {onReject && canRejectOrder(order.status) && (

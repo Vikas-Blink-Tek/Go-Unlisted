@@ -75,8 +75,10 @@ export function canRejectOrder(status: string): boolean {
   return isPendingOrder(status) || isTransferPendingOrder(status);
 }
 
+/** Completed or Rejected orders can be reopened to Pending Share Transfer (wrong click / payment found later). */
 export function canUndoOrderComplete(status: string): boolean {
-  return status.toLowerCase().includes('complete');
+  const s = status.toLowerCase();
+  return s.includes('complete') || s.includes('reject');
 }
 
 /** Master can reassign User Code even after Order Complete (old deals). Not for cancel/reject/refund. */
