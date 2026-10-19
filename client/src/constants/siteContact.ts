@@ -2,10 +2,10 @@
 export const SITE_CONTACT_DEFAULTS = {
   email: 'infogounlisted@gmail.com',
   /** Display format for phone on Contact / Footer */
-  mobile: '+91 81694 49826',
+  mobile: '+91 81691 38701 · +91 98208 97828 · +91 95921 94001 · +91 75060 75982',
   /** Digits for wa.me (with country code) */
-  whatsapp: '918169449826',
-  address: 'Malad West, Ijmima, Mumbai – 400064',
+  whatsapp: '918169138701',
+  address: 'B/06 Jaswanti allied Business center, Ramchandra lane Malad West Mumbai, Maharashtra 400064 India',
 } as const;
 
 export const SITE_BANK_DEFAULTS = {
@@ -23,14 +23,14 @@ export const SITE_DISCLAIMER_DEFAULT =
 
 /**
  * Split stored mobile setting into individual numbers.
- * Admin may save multiple phones as comma / newline / semicolon separated.
+ * Admin may save multiple phones as comma / newline / semicolon / bullet separated.
  * Existing single-number values keep working unchanged.
  */
 export function parseSitePhones(raw?: string | null): string[] {
   const text = (raw || '').trim();
   if (!text) return [];
   const parts = text
-    .split(/[,;\n|]+/)
+    .split(/[,;\n|·]+/)
     .map((p) => p.trim())
     .filter(Boolean);
   const seen = new Set<string>();

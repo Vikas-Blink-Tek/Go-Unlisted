@@ -9,3 +9,5 @@ Disallow: /staff/
 Disallow: /api/
 Disallow: /schema.sql
 Disallow: /uploads/
+
+Sitemap: https://go-unlisted.com/sitemap.xml

@@ -313,7 +313,7 @@ export default function AdminDashboard() {
       address: SITE_CONTACT_DEFAULTS.address,
       _mobileDraft: SITE_CONTACT_DEFAULTS.mobile,
     }));
-    showToast('Filled Malad West / 81694 49826 — click Save Settings to publish', 'success');
+    showToast('Filled Jaswanti Allied / 81691 38701 — click Save Settings to publish', 'success');
   };
 
   const previewPhone = formatSitePhonesDisplay(settingsVal('mobile') || SITE_CONTACT_DEFAULTS.mobile);
@@ -669,7 +669,7 @@ export default function AdminDashboard() {
             </p>
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               <button type="button" className="btn btn-ghost btn-sm" onClick={applyClientContactDefaults}>
-                Fill client defaults (Malad West / 81694 49826)
+                Fill client defaults (Jaswanti Allied / 81691 38701)
               </button>
             </div>
           </div>

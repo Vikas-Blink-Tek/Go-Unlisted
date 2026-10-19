@@ -391,9 +391,9 @@ const PUBLIC_SETTINGS_KEYS = [
 /** Fallback company contact when settings row is missing (Admin → Site Settings overrides). */
 const SITE_CONTACT_DEFAULTS = [
     'email' => 'infogounlisted@gmail.com',
-    'mobile' => '+91 81694 49826',
-    'whatsapp' => '918169449826',
-    'address' => 'Malad West, Ijmima, Mumbai – 400064',
+    'mobile' => '+91 81691 38701 · +91 98208 97828 · +91 95921 94001 · +91 75060 75982',
+    'whatsapp' => '918169138701',
+    'address' => 'B/06 Jaswanti allied Business center, Ramchandra lane Malad West Mumbai, Maharashtra 400064 India',
 ];
 
 function logAudit($conn, $action, $user_id, $details) {
