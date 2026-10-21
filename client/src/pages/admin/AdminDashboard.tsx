@@ -667,7 +667,13 @@ export default function AdminDashboard() {
               <br />
               {previewPhone} · {previewEmail}
             </p>
+            <p style={{ margin: '8px 0 0', fontSize: '0.8rem', color: 'var(--muted)' }}>
+              Changes go live on the website only after you click Save.
+            </p>
             <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={saveSiteSettings}>
+                Save contact details
+              </button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={applyClientContactDefaults}>
                 Fill client defaults (Jaswanti Allied / 81691 38701)
               </button>
