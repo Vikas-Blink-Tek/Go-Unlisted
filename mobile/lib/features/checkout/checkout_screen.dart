@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
+import 'razorpay_qr_screen.dart';
 
 /// Server-priced Razorpay order — the exact amount the buyer will be charged.
 class _Quote {
@@ -167,41 +168,49 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }).catchError((_) => <String, dynamic>{}); // tracking only — never blocks checkout
   }
 
+  Map<String, dynamic> _checkoutOptions(_Quote quote, GuUser user) => {
+        'key': quote.keyId,
+        'amount': quote.amountPaise,
+        'currency': quote.currency,
+        'order_id': quote.orderId,
+        'name': 'GO UNLISTED',
+        'description': '${quote.qty} × ${quote.shareName}',
+        'prefill': {'name': user.name, 'email': user.email, 'contact': user.phone},
+        'theme': {'color': '#0072BC'},
+      };
+
   void _openRazorpay() {
     final quote = _quote;
     final user = context.read<AuthProvider>().user;
     if (quote == null || user == null) return;
     setState(() => _status = _PayStatus.paying);
     _razorpay.open({
-      'key': quote.keyId,
-      'amount': quote.amountPaise,
-      'currency': quote.currency,
-      'order_id': quote.orderId,
-      'name': 'GO UNLISTED',
-      'description': '${quote.qty} × ${quote.shareName}',
-      'prefill': {'name': user.name, 'email': user.email, 'contact': user.phone},
-      'theme': {'color': '#0072BC'},
+      ..._checkoutOptions(quote, user),
       'retry': {'enabled': true, 'max_count': 3},
-      // Razorpay hides UPI QR on phones by default — show it first (pay from another phone),
-      // keep UPI apps / UPI ID, and the default cards / netbanking / wallets below
-      'config': {
-        'display': {
-          'blocks': {
-            'upi': {
-              'name': 'Pay via UPI',
-              'instruments': [
-                {
-                  'method': 'upi',
-                  'flows': ['qrcode', 'intent', 'collect'],
-                },
-              ],
-            },
-          },
-          'sequence': ['block.upi'],
-          'preferences': {'show_default_blocks': true},
-        },
-      },
     });
+  }
+
+  /// The native SDK never shows UPI QR on a phone — run Razorpay's web checkout (UPI QR first) instead.
+  Future<void> _openQr() async {
+    final quote = _quote;
+    final user = context.read<AuthProvider>().user;
+    if (quote == null || user == null) return;
+    setState(() => _status = _PayStatus.paying);
+    final result = await Navigator.of(context).push<RazorpayQrResult>(
+      MaterialPageRoute(builder: (_) => RazorpayQrScreen(options: _checkoutOptions(quote, user))),
+    );
+    if (!mounted) return;
+    final paid = result?.success;
+    if (paid != null) {
+      await _onPaymentSuccess(paid);
+    } else if ((result?.error ?? '').isNotEmpty) {
+      setState(() {
+        _status = _PayStatus.failed;
+        _failure = result!.error;
+      });
+    } else {
+      setState(() => _status = _PayStatus.cancelled);
+    }
   }
 
   Future<void> _onPaymentSuccess(PaymentSuccessResponse r) async {
@@ -569,6 +578,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           ),
         ],
+      ),
+      const SizedBox(height: 20),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : _openQr,
+        icon: const Icon(Icons.qr_code_2_rounded),
+        label: const Text('Pay from another phone · Show UPI QR'),
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(50),
+          foregroundColor: GuColors.blue,
+          side: const BorderSide(color: GuColors.blue),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: GoogleFonts.inter(fontWeight: FontWeight.w700),
+        ),
       ),
     ];
   }
