@@ -2681,3 +2681,59 @@
         max-width: 200px;
       }
     }
+
+/* Razorpay-verified online payments */
+.admin-rzp-badge {
+  display: inline-block;
+  margin-bottom: 0.25rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.admin-rzp-box {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  background: #f0fdf4;
+  font-size: 0.85rem;
+}
+
+.admin-rzp-box p {
+  margin: 0.25rem 0 0.6rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.admin-rzp-box-title {
+  font-weight: 700;
+  color: #15803d;
+}
+
+.admin-rzp-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.admin-rzp-row span {
+  min-width: 7.5rem;
+  color: #64748b;
+}
+
+.admin-rzp-row code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.admin-rzp-box a {
+  font-weight: 600;
+}

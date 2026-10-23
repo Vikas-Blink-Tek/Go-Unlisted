@@ -12,7 +12,7 @@ import {
   canRejectOrder,
 } from '../../../utils/orderStatus';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
-import { normalizePaymentRefs } from '../../../utils/paymentRefs';
+import { normalizePaymentRefs, razorpayRefs } from '../../../utils/paymentRefs';
 
 type Props = {
   order: Order | null;
@@ -60,6 +60,7 @@ export default function OrderDetailDrawer({
   const [transferring, setTransferring] = useState(false);
   const [paymentRef, setPaymentRef] = useState('');
   const [savingRef, setSavingRef] = useState(false);
+  const rzp = razorpayRefs(order);
   const [amountEdit, setAmountEdit] = useState('');
   const [savingAmount, setSavingAmount] = useState(false);
 
@@ -252,6 +253,38 @@ export default function OrderDetailDrawer({
                 </p>
               </div>
             )}
+            {rzp ? (
+              <div className="admin-rzp-box">
+                <div className="admin-rzp-box-title">✓ Payment verified by Razorpay</div>
+                <p>
+                  Razorpay&apos;s signature was checked automatically before this order was created — no manual
+                  UTR check is needed. Use the Razorpay dashboard for refunds.
+                </p>
+                {rzp.paymentId && (
+                  <div className="admin-rzp-row">
+                    <span>Payment ID</span>
+                    <code>{rzp.paymentId}</code>
+                    <CopyTextButton value={rzp.paymentId} label="Payment ID copied" />
+                  </div>
+                )}
+                {rzp.bankRef && (
+                  <div className="admin-rzp-row">
+                    <span>Bank UTR / RRN</span>
+                    <code>{rzp.bankRef}</code>
+                    <CopyTextButton value={rzp.bankRef} label="UTR copied" />
+                  </div>
+                )}
+                {rzp.paymentId && (
+                  <a
+                    href={`https://dashboard.razorpay.com/app/payments/${rzp.paymentId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in Razorpay dashboard ↗
+                  </a>
+                )}
+              </div>
+            ) : (
             <div style={{ marginTop: '0.85rem' }}>
               <label className="form-label" htmlFor={`payment-ref-${order.orderId}`}>
                 {canMarkOrderComplete(order.status) ? 'Transfer / Payment Ref (UTR)' : 'Payment Ref / UTR'}
@@ -291,6 +324,7 @@ export default function OrderDetailDrawer({
                 {' '}Paid in parts? Add every UTR — one per line or separated by “/” (max 8).
               </p>
             </div>
+            )}
           </section>
 
           {canTransfer && (

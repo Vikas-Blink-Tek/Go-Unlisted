@@ -430,6 +430,10 @@ $action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // Helper to get POST data safely
 function getPostData() {
+    global $rzpWebhookPayload;
+    if (is_array($rzpWebhookPayload)) {
+        return $rzpWebhookPayload;
+    }
     $data = json_decode(file_get_contents('php://input'), true);
     return is_array($data) ? $data : [];
 }
@@ -1187,6 +1191,28 @@ function computeOrderChargeTotals(float $subtotal, mysqli $conn): array {
     ];
 }
 
+/** Plain text for article title/category — undoes repeated HTML escaping from older saves (React escapes on output). */
+function articlePlainText(string $s): string {
+    for ($i = 0; $i < 5; $i++) {
+        $decoded = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if ($decoded === $s) {
+            break;
+        }
+        $s = $decoded;
+    }
+    return trim(strip_tags($s));
+}
+
+/** Clean title/category on any article row before sending it out. */
+function articleRowForOutput(array $row): array {
+    foreach (['title', 'category'] as $k) {
+        if (isset($row[$k])) {
+            $row[$k] = articlePlainText((string) $row[$k]);
+        }
+    }
+    return $row;
+}
+
 /** Catalog price for a quantity — base price, or the best bulk tier the quantity reaches. */
 function catalogPricePerShare(array $shareRow, int $quantity): float {
     $price = (float) $shareRow['base_price'];
@@ -1487,8 +1513,40 @@ $csrfExempt = [
     'sendStaffResetOtp', 'resetStaffPassword',
     'loginAdmin', 'loginUser', 'saveUser', 'checkAuth', 'checkEmail',
 ];
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action && !in_array($action, $csrfExempt, true)) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $action && !in_array($action, $csrfExempt, true) && $action !== 'razorpayWebhook') {
     validateCsrfToken();
+}
+
+// Razorpay webhook (order.paid): safety net when the buyer's browser/app never confirmed a captured payment.
+// Authenticated by the webhook secret, then replayed through saveOrder as that buyer — same checks, same order.
+$rzpWebhookPayload = null;
+if ($action === 'razorpayWebhook') {
+    $raw = file_get_contents('php://input');
+    $secret = trim((string) getenv('RAZORPAY_WEBHOOK_SECRET'));
+    $sig = $_SERVER['HTTP_X_RAZORPAY_SIGNATURE'] ?? '';
+    if ($secret === '' || $sig === '' || !hash_equals(hash_hmac('sha256', (string) $raw, $secret), $sig)) {
+        http_response_code(401);
+        sendResponse(['error' => 'Invalid webhook signature']);
+    }
+    $event = json_decode((string) $raw, true) ?: [];
+    $rzpOrder = $event['payload']['order']['entity'] ?? [];
+    $rzpPay = $event['payload']['payment']['entity'] ?? [];
+    $notes = $rzpOrder['notes'] ?? [];
+    if (($event['event'] ?? '') !== 'order.paid' || empty($rzpPay['id']) || empty($rzpOrder['id']) || empty($notes['user_id'])) {
+        sendResponse(['ignored' => true]); // 200 so Razorpay does not retry events we do not handle
+    }
+    $_SESSION = ['user_id' => (string) $notes['user_id']];
+    $rzpWebhookPayload = [
+        'shareId' => (string) ($notes['share_id'] ?? ''),
+        'shareName' => '',
+        'qty' => (int) ($notes['qty'] ?? 0),
+        'orderSource' => 'Online',
+        'razorpayPaymentId' => (string) $rzpPay['id'],
+        'razorpayOrderId' => (string) $rzpOrder['id'],
+        // Webhook is already authenticated; sign the pair ourselves so saveOrder runs its normal check
+        'razorpaySignature' => hash_hmac('sha256', $rzpOrder['id'] . '|' . $rzpPay['id'], razorpayCredentials()['key_secret']),
+    ];
+    $action = 'saveOrder';
 }
 
 switch ($action) {
@@ -4130,6 +4188,27 @@ switch ($action) {
                 sendResponse(['error' => "Payment verification failed. If money was debited, contact support with payment ID {$rzpPaymentId}."]);
                 break;
             }
+            // Browser and webhook may confirm the same payment at once — handle one at a time (released when the request ends)
+            $lockName = 'gu_rzp_' . $rzpPaymentId;
+            $lockStmt = $conn->prepare('SELECT GET_LOCK(?, 15)');
+            $lockStmt->bind_param('s', $lockName);
+            $lockStmt->execute();
+            $lockStmt->get_result();
+            // Already recorded (by the other path, or a retry) → same answer, never a second order
+            $paidLike = '% / ' . $rzpPaymentId . ' / %';
+            $paidStmt = $conn->prepare("SELECT order_id, status, total_amount FROM orders WHERE CONCAT(' / ', transaction_id, ' / ') LIKE ? LIMIT 1");
+            $paidStmt->bind_param('s', $paidLike);
+            $paidStmt->execute();
+            if ($paidRow = $paidStmt->get_result()->fetch_assoc()) {
+                sendResponse([
+                    'success' => true,
+                    'orderId' => $paidRow['order_id'],
+                    'transactionId' => $rzpPaymentId,
+                    'status' => $paidRow['status'],
+                    'totalPaid' => (float) $paidRow['total_amount'],
+                ]);
+                break;
+            }
             $rzpOrder = razorpayApiRequest('GET', '/orders/' . rawurlencode($rzpOrderId));
             $notes = $rzpOrder['body']['notes'] ?? [];
             if ($rzpOrder['status'] !== 200 || !is_array($notes)) {
@@ -4146,10 +4225,25 @@ switch ($action) {
             // Share + quantity come from the paid Razorpay order, not the browser
             $share_id = (string) ($notes['share_id'] ?? '');
             $quantity = (int) ($notes['qty'] ?? 0);
+            $nameStmt = $conn->prepare('SELECT name, ticker FROM shares WHERE share_id = ? LIMIT 1');
+            $nameStmt->bind_param('s', $share_id);
+            $nameStmt->execute();
+            if ($nameRow = $nameStmt->get_result()->fetch_assoc()) {
+                $share_name = (string) $nameRow['name'];
+                $share_ticker = (string) $nameRow['ticker'];
+            }
             $razorpayPaidPaise = (int) ($rzpOrder['body']['amount'] ?? 0);
             $method = 'Razorpay';
-            $transaction_id = $rzpPaymentId;
-            $refs = ['ok' => true, 'value' => $rzpPaymentId, 'parts' => [$rzpPaymentId], 'error' => ''];
+            // Also keep the bank reference (UPI RRN / netbanking txn id) so ops can match bank statements
+            $refParts = [$rzpPaymentId];
+            $rzpPayment = razorpayApiRequest('GET', '/payments/' . rawurlencode($rzpPaymentId));
+            $acq = $rzpPayment['body']['acquirer_data'] ?? [];
+            $bankRef = trim((string) ($acq['rrn'] ?? $acq['bank_transaction_id'] ?? $acq['upi_transaction_id'] ?? ''));
+            if ($bankRef !== '' && preg_match('/^[A-Za-z0-9\-_.]{6,30}$/', $bankRef)) {
+                $refParts[] = $bankRef;
+            }
+            $transaction_id = implode(' / ', $refParts);
+            $refs = ['ok' => true, 'value' => $transaction_id, 'parts' => $refParts, 'error' => ''];
             $isRazorpayPaid = true;
         } elseif (!$isAdmin) {
             // Buyers pay only through Razorpay — self-declared UTR orders are no longer accepted
@@ -5341,10 +5435,15 @@ switch ($action) {
     // ARTICLES & BLOGS
     // -----------------------------------------
     case 'getArticles':
-        $res = $conn->query("SELECT id, title, slug, image_url, category, tags, author, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC");
+        $res = $conn->query("SELECT id, title, slug, content, image_url, category, tags, author, created_at FROM articles WHERE status = 'published' ORDER BY created_at DESC");
         $articles = [];
-        while($row = $res->fetch_assoc()) { 
-            $articles[] = $row; 
+        while($row = $res->fetch_assoc()) {
+            // Listing cards get a short summary + read time instead of the full body
+            $text = trim(preg_replace('/\s+/u', ' ', articlePlainText((string) $row['content'])));
+            $row['excerpt'] = mb_strlen($text) > 180 ? rtrim(mb_substr($text, 0, 180)) . '…' : $text;
+            $row['read_minutes'] = max(1, (int) ceil(count(preg_split('/\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY)) / 200));
+            unset($row['content']);
+            $articles[] = articleRowForOutput($row);
         }
         sendResponse($articles);
         break;
@@ -5356,7 +5455,7 @@ switch ($action) {
         $stmt->execute();
         $result = $stmt->get_result();
         if ($row = $result->fetch_assoc()) {
-            sendResponse($row);
+            sendResponse(articleRowForOutput($row));
         } else {
             http_response_code(404);
             sendResponse(["error" => "Article not found"]);
@@ -5367,8 +5466,8 @@ switch ($action) {
         requirePermission('articles');
         $res = $conn->query("SELECT id, title, slug, image_url, category, tags, author, status, created_at FROM articles ORDER BY created_at DESC");
         $articles = [];
-        while($row = $res->fetch_assoc()) { 
-            $articles[] = $row; 
+        while($row = $res->fetch_assoc()) {
+            $articles[] = articleRowForOutput($row);
         }
         sendResponse($articles);
         break;
@@ -5382,7 +5481,7 @@ switch ($action) {
             $stmt->execute();
             $result = $stmt->get_result();
             if ($row = $result->fetch_assoc()) {
-                sendResponse($row);
+                sendResponse(articleRowForOutput($row));
             } else {
                 http_response_code(404);
                 sendResponse(["error" => "Article not found"]);
@@ -5397,7 +5496,8 @@ switch ($action) {
         requirePermission('articles');
         $data = getPostData();
         $id = $data['id'] ?? null;
-        $title = htmlspecialchars($data['title'] ?? '', ENT_QUOTES, 'UTF-8');
+        // Stored as plain text — escaping here doubled on every edit (&amp;amp;…); React escapes on output
+        $title = mb_substr(articlePlainText((string) ($data['title'] ?? '')), 0, 255);
         $slug = preg_replace('/[^a-z0-9-]/', '', strtolower($data['slug'] ?? ''));
         $content = sanitizeArticleHtml($data['content'] ?? '');
         $rawImage = trim((string) ($data['image_url'] ?? ''));
@@ -5409,7 +5509,7 @@ switch ($action) {
                 $image_url = ltrim($rawImage, '/');
             }
         }
-        $category = trim(htmlspecialchars((string) ($data['category'] ?? ''), ENT_QUOTES, 'UTF-8'));
+        $category = articlePlainText((string) ($data['category'] ?? ''));
         $category = mb_substr($category, 0, 100);
         $tags = normalizeArticleTags($data['tags'] ?? '');
         $status = $data['status'] ?? 'published';

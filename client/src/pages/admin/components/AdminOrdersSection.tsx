@@ -12,6 +12,7 @@ import {
 } from '../../../utils/orderStatus';
 import { DEFAULT_USER_CODE, displayUserCode } from '../../../utils/userCode';
 import CopyTextButton from '../../../components/ui/CopyTextButton';
+import { razorpayRefs } from '../../../utils/paymentRefs';
 import OrderDetailDrawer from './OrderDetailDrawer';
 
 type Props = {
@@ -240,6 +241,7 @@ export default function AdminOrdersSection({
               {display.map((o) => {
                 const shareLabel = o.companyName || o.shareName || '—';
                 const paymentRef = (o.transactionId || o.utr || '').trim();
+                const rzp = razorpayRefs(o);
                 const primaryAction = showActions && isPendingOrder(o.status)
                   ? { label: 'Verify', run: () => handleVerify(o.orderId) }
                   : onComplete && canMarkOrderComplete(o.status)
@@ -280,7 +282,14 @@ export default function AdminOrdersSection({
                     </td>
                     <td className="admin-orders-col-amount">{formatCurrency(o.totalPaid || o.total || 0)}</td>
                     <td className="admin-orders-col-utr">
-                      {paymentRef ? (
+                      {rzp ? (
+                        <>
+                          <span className="admin-rzp-badge" title="Payment signature verified with Razorpay">✓ Razorpay verified</span>
+                          <code className="admin-utr-code" title={paymentRef}>
+                            {rzp.bankRef ? `UTR ${rzp.bankRef}` : rzp.paymentId}
+                          </code>
+                        </>
+                      ) : paymentRef ? (
                         <code className="admin-utr-code" title={paymentRef}>{paymentRef}</code>
                       ) : (
                         <span className="admin-orders-empty-ref">—</span>
