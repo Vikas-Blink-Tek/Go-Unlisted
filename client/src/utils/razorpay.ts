@@ -20,6 +20,7 @@ export type RazorpayOptions = {
   image?: string;
   prefill?: { name?: string; email?: string; contact?: string };
   theme?: { color?: string };
+  config?: Record<string, unknown>;
   handler: (response: RazorpaySuccess) => void;
   modal?: { ondismiss?: () => void };
 };
@@ -36,6 +37,24 @@ declare global {
 }
 
 const CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+
+/**
+ * Razorpay hides UPI QR on phones by default; this block puts QR first (pay from another phone),
+ * keeps UPI apps / UPI ID, and still shows cards, netbanking and wallets below.
+ */
+export const RAZORPAY_UPI_QR_CONFIG = {
+  display: {
+    blocks: {
+      upi: {
+        name: 'Pay via UPI',
+        instruments: [{ method: 'upi', flows: ['qrcode', 'intent', 'collect'] }],
+      },
+    },
+    sequence: ['block.upi'],
+    preferences: { show_default_blocks: true },
+  },
+};
+
 let loader: Promise<void> | null = null;
 
 /** Load checkout.js once, only when the buyer picks online payment. */
@@ -72,6 +91,7 @@ export async function openRazorpayCheckout(
   return new Promise((resolve, reject) => {
     let failure: Error | null = null;
     const rzp = new Razorpay({
+      config: RAZORPAY_UPI_QR_CONFIG,
       ...options,
       handler: (response) => resolve(response),
       modal: {

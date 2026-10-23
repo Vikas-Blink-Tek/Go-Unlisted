@@ -182,6 +182,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       'prefill': {'name': user.name, 'email': user.email, 'contact': user.phone},
       'theme': {'color': '#0072BC'},
       'retry': {'enabled': true, 'max_count': 3},
+      // Razorpay hides UPI QR on phones by default — show it first (pay from another phone),
+      // keep UPI apps / UPI ID, and the default cards / netbanking / wallets below
+      'config': {
+        'display': {
+          'blocks': {
+            'upi': {
+              'name': 'Pay via UPI',
+              'instruments': [
+                {
+                  'method': 'upi',
+                  'flows': ['qrcode', 'intent', 'collect'],
+                },
+              ],
+            },
+          },
+          'sequence': ['block.upi'],
+          'preferences': {'show_default_blocks': true},
+        },
+      },
     });
   }
 
