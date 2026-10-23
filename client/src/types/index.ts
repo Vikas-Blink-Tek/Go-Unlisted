@@ -126,6 +126,10 @@ export interface Article {
   author?: string;
   status?: string;
   created_at?: string;
+  /** Listing only — short plain-text summary */
+  excerpt?: string;
+  /** Listing only */
+  read_minutes?: number;
 }
 
 export interface SiteSettings {

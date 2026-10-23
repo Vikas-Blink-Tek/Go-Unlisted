@@ -1,15 +1,13 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import ArticleMedia from '../components/articles/ArticleMedia';
 import { getArticle } from '../api/content';
 import { formatDate } from '../utils/format';
 import { sanitizeHtml } from '../utils/sanitize';
-import { mediaUrl } from '../utils/mediaUrl';
 
 export default function ArticleDetailPage() {
   const { slug } = useParams<{ slug: string }>();
-  const [heroFailed, setHeroFailed] = useState(false);
   const { data: article, isLoading, error } = useQuery({
     queryKey: ['article', slug],
     queryFn: () => getArticle(slug!),
@@ -37,8 +35,6 @@ export default function ArticleDetailPage() {
     );
   }
 
-  const heroSrc = mediaUrl(article.image_url);
-
   return (
     <div className="page-pad" style={{ maxWidth: 800, margin: '0 auto' }}>
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -53,20 +49,7 @@ export default function ArticleDetailPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        {heroSrc && !heroFailed ? (
-          <motion.img
-            src={heroSrc}
-            alt={article.title}
-            className="article-hero-img"
-            initial={{ opacity: 0, scale: 1.02 }}
-            animate={{ opacity: 1, scale: 1 }}
-            onError={() => setHeroFailed(true)}
-          />
-        ) : (
-          <div className="article-hero-img article-img-placeholder" aria-hidden>
-            <span>📰</span>
-          </div>
-        )}
+        <ArticleMedia path={article.image_url} alt={article.title} className="article-hero-media" eager />
         <div style={{ padding: '2rem' }}>
           <h1
             style={{
