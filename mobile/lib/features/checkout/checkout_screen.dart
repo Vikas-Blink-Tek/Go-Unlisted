@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../../core/api/gu_api.dart';
 import '../../core/theme/gu_theme.dart';
 import '../../core/utils/format.dart';
@@ -11,45 +14,39 @@ import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
 
-class _PayMode {
-  const _PayMode({
-    required this.id,
-    required this.label,
-    required this.desc,
-    required this.icon,
-  });
-  final String id;
-  final String label;
-  final String desc;
-  final IconData icon;
+/// Server-priced Razorpay order — the exact amount the buyer will be charged.
+class _Quote {
+  _Quote(Map<String, dynamic> j)
+      : orderId = j['order_id'].toString(),
+        amountPaise = (j['amount'] as num).toInt(),
+        currency = (j['currency'] ?? 'INR').toString(),
+        keyId = j['key_id'].toString(),
+        shareName = (j['summary']?['share_name'] ?? '').toString(),
+        qty = (j['summary']?['qty'] as num?)?.toInt() ?? 0,
+        pricePerShare = (j['summary']?['price_per_share'] as num?)?.toDouble() ?? 0,
+        basePrice = (j['summary']?['base_price'] as num?)?.toDouble() ?? 0,
+        subtotal = (j['summary']?['subtotal'] as num?)?.toDouble() ?? 0,
+        charges = [
+          for (final c in (j['summary']?['charges'] as List? ?? const []))
+            (name: c['name'].toString(), amount: (c['amount'] as num).toDouble()),
+        ];
+
+  final String orderId;
+  final int amountPaise;
+  final String currency;
+  final String keyId;
+  final String shareName;
+  final int qty;
+  final double pricePerShare;
+  final double basePrice;
+  final double subtotal;
+  final List<({String name, double amount})> charges;
+
+  double get total => amountPaise / 100;
+  double get savings => (basePrice - pricePerShare) * qty;
 }
 
-const _payModes = [
-  _PayMode(
-    id: 'neft',
-    label: 'NEFT',
-    desc: 'Transfer via NEFT to our bank account',
-    icon: Icons.account_balance_rounded,
-  ),
-  _PayMode(
-    id: 'imps',
-    label: 'IMPS',
-    desc: 'Instant bank transfer to our account',
-    icon: Icons.bolt_rounded,
-  ),
-  _PayMode(
-    id: 'upi',
-    label: 'UPI Apps',
-    desc: 'Copy UPI ID → pay in GPay / PhonePe / Paytm',
-    icon: Icons.phone_android_rounded,
-  ),
-  _PayMode(
-    id: 'qr',
-    label: 'Scan QR Code',
-    desc: 'Scan QR or pay using our UPI ID',
-    icon: Icons.qr_code_2_rounded,
-  ),
-];
+enum _PayStatus { idle, paying, verifying, cancelled, failed }
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({super.key, required this.shareId});
@@ -63,10 +60,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int _step = 0;
   late int _qty;
   late final TextEditingController _qtyCtrl;
-  String? _mode;
-  final _utr = TextEditingController();
-  bool _loading = false;
-  String? _sessionId;
+  late final Razorpay _razorpay;
+  late final String _sessionId;
+  _Quote? _quote;
+  String? _quoteError;
+  _PayStatus _status = _PayStatus.idle;
+  String _failure = '';
+  String _orderId = '';
+  String _paymentId = '';
+
+  bool get _busy => _status == _PayStatus.paying || _status == _PayStatus.verifying;
 
   @override
   void initState() {
@@ -75,12 +78,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _qty = share?.minQty ?? 1;
     _qtyCtrl = TextEditingController(text: '$_qty');
     _sessionId = 'm-${DateTime.now().millisecondsSinceEpoch}';
+    _razorpay = Razorpay()
+      ..on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaymentSuccess)
+      ..on(Razorpay.EVENT_PAYMENT_ERROR, _onPaymentError)
+      ..on(Razorpay.EVENT_EXTERNAL_WALLET, _onExternalWallet);
   }
 
   @override
   void dispose() {
+    _razorpay.clear();
     _qtyCtrl.dispose();
-    _utr.dispose();
     super.dispose();
   }
 
@@ -105,78 +112,161 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _setQty(parsed, minQty: minQty);
   }
 
-  Future<void> _placeOrder() async {
-    final share = context.read<CatalogProvider>().byId(widget.shareId);
-    final user = context.read<AuthProvider>().user;
-    if (share == null) return;
-    if (!share.isPurchasable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This share is not available for purchase')),
-      );
-      return;
+  /// Same bulk-tier rule as the website and server.
+  double _priceFor(GuShare share, int qty) {
+    final tiers = [...share.discountTiers]..sort((a, b) => b.minQty.compareTo(a.minQty));
+    for (final t in tiers) {
+      if (qty >= t.minQty) return t.price;
     }
+    return share.price;
+  }
+
+  Future<void> _loadQuote() async {
+    setState(() {
+      _quote = null;
+      _quoteError = null;
+    });
+    try {
+      final res = await GuApi.instance.post('razorpayCreateOrder', {
+        'shareId': widget.shareId,
+        'qty': _qty,
+      });
+      if (mounted) setState(() => _quote = _Quote(res));
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _quoteError = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _quoteError = 'Could not load payment details. Check your internet and try again.');
+    }
+  }
+
+  void _goToPayment(GuShare share) {
+    _commitQtyInput(minQty: share.minQty);
+    final user = context.read<AuthProvider>().user;
     if (user == null) {
       context.push('/auth?redirect=/checkout/${widget.shareId}');
       return;
     }
-    if (_mode == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select a payment method')),
-      );
-      return;
-    }
-    final utr = _utr.text.trim().toUpperCase().replaceAll(RegExp(r'\s+'), '');
-    if (utr.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Enter the bank Transaction ID / UTR from payment SMS — not the UPI ID'),
-        ),
-      );
-      return;
-    }
-    setState(() => _loading = true);
+    setState(() {
+      _step = 1;
+      _status = _PayStatus.idle;
+    });
+    _loadQuote();
+    final price = _priceFor(share, _qty);
+    GuApi.instance.post('saveInitiatedCheckout', {
+      'sessionId': _sessionId,
+      'shareId': share.id,
+      'shareName': share.name,
+      'shareTicker': share.ticker,
+      'buyerName': user.name,
+      'buyerEmail': user.email,
+      'buyerPhone': user.phone,
+      'qty': _qty,
+      'pricePerShare': price,
+      'totalAmount': price * _qty,
+      'paymentMode': 'Razorpay',
+    }).catchError((_) => <String, dynamic>{}); // tracking only — never blocks checkout
+  }
+
+  void _openRazorpay() {
+    final quote = _quote;
+    final user = context.read<AuthProvider>().user;
+    if (quote == null || user == null) return;
+    setState(() => _status = _PayStatus.paying);
+    _razorpay.open({
+      'key': quote.keyId,
+      'amount': quote.amountPaise,
+      'currency': quote.currency,
+      'order_id': quote.orderId,
+      'name': 'GO UNLISTED',
+      'description': '${quote.qty} × ${quote.shareName}',
+      'prefill': {'name': user.name, 'email': user.email, 'contact': user.phone},
+      'theme': {'color': '#0072BC'},
+      'retry': {'enabled': true, 'max_count': 3},
+    });
+  }
+
+  Future<void> _onPaymentSuccess(PaymentSuccessResponse r) async {
+    final share = context.read<CatalogProvider>().byId(widget.shareId);
+    final user = context.read<AuthProvider>().user;
+    final quote = _quote;
+    final paymentId = r.paymentId ?? '';
+    setState(() => _status = _PayStatus.verifying);
     try {
-      final methodLabel = _payModes.firstWhere((m) => m.id == _mode).label;
-      await GuApi.instance.post('saveOrder', {
-        'shareId': share.id,
-        'shareName': share.name,
-        'shareTicker': share.ticker,
-        'qty': _qty,
-        'pricePerShare': share.price,
-        'method': methodLabel,
+      // Server checks the Razorpay signature before creating the order
+      final res = await GuApi.instance.post('saveOrder', {
+        'shareId': widget.shareId,
+        'shareName': share?.name ?? quote?.shareName ?? '',
+        'shareTicker': share?.ticker ?? '',
+        'qty': quote?.qty ?? _qty,
         'orderSource': 'Online',
-        'transactionId': utr,
-        'paymentConfirmed': true,
-        'sessionId': _sessionId,
-        'buyerName': user.name,
-        'buyerEmail': user.email,
-        'buyerPhone': user.phone,
+        'buyerName': user?.name ?? '',
+        'buyerEmail': user?.email ?? '',
+        'buyerPhone': user?.phone ?? '',
+        'razorpayPaymentId': paymentId,
+        'razorpayOrderId': r.orderId ?? '',
+        'razorpaySignature': r.signature ?? '',
       });
+      GuApi.instance.post('deleteInitiatedCheckout', {'sessionId': _sessionId}).catchError((_) => <String, dynamic>{});
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Order placed'),
-          content: const Text(
-            'Payment submitted. Complete KYC in Profile if needed — we transfer shares after verification.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                context.go('/app/portfolio');
-              },
-              child: const Text('View portfolio'),
-            ),
-          ],
-        ),
-      );
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      setState(() {
+        _orderId = (res['orderId'] ?? '').toString();
+        _paymentId = paymentId;
+        _status = _PayStatus.idle;
+        _step = 2;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is ApiException ? e.message : 'Could not confirm your order.';
+      setState(() {
+        _status = _PayStatus.failed;
+        _failure = msg.contains(paymentId)
+            ? msg
+            : '$msg Your payment ID is $paymentId — share it with support and we will place your order.';
+      });
+    }
+  }
+
+  void _onPaymentError(PaymentFailureResponse r) {
+    if (!mounted) return;
+    if (r.code == Razorpay.PAYMENT_CANCELLED) {
+      setState(() => _status = _PayStatus.cancelled);
+      return;
+    }
+    setState(() {
+      _status = _PayStatus.failed;
+      _failure = _readableError(r);
+    });
+  }
+
+  void _onExternalWallet(ExternalWalletResponse r) {
+    if (!mounted) return;
+    setState(() => _status = _PayStatus.idle);
+  }
+
+  /// Android SDK sends the Razorpay error as a JSON string — pull out its description.
+  String _readableError(PaymentFailureResponse r) {
+    final raw = r.message ?? '';
+    try {
+      final parsed = jsonDecode(raw);
+      final err = parsed is Map ? parsed['error'] : null;
+      final desc = err is Map ? err['description'] : null;
+      if (desc is String && desc.isNotEmpty) return desc;
+    } catch (_) {
+      // Not JSON — use as-is
+    }
+    if (r.code == Razorpay.NETWORK_ERROR) return 'Network error. Check your internet and try again.';
+    return raw.isNotEmpty ? raw : 'Payment failed. Please try again.';
+  }
+
+  void _back() {
+    if (_busy) return;
+    if (_step == 1) {
+      setState(() {
+        _step = 0;
+        _quote = null;
+      });
+    } else {
+      context.pop();
     }
   }
 
@@ -186,6 +276,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (share == null) {
       return const Scaffold(body: Center(child: Text('Share not found')));
     }
+    if (_step == 2) return _buildSuccess(share);
     if (!share.isPurchasable) {
       return Scaffold(
         appBar: AppBar(title: const Text('Checkout')),
@@ -212,363 +303,340 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         ),
       );
     }
-    final total = share.price * _qty;
-    final settings = context.watch<CatalogProvider>().settings;
-    final title = _step == 0
-        ? 'Quantity'
-        : (_mode == null ? 'Payment' : 'Pay · ${_payModes.firstWhere((m) => m.id == _mode).label}');
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () {
-            if (_step == 1 && _mode != null) {
-              setState(() {
-                _mode = null;
-                _utr.clear();
-              });
-            } else if (_step > 0) {
-              setState(() => _step = 0);
-            } else {
-              context.pop();
-            }
-          },
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+    final price = _priceFor(share, _qty);
+    final quote = _quote;
+
+    return PopScope(
+      canPop: _step == 0 && !_busy,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: Stack(
         children: [
-          Text(share.name, style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18)),
-          Text(
-            '${formatInr(share.price)} / share',
-            style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
-          ),
-          const SizedBox(height: 20),
-          if (_step == 0) ...[
-            Text('No. Of Shares', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _qtyCtrl,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.done,
-              inputFormatters: [
-                FilteringTextInputFormatter.digitsOnly,
-                LengthLimitingTextInputFormatter(8),
-              ],
-              style: GoogleFonts.manrope(fontSize: 28, fontWeight: FontWeight.w800, height: 1.1),
-              textAlign: TextAlign.center,
-              decoration: InputDecoration(
-                hintText: 'Enter quantity',
-                filled: true,
-                fillColor: GuColors.surface,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: GuColors.border),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: const BorderSide(color: GuColors.limeDark, width: 1.5),
-                ),
-                suffixText: 'shares',
-                suffixStyle: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
+          Scaffold(
+            appBar: AppBar(
+              title: Text(_step == 0 ? 'Quantity' : 'Review & Pay'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: _busy ? null : _back,
               ),
-              onChanged: (v) {
-                final parsed = int.tryParse(v.trim());
-                if (parsed != null && parsed >= share.minQty) {
-                  setState(() => _qty = parsed);
-                }
-              },
-              onEditingComplete: () {
-                _commitQtyInput(minQty: share.minQty);
-                FocusScope.of(context).unfocus();
-              },
-              onTapOutside: (_) {
-                _commitQtyInput(minQty: share.minQty);
-                FocusScope.of(context).unfocus();
-              },
             ),
-            const SizedBox(height: 10),
-            Row(
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               children: [
-                _QtyBtn(
-                  icon: Icons.remove_rounded,
-                  enabled: _qty > share.minQty,
-                  onTap: () => _setQty(_qty - 1, minQty: share.minQty),
+                _StepDots(step: _step),
+                const SizedBox(height: 18),
+                Text(share.name, style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18)),
+                Text(
+                  '${formatInr(price)} / share',
+                  style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
                 ),
-                const SizedBox(width: 10),
-                _QtyBtn(
-                  icon: Icons.add_rounded,
-                  enabled: true,
-                  onTap: () => _setQty(_qty + 1, minQty: share.minQty),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Minimum purchase quantity is ${share.minQty} shares.',
-                    style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12, height: 1.35),
-                  ),
-                ),
+                const SizedBox(height: 20),
+                if (_step == 0) ..._buildQuantity(share, price) else ..._buildReview(quote),
               ],
             ),
-            const SizedBox(height: 16),
-            _TotalRow(total: total),
-            const SizedBox(height: 12),
-            Text(
-              'You can pay now — complete KYC later before demat transfer.',
-              style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
-            ),
-          ] else if (_mode == null) ...[
-            Text(
-              'Select Payment Method',
-              style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 20),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Pay ${formatInr(total, decimals: true)} using any method below',
-              style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            ..._payModes.map((mode) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Material(
-                  color: GuColors.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(14),
-                    onTap: () => setState(() => _mode = mode.id),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: GuColors.border),
+            bottomNavigationBar: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: _step == 0
+                    ? GuPrimaryButton(label: 'Continue to payment', onPressed: () => _goToPayment(share))
+                    : GuPrimaryButton(
+                        loading: _busy,
+                        label: quote == null
+                            ? 'Preparing payment…'
+                            : (_status == _PayStatus.failed || _status == _PayStatus.cancelled)
+                                ? 'Retry · ${formatInr(quote.total, decimals: true)}'
+                                : 'Pay ${formatInr(quote.total, decimals: true)}',
+                        onPressed: quote == null ? null : _openRazorpay,
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: GuColors.limeSoft,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(mode.icon, color: GuColors.limeDark),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  mode.label,
-                                  style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 15),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  mode.desc,
-                                  style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded, color: GuColors.muted),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-            const SizedBox(height: 8),
-            _TotalRow(total: total),
-          ] else ...[
-            _PaymentInstructions(
-              mode: _mode!,
-              settings: settings,
-              total: total,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _utr,
-              textCapitalization: TextCapitalization.characters,
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9]')),
-                LengthLimitingTextInputFormatter(30),
-              ],
-              onChanged: (v) {
-                final next = v.toUpperCase().replaceAll(RegExp(r'\s+'), '');
-                if (next != v) {
-                  _utr.value = TextEditingValue(
-                    text: next,
-                    selection: TextSelection.collapsed(offset: next.length),
-                  );
-                }
-              },
-              decoration: const InputDecoration(
-                labelText: 'Transaction ID / UTR *',
-                hintText: 'e.g. 312345678901 from GPay / bank SMS',
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Paste the Transaction ID / UTR from GPay / PhonePe / bank SMS (not our UPI ID). Confirm to submit your order for verification.',
-              style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => setState(() {
-                _mode = null;
-                _utr.clear();
-              }),
-              child: const Text('← Change method'),
-            ),
-            const SizedBox(height: 8),
-            _TotalRow(total: total),
-          ],
-        ],
-      ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-          child: GuPrimaryButton(
-            loading: _loading,
-            label: _step == 0
-                ? 'Continue to payment'
-                : _mode == null
-                    ? 'Select a method above'
-                    : 'Confirm payment & place order',
-            onPressed: _step == 0
-                ? () {
-                    _commitQtyInput(minQty: share.minQty);
-                    final user = context.read<AuthProvider>().user;
-                    if (user == null) {
-                      context.push('/auth?redirect=/checkout/${widget.shareId}');
-                      return;
-                    }
-                    setState(() => _step = 1);
-                  }
-                : _mode == null
-                    ? null
-                    : _placeOrder,
           ),
-        ),
+          if (_status == _PayStatus.verifying) const _VerifyingOverlay(),
+        ],
       ),
     );
   }
-}
 
-class _PaymentInstructions extends StatelessWidget {
-  const _PaymentInstructions({
-    required this.mode,
-    required this.settings,
-    required this.total,
-  });
-
-  final String mode;
-  final GuSettings? settings;
-  final double total;
-
-  @override
-  Widget build(BuildContext context) {
-    if (mode == 'neft' || mode == 'imps') {
-      final label = mode == 'neft' ? 'NEFT' : 'IMPS';
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  List<Widget> _buildQuantity(GuShare share, double price) {
+    final value = price * _qty;
+    final savings = (share.price - price) * _qty;
+    return [
+      Text('No. Of Shares', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _qtyCtrl,
+        keyboardType: TextInputType.number,
+        textInputAction: TextInputAction.done,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(8),
+        ],
+        style: GoogleFonts.manrope(fontSize: 28, fontWeight: FontWeight.w800, height: 1.1),
+        textAlign: TextAlign.center,
+        decoration: InputDecoration(
+          hintText: 'Enter quantity',
+          filled: true,
+          fillColor: GuColors.surface,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: GuColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: const BorderSide(color: GuColors.limeDark, width: 1.5),
+          ),
+          suffixText: 'shares',
+          suffixStyle: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
+        ),
+        onChanged: (v) {
+          final parsed = int.tryParse(v.trim());
+          if (parsed != null && parsed >= share.minQty) {
+            setState(() => _qty = parsed);
+          }
+        },
+        onEditingComplete: () {
+          _commitQtyInput(minQty: share.minQty);
+          FocusScope.of(context).unfocus();
+        },
+        onTapOutside: (_) {
+          _commitQtyInput(minQty: share.minQty);
+          FocusScope.of(context).unfocus();
+        },
+      ),
+      const SizedBox(height: 10),
+      Row(
         children: [
+          _QtyBtn(
+            icon: Icons.remove_rounded,
+            enabled: _qty > share.minQty,
+            onTap: () => _setQty(_qty - 1, minQty: share.minQty),
+          ),
+          const SizedBox(width: 10),
+          _QtyBtn(
+            icon: Icons.add_rounded,
+            enabled: true,
+            onTap: () => _setQty(_qty + 1, minQty: share.minQty),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Minimum purchase quantity is ${share.minQty} shares.',
+              style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      _Card(
+        children: [
+          _Row(label: 'Shares value ($_qty × ${formatInr(share.price, decimals: true)})', value: formatInr(share.price * _qty, decimals: true)),
+          if (savings > 0)
+            _Row(label: 'Bulk discount', value: '− ${formatInr(savings, decimals: true)}', valueColor: GuColors.limeDark),
+          const Divider(height: 16),
+          _Row(label: 'Subtotal', value: formatInr(value, decimals: true)),
+          const SizedBox(height: 4),
           Text(
-            'Transfer the exact amount via $label to the account below. Use your registered bank account only.',
-            style: GoogleFonts.inter(fontSize: 13, height: 1.45, color: GuColors.text),
+            'Any platform fees are shown on the next step before you pay.',
+            style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
           ),
-          const SizedBox(height: 14),
-          _BankDetailsCard(settings: settings, total: total),
         ],
-      );
-    }
-
-    if (mode == 'upi') {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PayStepList(
-            steps: [
-              'Copy our UPI ID below.',
-              'Open GPay, PhonePe, or Paytm and send ${formatInr(total, decimals: true)} to that UPI ID.',
-              'After payment, enter the Transaction ID / UTR below and tap Confirm payment & place order.',
-            ],
-          ),
-          const SizedBox(height: 14),
-          _UpiIdCard(settings: settings, total: total),
-        ],
-      );
-    }
-
-    // QR
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PayStepList(
-          steps: [
-            'Scan the QR in any UPI app, or copy the UPI ID.',
-            'Pay ${formatInr(total, decimals: true)} to ${settings?.accountName ?? 'GO UNLISTED'}.',
-            'Enter the Transaction ID / UTR below to complete your order.',
-          ],
-        ),
-        const SizedBox(height: 14),
-        if (settings?.qrUrl != null)
-          Center(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                settings!.qrUrl!,
-                height: 220,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => Text(
-                  'QR unavailable — use UPI ID below',
-                  style: GoogleFonts.inter(color: GuColors.muted),
-                ),
-              ),
-            ),
-          ),
-        const SizedBox(height: 12),
-        _UpiIdCard(settings: settings, total: total),
-      ],
-    );
+      ),
+      const SizedBox(height: 12),
+      Text(
+        'You can pay now — complete KYC later before demat transfer.',
+        style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13),
+      ),
+    ];
   }
-}
 
-class _PayStepList extends StatelessWidget {
-  const _PayStepList({required this.steps});
-  final List<String> steps;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var i = 0; i < steps.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  List<Widget> _buildReview(_Quote? quote) {
+    if (_quoteError != null) {
+      return [
+        _Banner(
+          error: true,
+          title: 'Could not start payment',
+          message: _quoteError!,
+          action: TextButton(onPressed: _loadQuote, child: const Text('Try again')),
+        ),
+      ];
+    }
+    if (quote == null) {
+      return const [
+        Padding(
+          padding: EdgeInsets.symmetric(vertical: 48),
+          child: Column(
             children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 14),
+              Text('Preparing secure payment…', style: TextStyle(color: GuColors.muted)),
+            ],
+          ),
+        ),
+      ];
+    }
+    return [
+      _Card(
+        children: [
+          Text(
+            'ORDER SUMMARY',
+            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.6, color: GuColors.muted),
+          ),
+          const SizedBox(height: 10),
+          _Row(
+            label: 'Shares value (${quote.qty} × ${formatInr(quote.basePrice, decimals: true)})',
+            value: formatInr(quote.subtotal + (quote.savings > 0 ? quote.savings : 0), decimals: true),
+          ),
+          if (quote.savings > 0)
+            _Row(
+              label: 'Bulk discount applied',
+              value: '− ${formatInr(quote.savings, decimals: true)}',
+              valueColor: GuColors.limeDark,
+            ),
+          for (final c in quote.charges) _Row(label: c.name, value: formatInr(c.amount, decimals: true)),
+          const Divider(height: 20),
+          Row(
+            children: [
+              Text('Total payable', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+              const Spacer(),
               Text(
-                '${i + 1}.',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: GuColors.limeDark,
+                formatInr(quote.total, decimals: true),
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 22, color: GuColors.ink),
+              ),
+            ],
+          ),
+        ],
+      ),
+      if (_status == _PayStatus.failed) ...[
+        const SizedBox(height: 14),
+        _Banner(error: true, title: 'Payment not completed', message: _failure),
+      ],
+      if (_status == _PayStatus.cancelled) ...[
+        const SizedBox(height: 14),
+        const _Banner(message: 'Payment cancelled. No money was deducted — tap Retry to pay.'),
+      ],
+      const SizedBox(height: 18),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Pay with', style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12)),
+          for (final m in const ['UPI', 'Cards', 'Netbanking', 'Wallets'])
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: GuColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: GuColors.border),
+              ),
+              child: Text(m, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
+            ),
+        ],
+      ),
+      const SizedBox(height: 16),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.lock_rounded, size: 14, color: GuColors.muted),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              '100% secure payment by Razorpay. Order confirmed instantly.',
+              style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _buildSuccess(GuShare share) {
+    final quote = _quote;
+    final user = context.watch<AuthProvider>().user;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) context.go('/app/portfolio');
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 40, 24, 24),
+            children: [
+              Center(
+                child: Container(
+                  width: 84,
+                  height: 84,
+                  decoration: const BoxDecoration(shape: BoxShape.circle, gradient: GuColors.brandGradient),
+                  child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  steps[i],
-                  style: GoogleFonts.inter(fontSize: 13, height: 1.45, color: GuColors.text),
-                ),
+              const SizedBox(height: 20),
+              Text(
+                'Payment successful!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 24),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'Your order is confirmed. Shares show in your portfolio while we complete the demat transfer.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(color: GuColors.muted, height: 1.45),
+              ),
+              const SizedBox(height: 24),
+              _Card(
+                children: [
+                  _Row(label: 'Order ID', value: _orderId, copy: true),
+                  _Row(label: 'Company', value: share.name),
+                  if (quote != null) _Row(label: 'Quantity', value: '${quote.qty} shares'),
+                  if (quote != null) _Row(label: 'Amount paid', value: formatInr(quote.total, decimals: true)),
+                  _Row(label: 'Payment ID', value: _paymentId, copy: true),
+                  const _Row(label: 'Status', value: 'Share transfer pending', valueColor: GuColors.blue),
+                ],
+              ),
+              if (user != null && !user.isKycVerified) ...[
+                const SizedBox(height: 14),
+                const _Banner(message: 'Complete your KYC in Profile so we can transfer the shares to your demat account.'),
+              ],
+              const SizedBox(height: 24),
+              GuPrimaryButton(label: 'View portfolio', onPressed: () => context.go('/app/portfolio')),
+              const SizedBox(height: 8),
+              TextButton(onPressed: () => context.go('/app/shares'), child: const Text('Continue exploring')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StepDots extends StatelessWidget {
+  const _StepDots({required this.step});
+  final int step;
+
+  @override
+  Widget build(BuildContext context) {
+    const labels = ['Quantity', 'Review & Pay', 'Done'];
+    return Row(
+      children: [
+        for (var i = 0; i < labels.length; i++) ...[
+          if (i > 0)
+            Expanded(child: Container(height: 2, color: i <= step ? GuColors.limeDark : GuColors.border)),
+          Column(
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: i <= step ? GuColors.limeDark : GuColors.border,
+                child: i < step
+                    ? const Icon(Icons.check_rounded, size: 14, color: Colors.white)
+                    : Text('${i + 1}', style: TextStyle(fontSize: 12, color: i == step ? Colors.white : GuColors.muted)),
+              ),
+              const SizedBox(height: 4),
+              Text(labels[i], style: GoogleFonts.inter(fontSize: 11, color: i == step ? GuColors.ink : GuColors.muted)),
             ],
           ),
         ],
@@ -577,10 +645,9 @@ class _PayStepList extends StatelessWidget {
   }
 }
 
-class _BankDetailsCard extends StatelessWidget {
-  const _BankDetailsCard({required this.settings, required this.total});
-  final GuSettings? settings;
-  final double total;
+class _Card extends StatelessWidget {
+  const _Card({required this.children});
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
@@ -591,142 +658,110 @@ class _BankDetailsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: GuColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Bank Account Details',
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 15),
-          ),
-          const SizedBox(height: 8),
-          if (settings?.bankName != null) _CopyRow(label: 'Bank Name', value: settings!.bankName!),
-          if (settings?.accountName != null) _CopyRow(label: 'Account Name', value: settings!.accountName!),
-          if (settings?.accountNumber != null) _CopyRow(label: 'Account No.', value: settings!.accountNumber!),
-          if (settings?.ifsc != null) _CopyRow(label: 'IFSC Code', value: settings!.ifsc!),
-          if (settings?.branch != null) _CopyRow(label: 'Branch', value: settings!.branch!),
-          const SizedBox(height: 8),
-          _AmountBox(total: total),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
     );
   }
 }
 
-class _UpiIdCard extends StatelessWidget {
-  const _UpiIdCard({required this.settings, this.total});
-  final GuSettings? settings;
-  final double? total;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: GuColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: GuColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Merchant UPI', style: GoogleFonts.inter(fontSize: 12, color: GuColors.muted)),
-          if (settings?.accountName != null) ...[
-            const SizedBox(height: 4),
-            Text(
-              settings!.accountName!,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-          ],
-          if (settings?.upiId != null) ...[
-            const SizedBox(height: 8),
-            SelectableText(
-              settings!.upiId!,
-              style: GoogleFonts.robotoMono(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-
-          ],
-          if (total != null) ...[
-            const SizedBox(height: 12),
-            _AmountBox(total: total!),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _AmountBox extends StatelessWidget {
-  const _AmountBox({required this.total});
-  final double total;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: GuColors.limeSoft,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Text('Transfer exactly', style: GoogleFonts.inter(fontSize: 13, color: GuColors.muted)),
-          const Spacer(),
-          Text(
-            formatInr(total, decimals: true),
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TotalRow extends StatelessWidget {
-  const _TotalRow({required this.total});
-  final double total;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: GuColors.limeSoft,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Text('Total payable', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-          const Spacer(),
-          Text(
-            formatInr(total, decimals: true),
-            style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CopyRow extends StatelessWidget {
-  const _CopyRow({required this.label, required this.value});
+class _Row extends StatelessWidget {
+  const _Row({required this.label, required this.value, this.valueColor, this.copy = false});
   final String label;
   final String value;
+  final Color? valueColor;
+  final bool copy;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      title: Text(label, style: GoogleFonts.inter(fontSize: 12, color: GuColors.muted)),
-      subtitle: Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14)),
-      trailing: IconButton(
-        icon: const Icon(Icons.copy_rounded, size: 18),
-        onPressed: () {
-          Clipboard.setData(ClipboardData(text: value));
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label copied')));
-        },
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(label, style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13))),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13, color: valueColor ?? GuColors.ink),
+            ),
+          ),
+          if (copy && value.isNotEmpty)
+            InkWell(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label copied')));
+              },
+              child: const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: Icon(Icons.copy_rounded, size: 16, color: GuColors.muted),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  const _Banner({required this.message, this.title, this.error = false, this.action});
+  final String message;
+  final String? title;
+  final bool error;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = error ? GuColors.danger : GuColors.blue;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null)
+            Text(title!, style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: color)),
+          if (title != null) const SizedBox(height: 4),
+          Text(message, style: GoogleFonts.inter(fontSize: 13, height: 1.45, color: GuColors.text)),
+          ?action,
+        ],
+      ),
+    );
+  }
+}
+
+class _VerifyingOverlay extends StatelessWidget {
+  const _VerifyingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black54,
+        child: Center(
+          child: Material(
+            color: GuColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text('Confirming your payment…', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text("Please don't close the app.", style: GoogleFonts.inter(color: GuColors.muted, fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

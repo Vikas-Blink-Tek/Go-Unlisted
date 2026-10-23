@@ -363,8 +363,8 @@ export default function DashboardPage() {
                 ))}
               </div>
               <div className="portfolio-empty-demo-steps">
-                <div><strong>1.</strong> Browse &amp; pay</div>
-                <div><strong>2.</strong> Submit UTR</div>
+                <div><strong>1.</strong> Choose shares</div>
+                <div><strong>2.</strong> Pay securely online</div>
                 <div><strong>3.</strong> Track transfer here</div>
               </div>
               <Link to="/shares" className="btn btn-primary">Explore Shares</Link>
@@ -378,7 +378,7 @@ export default function DashboardPage() {
                   <p style={{ color: 'var(--muted)', margin: 0 }}>
                     {period !== 'all'
                       ? 'No holdings in this period. Try “Today”, “All”, or another month.'
-                      : 'No confirmed holdings yet. After you pay and submit UTR, admin verifies payment — then shares appear here as confirmed.'}
+                      : 'No confirmed holdings yet. After you pay online, shares appear here as soon as the demat transfer is complete.'}
                   </p>
                 </div>
               ) : (
@@ -391,7 +391,7 @@ export default function DashboardPage() {
                           <th>Company</th>
                           <th>Qty</th>
                           <th>Total</th>
-                          <th>Txn ID / UTR</th>
+                          <th>Payment ID</th>
                           <th>Status</th>
                           <th>Date / Time</th>
                         </tr>
@@ -460,7 +460,7 @@ export default function DashboardPage() {
                           <div><span>Order</span><strong style={{ fontFamily: 'monospace', fontSize: '0.78rem' }}>{o.orderId}</strong></div>
                           <div><span>Qty</span><strong>{o.qty}</strong></div>
                           <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
-                          <div><span>Txn ID / UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
+                          <div><span>Payment ID</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
                           <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                           {canViewInvoice(o.status) && (
                             <div style={{ marginTop: '0.5rem', textAlign: 'right', gridColumn: '1 / -1' }}>
@@ -495,7 +495,7 @@ export default function DashboardPage() {
                           <th>Qty</th>
                           <th>Total</th>
                           <th>Payment</th>
-                          <th>Txn ID / UTR</th>
+                          <th>Payment ID</th>
                           <th>Status</th>
                           <th>Date / Time</th>
                         </tr>
@@ -553,7 +553,7 @@ export default function DashboardPage() {
                           <div><span>Qty</span><strong>{o.qty}</strong></div>
                           <div><span>Total</span><strong style={{ color: 'var(--accent)' }}>{formatCurrency(o.totalPaid || o.total || 0)}</strong></div>
                           <div><span>Payment</span><strong>{o.method || o.paymentMethod || '—'}</strong></div>
-                          <div><span>Txn ID / UTR</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
+                          <div><span>Payment ID</span><strong style={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{orderTxnId(o)}</strong></div>
                           <div><span>Date / Time</span><strong>{formatDateTime(getOrderDate(o))}</strong></div>
                         </div>
                       </div>

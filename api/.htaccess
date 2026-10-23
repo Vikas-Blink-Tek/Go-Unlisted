@@ -12,6 +12,11 @@
     Deny from all
 </Files>
 
+# Never serve env files (Razorpay secret)
+<FilesMatch "^\.env">
+    Require all denied
+</FilesMatch>
+
 # Block error logs from web access
 <FilesMatch "\.(log)$">
     Require all denied

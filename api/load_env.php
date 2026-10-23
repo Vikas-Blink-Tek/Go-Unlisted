@@ -39,3 +39,5 @@ function guLoadDotEnvFile(string $path): void {
 $root = dirname(__DIR__);
 guLoadDotEnvFile($root . '/.env.local');
 guLoadDotEnvFile(__DIR__ . '/.env.local');
+// RAZORPAY_* — first file to set a key wins, so .env.local still overrides .env
+guLoadDotEnvFile($root . '/.env');

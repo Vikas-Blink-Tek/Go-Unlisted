@@ -39,6 +39,13 @@ else
   echo "  ⚠ No api/deploy.config.php — OTP emails need mail_config.php on server"
 fi
 rm -f "$DEPLOY/api/db_config.local.php" "$DEPLOY/api/deploy.config.php"
+# Razorpay keys — api/load_env.php reads public_html/.env (blocked from the web by .htaccess)
+if [ -f "$ROOT/.env" ]; then
+  cp "$ROOT/.env" "$DEPLOY/.env"
+  echo "  ✓ .env (Razorpay keys) included"
+else
+  echo "  ⚠ No .env — online payment stays disabled until RAZORPAY_* keys are on the server"
+fi
 
 # Uploads: only ship .htaccess — never empty upload trees that risk wiping live KYC proofs / logos
 cp "$ROOT/uploads/.htaccess" "$DEPLOY/uploads/" 2>/dev/null || true

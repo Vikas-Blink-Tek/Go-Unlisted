@@ -11,7 +11,7 @@ const faqs = [
   },
   {
     q: 'How does the purchase and transfer process work?',
-    a: 'Browse a listing, place your order, and pay via bank transfer or UPI. Enter your UTR at checkout so we can verify payment within 24 hours. Complete KYC in your dashboard (PAN, demat, bank). Once verified, shares transfer to your demat in 2–3 business days.',
+    a: 'Browse a listing, choose your quantity and pay securely online with UPI, card, netbanking or wallet — your order is confirmed instantly. Complete KYC in your dashboard (PAN, demat, bank). Once verified, shares transfer to your demat in 2–3 business days.',
   },
   {
     q: 'When do I need to complete KYC?',
@@ -58,7 +58,7 @@ export default function AboutPage() {
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', padding: '2rem' }}>
           {[
             ['Verified Listings Only', 'Every company is thoroughly due-diligenced before listing on our platform.'],
-            ['Secure Transactions', 'Pay via NEFT, RTGS, IMPS or UPI. We verify your UTR and confirm before transfer.'],
+            ['Secure Transactions', 'Pay online via Razorpay with UPI, cards, netbanking or wallets. Every payment is verified automatically.'],
             ['Transparent Pricing', 'Checkout shows share value clearly. Extra charges only when enabled in Site Settings — no hidden fees.'],
             ['Dedicated Support', 'Dedicated relationship managers for every investor query and concern.'],
           ].map(([title, desc]) => (

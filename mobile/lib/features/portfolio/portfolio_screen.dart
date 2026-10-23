@@ -185,7 +185,7 @@ class _PortfolioEmptyDemo extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Sample layout only — not real positions. Buy a share and submit UTR to see live orders here.',
+            'Sample layout only — not real positions. Buy a share to see live orders here.',
             textAlign: TextAlign.center,
             style: TextStyle(color: GuColors.muted, height: 1.45, fontSize: 13),
           ),
@@ -244,7 +244,7 @@ class _PortfolioEmptyDemo extends StatelessWidget {
           }),
           const SizedBox(height: 8),
           const Text(
-            '1. Browse & pay  ·  2. Submit UTR  ·  3. Track here',
+            '1. Choose shares  ·  2. Pay online  ·  3. Track here',
             textAlign: TextAlign.center,
             style: TextStyle(color: GuColors.muted, fontSize: 12),
           ),

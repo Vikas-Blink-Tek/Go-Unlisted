@@ -1187,6 +1187,65 @@ function computeOrderChargeTotals(float $subtotal, mysqli $conn): array {
     ];
 }
 
+/** Catalog price for a quantity — base price, or the best bulk tier the quantity reaches. */
+function catalogPricePerShare(array $shareRow, int $quantity): float {
+    $price = (float) $shareRow['base_price'];
+    $tiers = json_decode((string) ($shareRow['discount_tiers'] ?? '[]'), true);
+    if (is_array($tiers) && !empty($tiers)) {
+        usort($tiers, function ($a, $b) {
+            return (int)($b['minQty'] ?? 0) - (int)($a['minQty'] ?? 0);
+        });
+        foreach ($tiers as $tier) {
+            if ($quantity >= (int)($tier['minQty'] ?? 0)) {
+                $price = (float)($tier['price'] ?? $price);
+                break;
+            }
+        }
+    }
+    return $price;
+}
+
+/** Razorpay keys from .env / .env.local — the secret never leaves the server. */
+function razorpayCredentials(): array {
+    return [
+        'key_id' => trim((string) getenv('RAZORPAY_KEY_ID')),
+        'key_secret' => trim((string) getenv('RAZORPAY_KEY_SECRET')),
+    ];
+}
+
+/** Call the Razorpay REST API. Returns ['status' => HTTP code (0 = network error), 'body' => decoded JSON]. */
+function razorpayApiRequest(string $method, string $path, ?array $payload = null): array {
+    $creds = razorpayCredentials();
+    $ch = curl_init('https://api.razorpay.com/v1' . $path);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CUSTOMREQUEST => $method,
+        CURLOPT_USERPWD => $creds['key_id'] . ':' . $creds['key_secret'],
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+    ]);
+    if ($payload !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    }
+    $raw = curl_exec($ch);
+    $status = $raw === false ? 0 : (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($raw === false) {
+        error_log('Razorpay request failed: ' . curl_error($ch));
+    }
+    $body = json_decode((string) $raw, true);
+    return ['status' => $status, 'body' => is_array($body) ? $body : []];
+}
+
+/** HMAC-SHA256(order_id|payment_id, key_secret) must equal the signature Razorpay Checkout returned. */
+function razorpaySignatureValid(string $rzpOrderId, string $rzpPaymentId, string $signature): bool {
+    $secret = razorpayCredentials()['key_secret'];
+    if ($secret === '' || $rzpOrderId === '' || $rzpPaymentId === '' || $signature === '') {
+        return false;
+    }
+    $expected = hash_hmac('sha256', $rzpOrderId . '|' . $rzpPaymentId, $secret);
+    return hash_equals($expected, $signature);
+}
+
 function employeeCodeExists(mysqli $conn, string $code): bool {
     $code = canonicalizeEmployeeUserCode($code);
     if ($code === '' || $code === 'GU00') {
@@ -1236,8 +1295,8 @@ function resolveBuyerEmployeeCode(mysqli $conn, string $userId, string $buyerPho
     }
     $stmt = $conn->prepare(
         "SELECT referral_code FROM users
-         WHERE (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
-            OR (? <> '' AND LOWER(email) = ?)
+         WHERE (CHAR_LENGTH(?) > 0 AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+            OR (CHAR_LENGTH(?) > 0 AND LOWER(email) = ?)
          ORDER BY created_at DESC LIMIT 1"
     );
     $stmt->bind_param('ssss', $phone10, $phone10, $emailLower, $emailLower);
@@ -3585,8 +3644,8 @@ switch ($action) {
                        WHERE deleted_at IS NULL
                          AND (
                            user_id = ?
-                           OR (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
-                           OR (? <> '' AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
+                           OR (CHAR_LENGTH(?) > 0 AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                           OR (CHAR_LENGTH(?) > 0 AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
                          )
                          {$statusSql}";
             $ordUpd = $conn->prepare($ordSql);
@@ -3601,8 +3660,8 @@ switch ($action) {
             $initSql = "UPDATE initiated_checkouts SET employee_code = ?
                         WHERE status = 'Initiated'
                           AND (
-                            (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
-                            OR (? <> '' AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
+                            (CHAR_LENGTH(?) > 0 AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(buyer_phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                            OR (CHAR_LENGTH(?) > 0 AND LOWER(TRIM(IFNULL(buyer_email,''))) = ?)
                           )";
             $initUpd = $conn->prepare($initSql);
             if ($initUpd) {
@@ -3802,6 +3861,102 @@ switch ($action) {
         ]);
         break;
 
+    // Razorpay Standard Checkout step 1: amount is priced here from the catalog, never taken from the browser
+    case 'razorpayCreateOrder':
+        if (empty($_SESSION['user_id'])) {
+            http_response_code(401);
+            sendResponse(['error' => 'Login or sign up is required to place an order']);
+            break;
+        }
+        $creds = razorpayCredentials();
+        if ($creds['key_id'] === '' || $creds['key_secret'] === '') {
+            http_response_code(503);
+            sendResponse(['error' => 'Online payment is not available right now. Please use UPI / bank transfer.']);
+            break;
+        }
+        $data = getPostData();
+        $share_id = trim((string) ($data['shareId'] ?? ''));
+        $quantity = (int) ($data['qty'] ?? 0);
+        $shareStmt = $conn->prepare("SELECT base_price, name, ticker, min_qty, discount_tiers, listing_type, listing_price, inventory_status, share_id FROM shares WHERE share_id = ? AND is_active = 1");
+        $shareStmt->bind_param('s', $share_id);
+        $shareStmt->execute();
+        $shareRow = $shareStmt->get_result()->fetch_assoc();
+        if (!$shareRow || $quantity < 1) {
+            http_response_code(400);
+            sendResponse(['error' => 'Invalid share or quantity']);
+            break;
+        }
+        if (!shareIsPurchasable($shareRow)) {
+            http_response_code(400);
+            sendResponse(['error' => 'This company is not available for purchase. GO UNLISTED only deals in unlisted and pre-IPO shares.']);
+            break;
+        }
+        $minQty = (int) ($shareRow['min_qty'] ?? 1);
+        if ($quantity < $minQty) {
+            http_response_code(400);
+            sendResponse(['error' => "Minimum quantity is $minQty shares"]);
+            break;
+        }
+        $pricePerShare = catalogPricePerShare($shareRow, $quantity);
+        $subtotal = round($pricePerShare * $quantity, 2);
+        $chargeTotals = computeOrderChargeTotals($subtotal, $conn);
+        $amountPaise = (int) round($chargeTotals['total'] * 100);
+        if ($amountPaise < 100) {
+            http_response_code(400);
+            sendResponse(['error' => 'Minimum payment amount is ₹1']);
+            break;
+        }
+        $rzp = razorpayApiRequest('POST', '/orders', [
+            'amount' => $amountPaise,
+            'currency' => 'INR',
+            'receipt' => 'gu_' . time() . '_' . bin2hex(random_bytes(4)),
+            // Read back on verify so the order is created for exactly what was paid
+            'notes' => [
+                'user_id' => (string) $_SESSION['user_id'],
+                'share_id' => $share_id,
+                'qty' => (string) $quantity,
+            ],
+        ]);
+        if ($rzp['status'] === 401) {
+            error_log('Razorpay auth failed — check RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET');
+            http_response_code(401);
+            sendResponse(['error' => 'Payment gateway authentication failed. Please contact support.']);
+            break;
+        }
+        if ($rzp['status'] !== 200 || empty($rzp['body']['id'])) {
+            error_log('Razorpay create order failed: HTTP ' . $rzp['status'] . ' ' . json_encode($rzp['body']));
+            http_response_code(500);
+            sendResponse(['error' => 'Could not start online payment. Please try again.']);
+            break;
+        }
+        $charges = [];
+        foreach (json_decode((string) $chargeTotals['custom_charges_json'], true) ?: [] as $c) {
+            if ((float) ($c['amount'] ?? 0) > 0) {
+                $label = (string) ($c['name'] ?? 'Charge');
+                if (($c['type'] ?? '') === 'percentage') {
+                    $label .= ' (' . (float) ($c['value'] ?? 0) . '%)';
+                }
+                $charges[] = ['name' => $label, 'amount' => (float) $c['amount']];
+            }
+        }
+        sendResponse([
+            'order_id' => $rzp['body']['id'],
+            'amount' => (int) $rzp['body']['amount'],
+            'currency' => $rzp['body']['currency'] ?? 'INR',
+            'key_id' => $creds['key_id'],
+            // Exact breakdown of what Razorpay will charge — shown on the pay screen
+            'summary' => [
+                'share_name' => (string) $shareRow['name'],
+                'qty' => $quantity,
+                'price_per_share' => $pricePerShare,
+                'base_price' => (float) $shareRow['base_price'],
+                'subtotal' => $subtotal,
+                'charges' => $charges,
+                'total' => $chargeTotals['total'],
+            ],
+        ]);
+        break;
+
     case 'saveOrder':
         $data = getPostData();
         $order_id = strtoupper(trim($data['orderId'] ?? ''));
@@ -3949,6 +4104,11 @@ switch ($action) {
             strcasecmp($order_source, 'Offline') === 0
             || strcasecmp($order_source, 'Manual') === 0
         );
+        $isRazorpayPaid = false;
+        $razorpayPaidPaise = 0;
+        $rzpPaymentId = trim((string) ($data['razorpayPaymentId'] ?? ''));
+        $rzpOrderId = trim((string) ($data['razorpayOrderId'] ?? ''));
+        $rzpSignature = trim((string) ($data['razorpaySignature'] ?? ''));
         if ($isManualAdmin) {
             // Manual / Offline: payment already taken offline — skip Verify queue, go to share transfer
             if (!empty($fullUpdate) && $existingOrder) {
@@ -3956,8 +4116,48 @@ switch ($action) {
             } else {
                 $status = 'Transfer Pending';
             }
+        } elseif ($rzpPaymentId !== '' || $rzpOrderId !== '' || $rzpSignature !== '') {
+            // Razorpay Standard Checkout step 3: order is created only for a verified payment
+            $status = 'Transfer Pending';
+            if ($rzpPaymentId === '' || $rzpOrderId === '' || $rzpSignature === '') {
+                http_response_code(400);
+                sendResponse(['error' => 'Payment details are incomplete. Contact support if money was debited.']);
+                break;
+            }
+            if (!razorpaySignatureValid($rzpOrderId, $rzpPaymentId, $rzpSignature)) {
+                error_log("Razorpay signature mismatch: order {$rzpOrderId} payment {$rzpPaymentId}");
+                http_response_code(400);
+                sendResponse(['error' => "Payment verification failed. If money was debited, contact support with payment ID {$rzpPaymentId}."]);
+                break;
+            }
+            $rzpOrder = razorpayApiRequest('GET', '/orders/' . rawurlencode($rzpOrderId));
+            $notes = $rzpOrder['body']['notes'] ?? [];
+            if ($rzpOrder['status'] !== 200 || !is_array($notes)) {
+                error_log("Razorpay order fetch failed for {$rzpOrderId}: HTTP " . $rzpOrder['status']);
+                http_response_code(500);
+                sendResponse(['error' => "Payment received but we could not confirm it. Contact support with payment ID {$rzpPaymentId}."]);
+                break;
+            }
+            if ((string) ($notes['user_id'] ?? '') !== (string) ($_SESSION['user_id'] ?? '')) {
+                http_response_code(400);
+                sendResponse(['error' => 'This payment belongs to a different account.']);
+                break;
+            }
+            // Share + quantity come from the paid Razorpay order, not the browser
+            $share_id = (string) ($notes['share_id'] ?? '');
+            $quantity = (int) ($notes['qty'] ?? 0);
+            $razorpayPaidPaise = (int) ($rzpOrder['body']['amount'] ?? 0);
+            $method = 'Razorpay';
+            $transaction_id = $rzpPaymentId;
+            $refs = ['ok' => true, 'value' => $rzpPaymentId, 'parts' => [$rzpPaymentId], 'error' => ''];
+            $isRazorpayPaid = true;
+        } elseif (!$isAdmin) {
+            // Buyers pay only through Razorpay — self-declared UTR orders are no longer accepted
+            http_response_code(400);
+            sendResponse(['error' => 'Please pay online to place your order. If you are using the app, update it to the latest version.']);
+            break;
         } else {
-            // Online checkout: pay + UTR → Share Transfer queue (All Orders). Admin saves ref → Complete.
+            // Staff-entered online order with UTR → Share Transfer queue (All Orders). Admin saves ref → Complete.
             $status = 'Transfer Pending';
             $paymentConfirmed = $data['paymentConfirmed'] ?? false;
             $confirmedOk = $paymentConfirmed === true
@@ -4006,7 +4206,7 @@ switch ($action) {
         $priceStmt->execute();
         $priceRow = $priceStmt->get_result()->fetch_assoc();
         if ($priceRow) {
-            if (!$isManualAdmin && !shareIsPurchasable($priceRow)) {
+            if (!$isManualAdmin && !$isRazorpayPaid && !shareIsPurchasable($priceRow)) {
                 http_response_code(400);
                 sendResponse([
                     'error' => 'This company is not available for purchase. GO UNLISTED only deals in unlisted and pre-IPO shares.',
@@ -4014,22 +4214,7 @@ switch ($action) {
                 break;
             }
             if (!$isManualAdmin) {
-                $price_per_share = (float) $priceRow['base_price'];
-                $tiersJson = $priceRow['discount_tiers'] ?? '[]';
-                if (!empty($tiersJson)) {
-                    $tiers = json_decode($tiersJson, true);
-                    if (is_array($tiers) && !empty($tiers)) {
-                        usort($tiers, function ($a, $b) {
-                            return (int)($b['minQty'] ?? 0) - (int)($a['minQty'] ?? 0);
-                        });
-                        foreach ($tiers as $tier) {
-                            if ($quantity >= (int)($tier['minQty'] ?? 0)) {
-                                $price_per_share = (float)($tier['price'] ?? $price_per_share);
-                                break;
-                            }
-                        }
-                    }
-                }
+                $price_per_share = catalogPricePerShare($priceRow, $quantity);
             }
             if ($share_name === '') {
                 $share_name = $priceRow['name'];
@@ -4076,7 +4261,8 @@ switch ($action) {
         }
 
         // Online security: login required below; also rate-limit spam "I've paid" claims
-        if (!$isManualAdmin && $isUser) {
+        // Skipped for Razorpay — money is already captured, so the order must always be recorded
+        if (!$isManualAdmin && $isUser && !$isRazorpayPaid) {
             $uid = (string) $_SESSION['user_id'];
             $hourStmt = $conn->prepare(
                 "SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND deleted_at IS NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
@@ -4114,6 +4300,10 @@ switch ($action) {
         $custom_charges_json = $chargeTotals['custom_charges_json'];
         if ($custom_charges_json === null) {
             $custom_charges_json = '';
+        }
+        if ($isRazorpayPaid && (int) round($total_amount * 100) !== $razorpayPaidPaise) {
+            // Price or fees changed between payment and confirmation — still record the order, ops reconciles
+            error_log("Razorpay amount mismatch for payment {$rzpPaymentId}: paid {$razorpayPaidPaise} paise, order total {$total_amount}");
         }
 
         // Online checkout requires login; KYC can be completed later (ops verifies before demat transfer)
@@ -4162,8 +4352,8 @@ switch ($action) {
                 $emailLower = strtolower(trim($buyer_email));
                 $autoStmt = $conn->prepare(
                     "SELECT id, name, phone, email, referral_code FROM users
-                     WHERE (? <> '' AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
-                        OR (? <> '' AND LOWER(email) = ?)
+                     WHERE (CHAR_LENGTH(?) > 0 AND RIGHT(REPLACE(REPLACE(REPLACE(IFNULL(phone,''), ' ', ''), '-', ''), '+', ''), 10) = ?)
+                        OR (CHAR_LENGTH(?) > 0 AND LOWER(email) = ?)
                      ORDER BY created_at DESC LIMIT 1"
                 );
                 $autoStmt->bind_param('ssss', $phone10, $phone10, $emailLower, $emailLower);

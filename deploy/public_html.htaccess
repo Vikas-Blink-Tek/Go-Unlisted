@@ -17,7 +17,7 @@
 </IfModule>
 
 # Block sensitive files
-<FilesMatch "^(schema\.sql|db_config\.example\.php|\.env|\.installed|HOSTINGER_UPLOAD\.txt)$">
+<FilesMatch "^(schema\.sql|db_config\.example\.php|\.env(\.local)?|\.installed|HOSTINGER_UPLOAD\.txt)$">
   <IfModule mod_authz_core.c>
     Require all denied
   </IfModule>

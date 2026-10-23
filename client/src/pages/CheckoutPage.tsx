@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { saveOrder } from '../api/orders';
+import { createRazorpayOrder, saveOrder, type RazorpayQuote } from '../api/orders';
 import { deleteInitiatedCheckout, saveInitiatedCheckout } from '../api/initiated';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -9,30 +9,16 @@ import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, calcOrderChargesBreakdown, formatCurrency, generateSessionId } from '../utils/format';
 import SharePriceCompare from '../components/shares/SharePriceCompare';
 import { isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
-type PaymentMode = 'neft' | 'imps' | 'upi' | 'qr';
+import { openRazorpayCheckout } from '../utils/razorpay';
 
-const PAYMENT_MODES: { id: PaymentMode; label: string; desc: string; icon: string }[] = [
-  { id: 'neft', label: 'NEFT', desc: 'Transfer via NEFT to our bank account', icon: '🏦' },
-  { id: 'imps', label: 'IMPS', desc: 'Instant transfer using IMPS', icon: '⚡' },
-  { id: 'upi', label: 'UPI Apps', desc: 'Pay using GPay / PhonePe / Paytm', icon: '📱' },
-  { id: 'qr', label: 'Scan QR Code', desc: 'Scan QR or pay using our UPI ID', icon: '📷' },
-];
+type PayState =
+  | { kind: 'idle' }
+  | { kind: 'paying' }
+  | { kind: 'verifying' }
+  | { kind: 'cancelled' }
+  | { kind: 'failed'; message: string };
 
-function CopyRow({ label, value }: { label: string; value: string }) {
-  const { showToast } = useToast();
-  const copy = () => {
-    navigator.clipboard.writeText(value).then(() => showToast(`${label} copied`, 'success'));
-  };
-  return (
-    <div className="pay-detail-row">
-      <span className="pay-detail-label">{label}</span>
-      <button type="button" className="pay-detail-value" onClick={copy} title="Tap to copy">
-        {value}
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-      </button>
-    </div>
-  );
-}
+const PAY_METHODS = ['UPI', 'Cards', 'Netbanking', 'Wallets'];
 
 export default function CheckoutPage() {
   const { shareId } = useParams<{ shareId: string }>();
@@ -46,9 +32,10 @@ export default function CheckoutPage() {
   const [step, setStep] = useState(1);
   const [qty, setQty] = useState<number | ''>(share?.minQty || 1);
   const safeQty = typeof qty === 'number' && !isNaN(qty) ? qty : 0;
-  const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
-  const [utr, setUtr] = useState('');
-  const [paying, setPaying] = useState(false);
+  const [quote, setQuote] = useState<RazorpayQuote | null>(null);
+  const [quoteError, setQuoteError] = useState('');
+  const [payState, setPayState] = useState<PayState>({ kind: 'idle' });
+  const [paymentId, setPaymentId] = useState('');
   const [orderId, setOrderId] = useState('');
   const [showTiersModal, setShowTiersModal] = useState(false);
   const [sessionId] = useState(() => generateSessionId());
@@ -71,6 +58,14 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (share?.minQty) setQty(share.minQty);
   }, [share?.id, share?.minQty]);
+
+  // Leaving the page mid-payment would lose the order — warn before unload
+  useEffect(() => {
+    if (payState.kind !== 'verifying') return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [payState.kind]);
 
   const requireLoginForPayment = () => {
     const returnTo = `/checkout/${share?.id || shareId || ''}`;
@@ -126,62 +121,22 @@ export default function CheckoutPage() {
   const buyerPhone = user?.phone || '';
   const buyerName = user?.name || 'Buyer';
 
-
-
   const originalSubtotal = share.price * safeQty;
   const subtotal = activePrice * safeQty;
   const offerBenefit = originalSubtotal - subtotal;
-  
+
   const total = calcOrderTotal(activePrice, safeQty, settings);
   const chargesBreakdown = calcOrderChargesBreakdown(activePrice, safeQty, settings);
+  const busy = payState.kind === 'paying' || payState.kind === 'verifying';
 
-  const renderUpiSteps = () => (
-    <ol className="pay-step-list">
-      <li>Send payment to our <strong>UPI ID</strong> below.</li>
-      <li>
-        Open <strong>GPay, PhonePe, or Paytm</strong> and send <strong>{formatCurrency(total)}</strong> to that UPI ID.
-      </li>
-      <li>
-        After payment, paste the <strong>Transaction ID / UTR</strong> from your SMS or app (not the UPI ID) and tap{' '}
-        <strong>Confirm payment &amp; place order</strong>.
-      </li>
-    </ol>
-  );
-
-  const renderUpiIdBox = () => (
-    <div className="pay-upi-id-box">
-      <span>Merchant UPI</span>
-      <strong>{settings.bank_ac_name}</strong>
-      <div className="pay-upi-id">{settings.bank_upi || '—'}</div>
-      <div className="pay-amount-box pay-amount-box--inline">
-        <span>Pay exactly</span>
-        <strong>{formatCurrency(total)}</strong>
-      </div>
-    </div>
-  );
-
-  const selectPaymentMode = async (mode: PaymentMode) => {
-    if (!user) {
-      requireLoginForPayment();
-      return;
-    }
-    setPaymentMode(mode);
+  /** Server prices the order and opens a Razorpay order for that exact amount. */
+  const loadQuote = async () => {
+    setQuote(null);
+    setQuoteError('');
     try {
-      await saveInitiatedCheckout({
-        sessionId,
-        shareId: share.id,
-        shareName: share.name,
-        shareTicker: share.ticker,
-        buyerName,
-        buyerEmail,
-        buyerPhone,
-        qty: safeQty,
-        pricePerShare: activePrice,
-        totalAmount: total,
-        paymentMode: PAYMENT_MODES.find((m) => m.id === mode)?.label || mode,
-      });
-    } catch {
-      // Non-blocking — checkout still works if tracking fails
+      setQuote(await createRazorpayOrder(share.id, safeQty));
+    } catch (err) {
+      setQuoteError(err instanceof Error ? err.message : 'Could not load payment details');
     }
   };
 
@@ -194,33 +149,58 @@ export default function CheckoutPage() {
       requireLoginForPayment();
       return;
     }
-    setPaymentMode(null);
-    setUtr('');
+    setPayState({ kind: 'idle' });
     setStep(2);
+    loadQuote();
+    saveInitiatedCheckout({
+      sessionId,
+      shareId: share.id,
+      shareName: share.name,
+      shareTicker: share.ticker,
+      buyerName,
+      buyerEmail,
+      buyerPhone,
+      qty: safeQty,
+      pricePerShare: activePrice,
+      totalAmount: total,
+      paymentMode: 'Razorpay',
+    }).catch(() => {
+      // Non-blocking — checkout still works if tracking fails
+    });
   };
 
-  const handleConfirmPayment = async () => {
+  const handlePay = async () => {
     if (!user) {
       requireLoginForPayment();
       return;
     }
-    if (!paymentMode) {
-      showToast('Select a payment method first', 'warning');
-      return;
-    }
-    const utrClean = utr.trim().replace(/\s+/g, '').toUpperCase();
-    if (utrClean.includes('@')) {
-      showToast('Enter the bank Transaction ID / UTR from payment SMS — not the UPI ID (…@bank)', 'warning');
-      return;
-    }
-    if (utrClean.length < 6 || utrClean.length > 30) {
-      showToast('Enter your Transaction ID / UTR (6–30 characters) from the payment app', 'warning');
-      return;
-    }
-    setPaying(true);
-    const methodLabel = PAYMENT_MODES.find((m) => m.id === paymentMode)?.label || 'Online';
-
+    if (!quote) return;
+    setPayState({ kind: 'paying' });
+    let payment;
     try {
+      payment = await openRazorpayCheckout({
+        key: quote.key_id,
+        amount: quote.amount,
+        currency: quote.currency,
+        order_id: quote.order_id,
+        name: 'GO UNLISTED',
+        description: `${quote.summary.qty} × ${quote.summary.share_name}`,
+        image: `${window.location.origin}/logo.png`,
+        prefill: { name: buyerName, email: buyerEmail, contact: buyerPhone },
+        theme: { color: '#0072bc' },
+      });
+    } catch (err) {
+      setPayState({ kind: 'failed', message: err instanceof Error ? err.message : 'Payment failed' });
+      return;
+    }
+    if (!payment) {
+      setPayState({ kind: 'cancelled' });
+      return;
+    }
+
+    setPayState({ kind: 'verifying' });
+    try {
+      // Server checks the Razorpay signature before creating the order
       const res = await saveOrder({
         shareId: share.id,
         shareName: share.name,
@@ -228,116 +208,113 @@ export default function CheckoutPage() {
         buyerName,
         buyerEmail,
         buyerPhone,
-        pricePerShare: activePrice,
-        qty: safeQty,
-        method: methodLabel,
+        qty: quote.summary.qty,
         orderSource: 'Online',
-        transactionId: utrClean,
-        paymentConfirmed: true,
+        razorpayPaymentId: payment.razorpay_payment_id,
+        razorpayOrderId: payment.razorpay_order_id,
+        razorpaySignature: payment.razorpay_signature,
       });
+      setPaymentId(payment.razorpay_payment_id);
       setOrderId(res.orderId || '');
-      try { await deleteInitiatedCheckout(sessionId); } catch { /* ignore */ }
+      deleteInitiatedCheckout(sessionId).catch(() => { /* ignore */ });
+      setPayState({ kind: 'idle' });
       setStep(3);
-      showToast('Order placed — shares are in your portfolio (share transfer pending).', 'success');
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Order failed', 'error');
-    } finally {
-      setPaying(false);
+      const msg = err instanceof Error ? err.message : 'Could not confirm your order';
+      const id = payment.razorpay_payment_id;
+      setPayState({
+        kind: 'failed',
+        message: msg.includes(id)
+          ? msg
+          : `${msg} Your payment ID is ${id} — share it with support and we will place your order.`,
+      });
     }
   };
 
-  const renderBankDetails = () => (
-    <div className="pay-bank-card">
-      <h4>Bank Account Details</h4>
-      <CopyRow label="Bank Name" value={settings.bank_name} />
-      <CopyRow label="Account Name" value={settings.bank_ac_name} />
-      <CopyRow label="Account No." value={settings.bank_ac_no} />
-      <CopyRow label="IFSC Code" value={settings.bank_ifsc} />
-      {settings.bank_branch && <CopyRow label="Branch" value={settings.bank_branch} />}
-      <div className="pay-amount-box">
-        <span>Transfer exactly</span>
-        <strong>{formatCurrency(total)}</strong>
-      </div>
+  const goBack = () => {
+    if (busy) return;
+    if (step === 2) {
+      setStep(1);
+      setQuote(null);
+      return;
+    }
+    navigate(`/shares/${share.id}`);
+  };
+
+  const renderSummaryRow = (label: string, value: string, tone?: 'green' | 'muted') => (
+    <div className="pay-summary-row">
+      <span className={tone === 'muted' ? 'pay-summary-muted' : undefined}>{label}</span>
+      <span className={tone === 'green' ? 'pay-summary-green' : undefined}>{value}</span>
     </div>
   );
 
-  const renderPaymentInstructions = () => {
-    if (!paymentMode) return null;
+  const renderPayStep = () => {
+    if (quoteError) {
+      return (
+        <div className="pay-alert pay-alert--error">
+          <strong>Could not start payment</strong>
+          <span>{quoteError}</span>
+          <button type="button" className="btn btn-outline btn-sm" onClick={loadQuote}>Try again</button>
+        </div>
+      );
+    }
+    if (!quote) {
+      return (
+        <div className="pay-loading">
+          <span className="pay-spinner" aria-hidden />
+          Preparing secure payment…
+        </div>
+      );
+    }
 
+    const s = quote.summary;
+    const savings = (s.base_price - s.price_per_share) * s.qty;
     return (
-      <div className="pay-instructions">
-        {paymentMode === 'neft' && (
-          <>
-            <p className="pay-instruction-hint">Transfer the exact amount via <strong>NEFT</strong> to the account below. Use your registered bank account only.</p>
-            {renderBankDetails()}
-          </>
-        )}
-        {paymentMode === 'imps' && (
-          <>
-            <p className="pay-instruction-hint">Transfer the exact amount via <strong>IMPS</strong> for instant credit. Use your registered bank account only.</p>
-            {renderBankDetails()}
-          </>
-        )}
-        {paymentMode === 'upi' && (
-          <div className="pay-upi-card">
-            {renderUpiSteps()}
-            {renderUpiIdBox()}
+      <>
+        <div className="pay-summary">
+          <div className="pay-summary-title">Order summary</div>
+          {renderSummaryRow(`${s.share_name}`, `${s.qty} shares`, 'muted')}
+          {renderSummaryRow(`Shares value (${s.qty} × ${formatCurrency(s.base_price)})`, formatCurrency(s.subtotal + Math.max(savings, 0)))}
+          {savings > 0 && renderSummaryRow('Bulk discount applied', `− ${formatCurrency(savings)}`, 'green')}
+          {s.charges.map((c) => (
+            <div key={c.name}>{renderSummaryRow(c.name, formatCurrency(c.amount))}</div>
+          ))}
+          <div className="pay-summary-total">
+            <span>Total payable</span>
+            <strong>{formatCurrency(quote.amount / 100)}</strong>
+          </div>
+        </div>
+
+        {payState.kind === 'failed' && (
+          <div className="pay-alert pay-alert--error" role="alert">
+            <strong>Payment not completed</strong>
+            <span>{payState.message}</span>
           </div>
         )}
-        {paymentMode === 'qr' && (
-          <div className="pay-qr-card">
-            <ol className="pay-step-list">
-              <li>Scan the QR below in any UPI app, or use our UPI ID.</li>
-              <li>
-                Pay <strong>{formatCurrency(total)}</strong> to <strong>{settings.bank_ac_name}</strong>.
-              </li>
-              <li>Enter the Transaction ID / UTR below to complete your order.</li>
-            </ol>
-            <img src="/QR.jpeg" alt="UPI QR Code" className="pay-qr-img" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            {renderUpiIdBox()}
+        {payState.kind === 'cancelled' && (
+          <div className="pay-alert" role="status">
+            <span>Payment cancelled. No money was deducted — tap Pay to try again.</span>
           </div>
         )}
 
-        <div className="form-group" style={{ marginTop: '1.25rem' }}>
-          <label className="form-label" htmlFor="checkout-utr">
-            Transaction ID / UTR *
-          </label>
-          <input
-            id="checkout-utr"
-            className="form-input"
-            value={utr}
-            onChange={(e) => setUtr(e.target.value.toUpperCase().replace(/\s+/g, ''))}
-            placeholder="e.g. 312345678901 from GPay / PhonePe / bank SMS"
-            maxLength={30}
-            autoComplete="off"
-            inputMode="text"
-          />
-          <p style={{ margin: '0.4rem 0 0', fontSize: '0.78rem', color: 'var(--muted)', lineHeight: 1.4 }}>
-            Paste the <strong>Transaction ID / UTR</strong> from GPay / PhonePe / bank SMS (not our UPI ID). Once you confirm, your order is submitted for verification.
-          </p>
+        <div className="pay-methods">
+          <span>Pay with</span>
+          {PAY_METHODS.map((m) => <span key={m} className="pay-method-chip">{m}</span>)}
         </div>
 
-        <div className="pay-actions">
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              setPaymentMode(null);
-              setUtr('');
-            }}
-          >
-            ← Change method
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-full"
-            disabled={paying || utr.trim().length < 6}
-            onClick={handleConfirmPayment}
-          >
-            {paying ? 'Confirming…' : 'Confirm payment & place order'}
-          </button>
-        </div>
-      </div>
+        <button type="button" className="btn btn-primary btn-full pay-cta" disabled={busy} onClick={handlePay}>
+          {payState.kind === 'paying'
+            ? 'Waiting for payment…'
+            : payState.kind === 'failed' || payState.kind === 'cancelled'
+              ? `Retry payment · ${formatCurrency(quote.amount / 100)}`
+              : `Pay ${formatCurrency(quote.amount / 100)}`}
+        </button>
+
+        <p className="pay-secure-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+          100% secure payment by Razorpay. Your order is confirmed instantly after payment.
+        </p>
+      </>
     );
   };
 
@@ -346,7 +323,7 @@ export default function CheckoutPage() {
       <div className="order-flow-wrap">
         {/* Header — Zepto-style */}
         <div className="order-flow-header">
-          <button type="button" className="order-back-btn" onClick={() => (step > 1 ? setStep(step - 1) : navigate(`/shares/${share.id}`))} aria-label="Back">
+          <button type="button" className="order-back-btn" onClick={goBack} disabled={busy} aria-label="Back">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
           </button>
           <div className="order-header-info">
@@ -358,7 +335,7 @@ export default function CheckoutPage() {
 
         {/* Progress */}
         <div className="order-progress">
-          {['Quantity', 'Payment', 'Done'].map((label, i) => {
+          {['Quantity', 'Review & Pay', 'Done'].map((label, i) => {
             const n = i + 1;
             return (
               <div key={label} className={`order-progress-step${step === n ? ' active' : ''}${step > n ? ' done' : ''}`}>
@@ -471,66 +448,48 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Step 2: Payment mode */}
+        {/* Step 2: Review & pay */}
         {step === 2 && (
           <div className="order-card">
-            <h2 className="checkout-title" style={{ marginBottom: '0.25rem' }}>Select Payment Method</h2>
-            <p className="checkout-subtitle">Pay {formatCurrency(total)} using any method below</p>
-
-            {!paymentMode ? (
-              <div className="pay-mode-list">
-                {PAYMENT_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className="pay-mode-item"
-                    onClick={() => selectPaymentMode(mode.id)}
-                  >
-                    <span className="pay-mode-icon">{mode.icon}</span>
-                    <div className="pay-mode-text">
-                      <strong>{mode.label}</strong>
-                      <span>{mode.desc}</span>
-                    </div>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              renderPaymentInstructions()
+            <h2 className="checkout-title" style={{ marginBottom: '0.25rem' }}>Review &amp; Pay</h2>
+            <p className="checkout-subtitle">Check your order and pay securely online.</p>
+            {renderPayStep()}
+            {!busy && (
+              <button type="button" className="btn btn-ghost btn-full" style={{ marginTop: '0.5rem' }} onClick={goBack}>
+                ← Change quantity
+              </button>
             )}
           </div>
         )}
 
         {/* Step 3: Confirmed */}
-        {step === 3 && (
+        {step === 3 && quote && (
           <div className="order-card">
             <div className="confirm-wrap">
               <div className="confirm-icon" style={{ color: 'var(--green)' }}>✓</div>
-              <h2 className="confirm-title">Order Received!</h2>
+              <h2 className="confirm-title">Payment successful!</h2>
               <p className="confirm-subtitle">
-                We have your Transaction ID / UTR. Shares are in your portfolio while we complete demat transfer.
+                Your order is confirmed. Shares show in your portfolio while we complete the demat transfer.
               </p>
               <div className="confirm-order-id">
                 Order ID <span>{orderId}</span>
               </div>
               <div className="confirm-details">
                 <div className="confirm-row"><span className="lbl">Company</span><span className="val">{share.name}</span></div>
-                <div className="confirm-row"><span className="lbl">Quantity</span><span className="val">{qty} shares</span></div>
-                <div className="confirm-row"><span className="lbl">Amount</span><span className="val">{formatCurrency(total)}</span></div>
-                <div className="confirm-row"><span className="lbl">Payment</span><span className="val">{PAYMENT_MODES.find((m) => m.id === paymentMode)?.label}</span></div>
+                <div className="confirm-row"><span className="lbl">Quantity</span><span className="val">{quote.summary.qty} shares</span></div>
+                <div className="confirm-row"><span className="lbl">Amount paid</span><span className="val">{formatCurrency(quote.amount / 100)}</span></div>
                 <div className="confirm-row">
-                  <span className="lbl">Transaction ID</span>
-                  <span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span>
-                </div>
-                <div className="confirm-row">
-                  <span className="lbl">UTR</span>
-                  <span className="val" style={{ fontFamily: 'monospace' }}>{utr.trim().toUpperCase() || '—'}</span>
+                  <span className="lbl">Payment ID</span>
+                  <span className="val" style={{ fontFamily: 'monospace' }}>{paymentId}</span>
                 </div>
                 <div className="confirm-row"><span className="lbl">Status</span><span className="val" style={{ color: 'var(--accent)' }}>Share transfer pending</span></div>
               </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
-                Track status in Dashboard. Our team marks the order Complete after demat credit.
-              </p>
+              {(user?.kycStatus || '').trim().toLowerCase() !== 'verified' && (
+                <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginBottom: '1rem', textAlign: 'center' }}>
+                  Complete your KYC so we can transfer the shares to your demat account.{' '}
+                  <Link to="/dashboard?tab=kyc">Complete KYC</Link>
+                </p>
+              )}
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <Link to="/dashboard" className="btn btn-primary btn-full">View My Orders</Link>
                 <Link to="/shares" className="btn btn-ghost btn-full">Continue Exploring</Link>
@@ -539,6 +498,16 @@ export default function CheckoutPage() {
           </div>
         )}
       </div>
+
+      {payState.kind === 'verifying' && (
+        <div className="pay-verifying" role="status" aria-live="polite">
+          <div className="pay-verifying-card">
+            <span className="pay-spinner" aria-hidden />
+            <strong>Confirming your payment…</strong>
+            <span>Please don&apos;t close or refresh this page.</span>
+          </div>
+        </div>
+      )}
       
       {/* Tiers Modal */}
       {showTiersModal && share.discountTiers && (

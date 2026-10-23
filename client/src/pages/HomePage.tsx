@@ -287,7 +287,7 @@ export default function HomePage() {
           <div className="steps-grid">
             {[
               { n: '01', t: 'Browse & Buy', d: 'Explore Pre-IPO listings and place your order via bank transfer or UPI.' },
-              { n: '02', t: 'Pay & Submit UTR', d: 'Transfer the exact amount and enter your UTR at checkout so we can verify within 24 hours.' },
+              { n: '02', t: 'Pay Securely Online', d: 'Pay with UPI, card, netbanking or wallet via Razorpay — your order is confirmed instantly.' },
               { n: '03', t: 'Complete KYC', d: 'Submit PAN, demat and bank details in your dashboard — we verify before share transfer.' },
               { n: '04', t: 'Shares Credited', d: 'Once payment and KYC are confirmed, shares transfer to your demat in 2–3 business days.' },
             ].map((s) => (

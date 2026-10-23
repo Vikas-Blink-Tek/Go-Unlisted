@@ -29,7 +29,7 @@ class GuProfileCopy {
     ),
     (
       'Secure transactions',
-      'Pay via NEFT, IMPS, UPI or QR. We verify your UTR before transfer.',
+      'Pay online via Razorpay — UPI, cards, netbanking or wallets. Every payment is verified automatically.',
     ),
     (
       'Transparent pricing',
@@ -77,7 +77,7 @@ class GuProfileCopy {
         (
           q: 'How do pre-IPO / unlisted orders work?',
           a:
-              'Browse a listing, choose quantity, pay via UPI/NEFT/QR, then enter your Transaction ID / UTR. Order moves to Transfer Pending while ops verifies payment and completes demat transfer.',
+              'Browse a listing, choose quantity and pay securely online with UPI, card, netbanking or wallet. Your order is confirmed instantly and moves to Transfer Pending while we complete the demat transfer.',
         ),
         (
           q: 'What do the order statuses mean?',

@@ -26,7 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     (
       icon: Icons.account_balance_wallet_rounded,
       title: 'Buy in minutes',
-      body: 'Pay via UPI, NEFT or QR. Share UTR and track transfer in your portfolio.',
+      body: 'Pay securely online with UPI, cards or netbanking, and track the transfer in your portfolio.',
     ),
     (
       icon: Icons.verified_user_rounded,

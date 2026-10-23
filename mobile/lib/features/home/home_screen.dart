@@ -266,7 +266,7 @@ class HomeScreen extends StatelessWidget {
                     children: [
                       _StepRow(n: '1', title: 'Discover', body: 'Browse Pre-IPO & unlisted companies'),
                       _StepDivider(),
-                      _StepRow(n: '2', title: 'Pay', body: 'UPI / NEFT / QR — share your UTR'),
+                      _StepRow(n: '2', title: 'Pay', body: 'Secure online payment — UPI, cards, netbanking'),
                       _StepDivider(),
                       _StepRow(n: '3', title: 'KYC', body: 'PAN, demat & bank in your profile'),
                       _StepDivider(),

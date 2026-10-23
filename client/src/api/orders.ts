@@ -23,6 +23,28 @@ export function attachOrderToClient(orderId: string) {
   );
 }
 
+export type RazorpayQuote = {
+  order_id: string;
+  /** Paise */
+  amount: number;
+  currency: string;
+  key_id: string;
+  summary: {
+    share_name: string;
+    qty: number;
+    price_per_share: number;
+    base_price: number;
+    subtotal: number;
+    charges: { name: string; amount: number }[];
+    total: number;
+  };
+};
+
+/** Razorpay order priced on the server, with the exact breakdown shown before paying. */
+export function createRazorpayOrder(shareId: string, qty: number) {
+  return apiRequest<RazorpayQuote>('razorpayCreateOrder', 'POST', { shareId, qty });
+}
+
 export function saveOrder(order: Record<string, unknown>) {
   return apiRequest<{
     success: boolean;

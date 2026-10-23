@@ -1,7 +1,7 @@
 name: go_unlisted
 description: GO UNLISTED — Pre-IPO & unlisted shares investor app (Android & iOS).
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ^3.11.5
@@ -26,6 +26,7 @@ dependencies:
   dio_cookie_manager: ^3.3.0
   path_provider: ^2.1.5
   fl_chart: ^0.69.0
+  razorpay_flutter: ^1.4.7
 
 dev_dependencies:
   flutter_test:
