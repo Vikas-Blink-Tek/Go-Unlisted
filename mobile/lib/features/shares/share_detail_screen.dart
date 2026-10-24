@@ -16,6 +16,7 @@ import '../../models/models.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/catalog_provider.dart';
 import '../../widgets/gu_widgets.dart';
+import 'document_viewer_screen.dart';
 
 class ShareDetailScreen extends StatelessWidget {
   const ShareDetailScreen({super.key, required this.shareId});
@@ -776,19 +777,18 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
   }
 }
 
-/// Optional company balance sheet uploaded by admin (PDF or image) — opens in the phone's viewer.
+/// Optional company balance sheet uploaded by admin (PDF or image) — opens in the in-app viewer.
 class _BalanceSheetCard extends StatelessWidget {
   const _BalanceSheetCard({required this.share});
   final GuShare share;
 
-  Future<void> _open(BuildContext context) async {
-    final uri = Uri.tryParse(ApiConfig.resolveMediaUrl(share.balanceSheetUrl));
-    final opened = uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open the balance sheet. Try again.')),
-      );
-    }
+  void _open(BuildContext context) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DocumentViewerScreen(
+        url: ApiConfig.resolveMediaUrl(share.balanceSheetUrl),
+        title: 'Balance Sheet · ${share.name}',
+      ),
+    ));
   }
 
   @override
