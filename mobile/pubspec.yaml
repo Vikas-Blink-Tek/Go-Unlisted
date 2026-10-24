@@ -1,7 +1,7 @@
 name: go_unlisted
 description: GO UNLISTED — Pre-IPO & unlisted shares investor app (Android & iOS).
 publish_to: 'none'
-version: 1.1.4+6
+version: 1.1.5+7
 
 environment:
   sdk: ^3.11.5

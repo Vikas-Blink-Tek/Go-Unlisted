@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../core/api/gu_api.dart';
@@ -27,6 +29,7 @@ class CatalogProvider extends ChangeNotifier {
   String? _error;
   String _query = '';
   String _sector = 'All';
+  String _lastRaw = '';
 
   List<GuShare> get shares => _shares;
   GuSettings? get settings => _settings;
@@ -131,16 +134,24 @@ class CatalogProvider extends ChangeNotifier {
     return const [];
   }
 
-  Future<void> load() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
+  /// [silent] = background refresh (auto-update while the app is open): no spinner, keeps the
+  /// current data on network errors, and only rebuilds screens when something actually changed.
+  Future<void> load({bool silent = false}) async {
+    if (!silent) {
+      _loading = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
       await GuApi.instance.init();
       final results = await Future.wait([
         GuApi.instance.get('getShares'),
         GuApi.instance.get('getSettings'),
       ]);
+
+      final raw = jsonEncode(results);
+      if (silent && raw == _lastRaw) return;
+      _lastRaw = raw;
 
       final list = _asList(results[0]);
       _shares = list
@@ -149,13 +160,17 @@ class CatalogProvider extends ChangeNotifier {
           .toList();
 
       _settings = GuSettings.fromJson(Map<String, dynamic>.from(results[1]));
+      _error = null;
+      if (silent) notifyListeners();
     } on ApiException catch (e) {
-      _error = e.message;
+      if (!silent) _error = e.message;
     } catch (e) {
-      _error = e.toString();
+      if (!silent) _error = e.toString();
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (!silent) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 }
@@ -169,10 +184,12 @@ class PortfolioProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
-  Future<void> load() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
+  Future<void> load({bool silent = false}) async {
+    if (!silent) {
+      _loading = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
       final res = await GuApi.instance.get('getOrders');
       final raw = res['data'] ?? res['orders'] ?? res;
@@ -182,14 +199,19 @@ class PortfolioProvider extends ChangeNotifier {
           .whereType<Map>()
           .map((e) => GuOrder.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      if (silent) notifyListeners();
     } on ApiException catch (e) {
-      _error = e.message;
-      _orders = [];
+      if (!silent) {
+        _error = e.message;
+        _orders = [];
+      }
     } catch (_) {
-      _orders = [];
+      if (!silent) _orders = [];
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (!silent) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 }

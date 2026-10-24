@@ -21,10 +21,13 @@ class OffersProvider extends ChangeNotifier {
     }).toList();
   }
 
-  Future<void> load() async {
-    _loading = true;
-    _error = null;
-    notifyListeners();
+  /// [silent] = background refresh: no spinner, keeps current offers on errors.
+  Future<void> load({bool silent = false}) async {
+    if (!silent) {
+      _loading = true;
+      _error = null;
+      notifyListeners();
+    }
     try {
       await GuApi.instance.init();
       final res = await GuApi.instance.get('getActiveOffers');
@@ -41,15 +44,22 @@ class OffersProvider extends ChangeNotifier {
           .map((e) => GuFestivalOffer.fromJson(Map<String, dynamic>.from(e)))
           .where((o) => !o.isExpired)
           .toList();
+      if (silent) notifyListeners();
     } on ApiException catch (e) {
-      _error = e.message;
-      _offers = [];
+      if (!silent) {
+        _error = e.message;
+        _offers = [];
+      }
     } catch (e) {
-      _error = e.toString();
-      _offers = [];
+      if (!silent) {
+        _error = e.toString();
+        _offers = [];
+      }
     } finally {
-      _loading = false;
-      notifyListeners();
+      if (!silent) {
+        _loading = false;
+        notifyListeners();
+      }
     }
   }
 }

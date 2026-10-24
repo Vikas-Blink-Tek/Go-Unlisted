@@ -74,7 +74,7 @@ function MainLayoutInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdown, setDropdown] = useState(false);
 
-  useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
+  useQuery({ queryKey: ['site-settings'], queryFn: getSettings, refetchInterval: 30_000 });
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);

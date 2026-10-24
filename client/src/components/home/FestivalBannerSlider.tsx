@@ -248,6 +248,7 @@ export default function FestivalBannerSlider({
     queryKey: ['active-offers'],
     queryFn: fetchActiveOffers,
     staleTime: 60 * 1000,
+    refetchInterval: 60_000,
   });
 
   const validOffers = useMemo(() => {

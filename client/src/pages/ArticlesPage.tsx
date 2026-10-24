@@ -23,6 +23,7 @@ export default function ArticlesPage() {
   const { data: articles = [], isLoading } = useQuery({
     queryKey: ['articles'],
     queryFn: getArticles,
+    refetchInterval: 60_000,
   });
 
   const categories = useMemo(() => {
