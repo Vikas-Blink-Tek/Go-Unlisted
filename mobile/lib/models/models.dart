@@ -119,6 +119,7 @@ class GuShare {
     this.isin,
     this.growth,
     this.website,
+    this.priceHistorySince,
     bool changePositive = true,
     Map<String, List<double>> priceHistory = const {},
     Map<String, List<String>> chartLabels = const {},
@@ -164,6 +165,9 @@ class GuShare {
   final String? isin;
   final String? growth;
   final String? website;
+
+  /// First recorded price date (YYYY-MM-DD) — real price history starts here.
+  final String? priceHistorySince;
   
   final bool? _changePositive;
   bool get changePositive => _changePositive ?? true;
@@ -297,6 +301,7 @@ class GuShare {
       isin: j['isin']?.toString(),
       growth: j['growth']?.toString(),
       website: (j['website'] ?? j['companyWebsite'] ?? j['company_website'])?.toString().trim(),
+      priceHistorySince: j['priceHistorySince']?.toString(),
       changePositive: j['changePositive'] ?? j['change_positive'] ?? true,
       priceHistory: _parsePriceHistory(j['priceHistory'] ?? j['price_history']),
       chartLabels: _parseChartLabels(j['chartLabels'] ?? j['chart_labels']),

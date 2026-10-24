@@ -21,6 +21,8 @@ export interface Share {
   logoUrl?: string;
   priceHistory: Record<ChartPeriod, number[]>;
   chartLabels: Record<ChartPeriod, string[]>;
+  /** First recorded price date (YYYY-MM-DD) — real history starts here */
+  priceHistorySince?: string | null;
   listingType?: string;
   ipoTimeline?: string;
   /** SEBI draft — public only when Pending / Filed / Approved; Not Filed = hidden */

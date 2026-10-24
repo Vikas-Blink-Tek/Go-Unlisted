@@ -68,3 +68,19 @@ export function trendFromGrowth(growth: string): boolean | null {
   }
   return null;
 }
+
+export const PERIOD_DAYS: Record<ChartPeriod, number> = { '3M': 91, '6M': 182, '1Y': 365 };
+
+/** Change across a real price series (first → last point); null when there is nothing to compare. */
+export function priceSeriesChange(data: number[]): { abs: number; pct: number } | null {
+  if (data.length < 2 || !data[0]) return null;
+  const abs = data[data.length - 1] - data[0];
+  return { abs, pct: (abs / data[0]) * 100 };
+}
+
+/** True when recorded history is shorter than the selected period. */
+export function historyShorterThan(since: string | null | undefined, period: ChartPeriod): boolean {
+  if (!since) return false;
+  const start = new Date(`${since}T00:00:00`).getTime();
+  return Number.isFinite(start) && Date.now() - start < PERIOD_DAYS[period] * 86400000;
+}

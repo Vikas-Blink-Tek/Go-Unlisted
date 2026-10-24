@@ -7,7 +7,8 @@ import FestivalBannerSlider from '../components/home/FestivalBannerSlider';
 import { useShareSearch } from '../components/shares/GlobalShareSearch';
 import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
-import { calcOrderTotal, formatCurrency, invoiceChargesEnabled } from '../utils/format';
+import { calcOrderTotal, formatCurrency, formatDate, invoiceChargesEnabled } from '../utils/format';
+import { historyShorterThan, priceSeriesChange } from '../utils/priceHistory';
 import { useAuth } from '../context/AuthContext';
 import { getInventoryBadge, isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
@@ -88,6 +89,7 @@ export default function ShareDetailPage() {
   }
 
   const chartData = share.priceHistory?.[period] ?? [];
+  const chartChange = priceSeriesChange(chartData);
   const bulk = getBulkPricingSummary(share);
   const drhp = normalizeDrhpStatus(share.drhpStatus);
   const drhpKind = drhpStatusKind(drhp);
@@ -223,7 +225,18 @@ export default function ShareDetailPage() {
           <BlurredRatesLock className="detail-chart-lock">
             <div className="chart-section">
               <div className="chart-header">
-                <div className="chart-title">Price Performance</div>
+                <div>
+                  <div className="chart-title">Price Performance</div>
+                  {chartChange && (
+                    <div className={`chart-change ${chartChange.abs >= 0 ? 'pos' : 'neg'}`}>
+                      {chartChange.abs >= 0 ? '▲ +' : '▼ −'}
+                      {formatCurrency(Math.abs(chartChange.abs))} ({Math.abs(chartChange.pct).toFixed(1)}%) · {period}
+                    </div>
+                  )}
+                  {historyShorterThan(share.priceHistorySince, period) && (
+                    <div className="chart-since">Price history from {formatDate(share.priceHistorySince ?? undefined)}</div>
+                  )}
+                </div>
                 <div className="chart-tabs">
                   {(['3M', '6M', '1Y'] as ChartPeriod[]).map((p) => (
                     <button

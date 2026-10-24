@@ -583,6 +583,17 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
     }
 
     final data = widget.share.priceHistory[period] ?? [];
+    // Colour and summary follow the real price move over the period, not the admin's growth text
+    final change = data.length > 1 && data.first != 0 ? data.last - data.first : null;
+    final up = change == null ? widget.share.changePositive : change >= 0;
+    final lineColor = up ? GuColors.lime : Colors.red.shade400;
+    final since = DateTime.tryParse(widget.share.priceHistorySince ?? '');
+    const periodDays = {'3M': 91, '6M': 182, '1Y': 365};
+    final shortHistory = since != null && DateTime.now().difference(since).inDays < (periodDays[period] ?? 0);
+    // Padding above/below the line; a flat series (no price change yet) gets ±5% so it sits mid-chart
+    final lo = data.isEmpty ? 0.0 : data.reduce(math.min);
+    final hi = data.isEmpty ? 0.0 : data.reduce(math.max);
+    final pad = hi > lo ? (hi - lo) * 0.15 : (hi == 0 ? 1.0 : hi * 0.05);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -597,7 +608,33 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Price Performance', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Price Performance', style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 14)),
+                    if (change != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${up ? '▲ +' : '▼ −'}${formatInr(change.abs(), decimals: true)} '
+                        '(${(change.abs() / data.first * 100).toStringAsFixed(1)}%) · $period',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: up ? GuColors.limeDark : Colors.red.shade400,
+                        ),
+                      ),
+                    ],
+                    if (shortHistory) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Price history from ${since.day} ${const ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][since.month - 1]} ${since.year}',
+                        style: GoogleFonts.inter(fontSize: 11, color: GuColors.muted),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
               Row(
                 children: availablePeriods.map((p) {
                   final active = p == period;
@@ -637,6 +674,8 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
               child: LineChart(
                 key: ValueKey(period),
                 LineChartData(
+                  minY: lo - pad,
+                  maxY: hi + pad,
                   gridData: FlGridData(
                     show: true,
                     drawVerticalLine: true,
@@ -691,8 +730,9 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
                   lineBarsData: [
                     LineChartBarData(
                       spots: data.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList(),
-                      isCurved: true,
-                      color: widget.share.changePositive ? GuColors.lime : Colors.red.shade400,
+                      // Straight segments — a smoothed curve would invent prices between updates
+                      isCurved: false,
+                      color: lineColor,
                       barWidth: 2.5,
                       isStrokeCapRound: true,
                       dotData: const FlDotData(show: false),
@@ -700,8 +740,8 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
                         show: true,
                         gradient: LinearGradient(
                           colors: [
-                            GuColors.lime.withValues(alpha: 0.3),
-                            GuColors.lime.withValues(alpha: 0.0),
+                            lineColor.withValues(alpha: 0.3),
+                            lineColor.withValues(alpha: 0.0),
                           ],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,

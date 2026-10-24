@@ -104,7 +104,10 @@ export default function ShareCard({ share, onWatchlist, isWatched }: ShareCardPr
 
         {sparkline.length > 0 ? (
           <div className="chart-mini">
-            <ShareSparkline data={sparkline} positive={share.changePositive} />
+            <ShareSparkline
+              data={sparkline}
+              positive={sparkline.length > 1 ? sparkline[sparkline.length - 1] >= sparkline[0] : share.changePositive}
+            />
           </div>
         ) : null}
       </BlurredRatesLock>

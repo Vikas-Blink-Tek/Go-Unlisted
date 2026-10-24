@@ -4672,3 +4672,24 @@ button.footer-link {
     aspect-ratio: 4 / 3;
   }
 }
+
+/* Share detail — real price history summary */
+.chart-header {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.chart-change {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.chart-change.pos { color: var(--green); }
+.chart-change.neg { color: var(--red); }
+
+.chart-since {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

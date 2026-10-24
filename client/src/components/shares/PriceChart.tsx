@@ -9,6 +9,8 @@ import {
   Filler,
 } from 'chart.js';
 import type { ChartPeriod, Share } from '../../types';
+import { formatCurrency } from '../../utils/format';
+import { priceSeriesChange } from '../../utils/priceHistory';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Filler);
 
@@ -18,7 +20,10 @@ interface PriceChartProps {
 }
 
 export default function PriceChart({ share, period }: PriceChartProps) {
-  const positive = share.changePositive;
+  const data = share.priceHistory[period] ?? [];
+  // Colour follows the real price move over the period, not the admin's growth text
+  const change = priceSeriesChange(data);
+  const positive = change ? change.abs >= 0 : share.changePositive;
   const lineColor = positive ? '#7ac142' : '#ef4444';
   const fillColor = positive ? 'rgba(122, 193, 66, 0.12)' : 'rgba(239, 68, 68, 0.12)';
 
@@ -28,11 +33,12 @@ export default function PriceChart({ share, period }: PriceChartProps) {
         data={{
           labels: share.chartLabels[period],
           datasets: [{
-            data: share.priceHistory[period],
+            data,
             borderColor: lineColor,
             backgroundColor: fillColor,
             fill: true,
-            tension: 0.35,
+            // Straight segments — a smoothed curve would invent prices between updates
+            tension: 0,
             pointRadius: 0,
             pointHoverRadius: 5,
             pointHoverBackgroundColor: lineColor,
@@ -53,6 +59,7 @@ export default function PriceChart({ share, period }: PriceChartProps) {
               bodyColor: lineColor,
               padding: 12,
               cornerRadius: 8,
+              callbacks: { label: (ctx) => formatCurrency(Number(ctx.parsed.y)) },
             },
           },
           scales: {

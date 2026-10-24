@@ -206,7 +206,118 @@ function shareIsPurchasable(array $row): bool {
     return true;
 }
 
-function mapShareRow(array $row, bool $includeInternal = false, bool $includeRates = true): array {
+/**
+ * Real price history — one row each time an admin changes a share's price.
+ * Replaces the old generated curve; prices from before this table existed were never stored.
+ */
+function ensureSharePriceHistoryTable(mysqli $conn): void {
+    $exists = $conn->query("SHOW TABLES LIKE 'share_price_history'");
+    if ($exists && $exists->num_rows > 0) {
+        return;
+    }
+    $conn->query("CREATE TABLE share_price_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        share_id VARCHAR(50) NOT NULL,
+        price DECIMAL(12,2) NOT NULL,
+        recorded_at DATETIME NOT NULL,
+        KEY idx_share_time (share_id, recorded_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    // History starts today at each share's current price
+    $conn->query("INSERT INTO share_price_history (share_id, price, recorded_at)
+                  SELECT share_id, base_price, NOW() FROM shares WHERE base_price > 0");
+}
+
+/** Log a price change (no-op when the price is unchanged). */
+function recordSharePrice(mysqli $conn, string $shareId, float $price): void {
+    if ($shareId === '' || $price <= 0) {
+        return;
+    }
+    try {
+        $last = $conn->prepare('SELECT price FROM share_price_history WHERE share_id = ? ORDER BY recorded_at DESC, id DESC LIMIT 1');
+        $last->bind_param('s', $shareId);
+        $last->execute();
+        $row = $last->get_result()->fetch_assoc();
+        if ($row && abs((float) $row['price'] - $price) < 0.005) {
+            return;
+        }
+        $ins = $conn->prepare('INSERT INTO share_price_history (share_id, price, recorded_at) VALUES (?, ?, NOW())');
+        $ins->bind_param('sd', $shareId, $price);
+        $ins->execute();
+    } catch (Throwable $e) {
+        error_log("recordSharePrice failed for {$shareId}: " . $e->getMessage());
+    }
+}
+
+/**
+ * Price points per share for the last $days, plus the price already in effect when that window opens.
+ * Returns share_id => [[unix_ts, price], ...] oldest first.
+ */
+function loadSharePricePoints(mysqli $conn, int $days = 366): array {
+    $points = [];
+    try {
+        $cutoff = date('Y-m-d H:i:s', time() - $days * 86400);
+        $before = $conn->prepare(
+            'SELECT h.share_id, h.price, h.recorded_at FROM share_price_history h
+             JOIN (SELECT share_id, MAX(id) AS id FROM share_price_history WHERE recorded_at < ? GROUP BY share_id) last
+               ON last.id = h.id'
+        );
+        $before->bind_param('s', $cutoff);
+        $before->execute();
+        $res = $before->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $points[$r['share_id']][] = [strtotime($r['recorded_at']), (float) $r['price']];
+        }
+        $within = $conn->prepare('SELECT share_id, price, recorded_at FROM share_price_history WHERE recorded_at >= ? ORDER BY recorded_at, id');
+        $within->bind_param('s', $cutoff);
+        $within->execute();
+        $res = $within->get_result();
+        while ($r = $res->fetch_assoc()) {
+            $points[$r['share_id']][] = [strtotime($r['recorded_at']), (float) $r['price']];
+        }
+    } catch (Throwable $e) {
+        error_log('loadSharePricePoints failed: ' . $e->getMessage());
+    }
+    return $points;
+}
+
+/**
+ * Chart series from real price points: evenly spaced dates across each period (never before the first
+ * recorded price), each showing the price in effect that day; the last point is always the current price.
+ */
+function buildSharePriceSeries(array $points, float $currentPrice): array {
+    $now = time();
+    if (!$points) {
+        $points = [[$now, $currentPrice]];
+    }
+    $firstTs = $points[0][0];
+    $history = [];
+    $labels = [];
+    foreach (['3M' => 91, '6M' => 182, '1Y' => 365] as $period => $days) {
+        $start = max($now - $days * 86400, $firstTs);
+        $spanDays = ($now - $start) / 86400;
+        $n = (int) max(2, min(13, floor($spanDays) + 1));
+        $i = 0;
+        $price = $points[0][1];
+        $values = [];
+        $periodLabels = [];
+        for ($k = 0; $k < $n; $k++) {
+            $t = $start + ($now - $start) * $k / ($n - 1);
+            while ($i < count($points) && $points[$i][0] <= $t) {
+                $price = $points[$i][1];
+                $i++;
+            }
+            $values[] = round($price, 2);
+            $periodLabels[] = date($spanDays > 200 ? "M 'y" : 'j M', (int) $t);
+        }
+        $values[$n - 1] = round($currentPrice, 2);
+        $history[$period] = $values;
+        $labels[$period] = $periodLabels;
+    }
+    return ['history' => $history, 'labels' => $labels, 'since' => date('Y-m-d', $firstTs)];
+}
+
+/** @param array|null $pricePoints real price points from loadSharePricePoints() for this share */
+function mapShareRow(array $row, bool $includeInternal = false, bool $includeRates = true, ?array $pricePoints = null): array {
     $price = (float) $row['base_price'];
     $history = json_decode($row['price_history'] ?? '', true);
     $labels = json_decode($row['chart_labels'] ?? '', true);
@@ -221,6 +332,13 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
     }
     if (!is_array($labels) || empty($labels)) {
         $labels = defaultChartLabels();
+    }
+    $historySince = null;
+    if ($pricePoints !== null) {
+        $series = buildSharePriceSeries($pricePoints, $price);
+        $history = $series['history'];
+        $labels = $series['labels'];
+        $historySince = $series['since'];
     }
     if (!is_array($highlights)) {
         $highlights = [];
@@ -246,6 +364,7 @@ function mapShareRow(array $row, bool $includeInternal = false, bool $includeRat
         'logoUrl' => trim($row['logo_url'] ?? ''),
         'priceHistory' => $history,
         'chartLabels' => $labels,
+        'priceHistorySince' => $historySince,
         'listingType' => isExchangeListedShare($row) ? 'Listed' : ($row['listing_type'] ?? 'Pre-IPO'),
         'ipoTimeline' => $row['ipo_timeline'] ?? '',
         'drhpStatus' => normalizeDrhpStatus($row['drhp_status'] ?? ''),

@@ -416,6 +416,7 @@ function autoMigrateSchema($conn) {
 
     seedDefaultSharesIfEmpty($conn);
     migrateFranchiseSchema($conn);
+    ensureSharePriceHistoryTable($conn);
 }
 try {
     autoMigrateSchema($conn);
@@ -4860,9 +4861,10 @@ switch ($action) {
         // Product rule: rates only after investor login (or admin). Guest UI blur alone is not enough.
         $includeRates = $adminOk || isset($_SESSION['user_id']);
         $res = $conn->query("SELECT * FROM shares WHERE is_active = 1 ORDER BY is_featured DESC, is_builtin DESC, name ASC");
+        $pricePoints = loadSharePricePoints($conn);
         $shares = [];
         while ($row = $res->fetch_assoc()) {
-            $shares[] = mapShareRow($row, $includeInternal, $includeRates);
+            $shares[] = mapShareRow($row, $includeInternal, $includeRates, $pricePoints[$row['share_id']] ?? []);
         }
         sendResponse($shares);
         break;
@@ -5157,6 +5159,7 @@ switch ($action) {
         }
 
         syncShareConfigPrice($conn, $share_id, $base_price);
+        recordSharePrice($conn, $share_id, $base_price);
         logAudit($conn, $existing ? 'Update Share' : 'Add Share', $_SESSION['admin_id'], ['shareId' => $share_id, 'name' => $name]);
 
         // Return saved row so admin UI can refresh immediately
@@ -5216,6 +5219,7 @@ switch ($action) {
         $stmt->execute();
 
         syncShareConfigPrice($conn, $share_id, $base_price);
+        recordSharePrice($conn, $share_id, $base_price);
 
         if (array_key_exists('listingPrice', $data)) {
             $listing_price = null;
