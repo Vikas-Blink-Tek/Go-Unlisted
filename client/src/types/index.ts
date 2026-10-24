@@ -47,6 +47,8 @@ export interface Share {
   bookValue?: string;
   faceValue?: string;
   website?: string;
+  /** Optional uploaded company balance sheet (uploads/shares/balance_…) */
+  balanceSheetUrl?: string;
   isFeatured?: boolean;
   isTop10?: boolean;
   /** Manual card ribbon set by admin: '' (auto) | 'Trending' | 'Most Purchased' | 'New' */

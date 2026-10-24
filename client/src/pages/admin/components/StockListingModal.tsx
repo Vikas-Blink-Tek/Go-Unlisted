@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { mediaUrl } from '../../../utils/mediaUrl';
 import CompanyLogo, { initialsFromName } from '../../../components/shares/CompanyLogo';
 import { formatCurrency } from '../../../utils/format';
 import { trendFromGrowth } from '../../../utils/priceHistory';
@@ -49,6 +50,7 @@ export type StockFormState = {
   bookValue: string;
   faceValue: string;
   website: string;
+  balanceSheetUrl: string;
   logoInitials: string;
   logoUrl: string;
   changePositive: boolean;
@@ -67,10 +69,12 @@ interface Props {
   formError: string;
   isPending: boolean;
   logoUploading: boolean;
+  balanceSheetUploading: boolean;
   sectorOptions: string[];
   onClose: () => void;
   onSave: () => void;
   onLogoUpload: (file: File | undefined) => void;
+  onBalanceSheetUpload: (file: File | undefined) => void;
 }
 
 function Field({
@@ -141,13 +145,16 @@ export default function StockListingModal({
   formError,
   isPending,
   logoUploading,
+  balanceSheetUploading,
   sectorOptions,
   onClose,
   onSave,
   onLogoUpload,
+  onBalanceSheetUpload,
 }: Props) {
   const [tab, setTab] = useState<TabId>('essentials');
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const balanceSheetInputRef = useRef<HTMLInputElement>(null);
 
   const preIpo = parseFloat(form.basePrice) || 0;
   const listingRaw = parseFloat(form.listingPrice);
@@ -686,6 +693,49 @@ export default function StockListingModal({
                       />
                     </Field>
                   ))}
+                </div>
+              </div>
+              <div className="slm-card">
+                <div className="slm-card-title">Company Balance Sheet (optional)</div>
+                <p className="slm-hint slm-hint--block">
+                  Upload only if you have it — buyers see a “View Balance Sheet” button on this share. PDF, JPG, PNG
+                  or WEBP · max 10MB
+                </p>
+                <div className="slm-file-row">
+                  <input
+                    ref={balanceSheetInputRef}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    className="stock-logo-file-input"
+                    disabled={balanceSheetUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      onBalanceSheetUpload(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={balanceSheetUploading}
+                    onClick={() => balanceSheetInputRef.current?.click()}
+                  >
+                    {balanceSheetUploading
+                      ? 'Uploading…'
+                      : form.balanceSheetUrl
+                        ? 'Replace file'
+                        : 'Upload balance sheet'}
+                  </button>
+                  {form.balanceSheetUrl && (
+                    <>
+                      <a href={mediaUrl(form.balanceSheetUrl)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
+                        View current file ↗
+                      </a>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => set({ balanceSheetUrl: '' })}>
+                        Remove
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </>

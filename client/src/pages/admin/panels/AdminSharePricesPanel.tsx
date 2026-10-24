@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { deleteShare, saveShare, saveShareConfig, uploadShareLogo } from '../../../api/shares';
+import { deleteShare, saveShare, saveShareConfig, uploadShareBalanceSheet, uploadShareLogo } from '../../../api/shares';
 import { useShares } from '../../../hooks/useShares';
 import { useToast } from '../../../context/ToastContext';
 import { formatCurrency } from '../../../utils/format';
@@ -52,6 +52,7 @@ type FormState = {
   bookValue: string;
   faceValue: string;
   website: string;
+  balanceSheetUrl: string;
   logoInitials: string;
   logoUrl: string;
   changePositive: boolean;
@@ -91,6 +92,7 @@ const emptyForm = (): FormState => ({
   bookValue: '',
   faceValue: '',
   website: '',
+  balanceSheetUrl: '',
   logoInitials: '',
   logoUrl: '',
   changePositive: true,
@@ -115,6 +117,7 @@ function fundamentalsFromShare(share: Share) {
     bookValue: share.bookValue || '',
     faceValue: share.faceValue || '',
     website: share.website || '',
+    balanceSheetUrl: share.balanceSheetUrl || '',
   };
 }
 
@@ -198,6 +201,24 @@ export default function AdminSharePricesPanel() {
   const [sectorFilter, setSectorFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [logoUploading, setLogoUploading] = useState(false);
+  const [balanceSheetUploading, setBalanceSheetUploading] = useState(false);
+
+  const handleBalanceSheetUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setBalanceSheetUploading(true);
+    setFormError('');
+    try {
+      const res = await uploadShareBalanceSheet(file);
+      set({ balanceSheetUrl: res.url });
+      showToast('Balance sheet uploaded — click Save Listing to apply', 'success');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Balance sheet upload failed';
+      setFormError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setBalanceSheetUploading(false);
+    }
+  };
 
   const handleLogoUpload = async (file: File | undefined) => {
     if (!file) return;
@@ -371,6 +392,7 @@ export default function AdminSharePricesPanel() {
         bookValue: form.bookValue.trim(),
         faceValue: form.faceValue.trim(),
         website: form.website.trim(),
+        balanceSheetUrl: form.balanceSheetUrl || '',
         changePositive: form.changePositive,
         isFeatured: form.isFeatured,
         isTop10: form.isTop10,
@@ -604,10 +626,12 @@ export default function AdminSharePricesPanel() {
           formError={formError}
           isPending={saveMutation.isPending}
           logoUploading={logoUploading}
+          balanceSheetUploading={balanceSheetUploading}
           sectorOptions={sectorDropdownOptions}
           onClose={() => setModalOpen(false)}
           onSave={() => { setFormError(''); saveMutation.mutate(); }}
           onLogoUpload={handleLogoUpload}
+          onBalanceSheetUpload={handleBalanceSheetUpload}
         />
       )}
 

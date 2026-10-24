@@ -35,6 +35,35 @@ export async function uploadShareLogo(file: File) {
   return data as { success: boolean; url: string };
 }
 
+/** Optional company balance sheet for a share — PDF or image, max 10MB. Returns the stored path. */
+export async function uploadShareBalanceSheet(file: File) {
+  if (!/\.(pdf|jpe?g|png|webp)$/i.test(file.name) && !/^(application\/pdf|image\/(jpeg|png|webp))$/i.test(file.type)) {
+    throw new Error('Use a PDF, JPG, PNG or WEBP file');
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error('Balance sheet too large (max 10MB)');
+  }
+  const form = new FormData();
+  form.append('file', file);
+  const token = await fetchCsrfToken();
+  const res = await fetch('/api/api.php?action=uploadShareBalanceSheet', {
+    method: 'POST',
+    body: form,
+    credentials: 'include',
+    headers: { 'X-CSRF-Token': token },
+  });
+  let data: { success?: boolean; url?: string; error?: string } = {};
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(res.ok ? 'Invalid server response' : `Upload failed (HTTP ${res.status})`);
+  }
+  if (!res.ok || !data.url) {
+    throw new Error(data.error || 'Balance sheet upload failed');
+  }
+  return data as { success: boolean; url: string };
+}
+
 export function getSharesConfig() {
   return apiRequest<Record<string, number>>('getSharesConfig', 'GET');
 }

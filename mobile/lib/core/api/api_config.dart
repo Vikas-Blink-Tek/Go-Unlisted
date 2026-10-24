@@ -20,7 +20,7 @@ class ApiConfig {
   static String get apiEndpoint => '$baseUrl/api/api.php';
 
   static const clientName = 'GO-UNLISTED-Android';
-  static const clientVersion = '1.1.3';
+  static const clientVersion = '1.1.4';
 
   /// Resolves share logos / uploads / QR (e.g. `uploads/shares/x.png` → full HTTPS URL).
   static String resolveMediaUrl(String? path) {

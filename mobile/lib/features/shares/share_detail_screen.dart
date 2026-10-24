@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api/api_config.dart';
 import '../../core/theme/gu_theme.dart';
 import '../../core/utils/format.dart';
 import '../../models/models.dart';
@@ -284,6 +285,10 @@ class ShareDetailScreen extends StatelessWidget {
                 canView: canViewRates,
                 child: _FundamentalsGrid(share: share),
               ),
+              if ((share.balanceSheetUrl ?? '').isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _BalanceSheetCard(share: share),
+              ],
 
               if (share.priceHistory.isNotEmpty) ...[
                 const SizedBox(height: 24),
@@ -766,6 +771,67 @@ class _PriceChartSectionState extends State<_PriceChartSection> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Optional company balance sheet uploaded by admin (PDF or image) — opens in the phone's viewer.
+class _BalanceSheetCard extends StatelessWidget {
+  const _BalanceSheetCard({required this.share});
+  final GuShare share;
+
+  Future<void> _open(BuildContext context) async {
+    final uri = Uri.tryParse(ApiConfig.resolveMediaUrl(share.balanceSheetUrl));
+    final opened = uri != null && await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the balance sheet. Try again.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: GuColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _open(context),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: GuColors.border),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: GuColors.blueSoft, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.description_outlined, color: GuColors.blue),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Company Balance Sheet', style: GoogleFonts.manrope(fontWeight: FontWeight.w800, fontSize: 14)),
+                    const SizedBox(height: 2),
+                    Text(
+                      "View ${share.name}'s financial statement",
+                      style: GoogleFonts.inter(color: GuColors.muted, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Text('View', style: GoogleFonts.inter(color: GuColors.blue, fontWeight: FontWeight.w700, fontSize: 13)),
+              const Icon(Icons.open_in_new_rounded, size: 16, color: GuColors.blue),
+            ],
+          ),
+        ),
       ),
     );
   }

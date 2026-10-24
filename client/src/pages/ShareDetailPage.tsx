@@ -9,6 +9,7 @@ import { useShares } from '../hooks/useShares';
 import { useSiteSettings } from '../hooks/useSiteSettings';
 import { calcOrderTotal, formatCurrency, formatDate, invoiceChargesEnabled } from '../utils/format';
 import { historyShorterThan, priceSeriesChange } from '../utils/priceHistory';
+import { mediaUrl } from '../utils/mediaUrl';
 import { useAuth } from '../context/AuthContext';
 import { getInventoryBadge, isShareOnRequest, isSharePurchasable, isShareUnavailable } from '../utils/inventory';
 import { BlurredRatesLock, useCanViewShareRates } from '../utils/shareRates';
@@ -220,6 +221,24 @@ export default function ShareDetailPage() {
             </div>
           </BlurredRatesLock>
         </div>
+
+        {share.balanceSheetUrl && (
+          <a
+            className="detail-doc-card"
+            href={mediaUrl(share.balanceSheetUrl)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="detail-doc-icon" aria-hidden>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>
+            </span>
+            <span className="detail-doc-text">
+              <strong>Company Balance Sheet</strong>
+              <span>View {share.name}&apos;s financial statement</span>
+            </span>
+            <span className="detail-doc-cta">View ↗</span>
+          </a>
+        )}
 
         {chartData.length > 0 && (
           <BlurredRatesLock className="detail-chart-lock">

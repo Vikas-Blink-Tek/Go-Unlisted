@@ -120,6 +120,7 @@ class GuShare {
     this.growth,
     this.website,
     this.priceHistorySince,
+    this.balanceSheetUrl,
     bool changePositive = true,
     Map<String, List<double>> priceHistory = const {},
     Map<String, List<String>> chartLabels = const {},
@@ -168,6 +169,9 @@ class GuShare {
 
   /// First recorded price date (YYYY-MM-DD) — real price history starts here.
   final String? priceHistorySince;
+
+  /// Optional uploaded company balance sheet (relative path) — shown only when set.
+  final String? balanceSheetUrl;
   
   final bool? _changePositive;
   bool get changePositive => _changePositive ?? true;
@@ -302,6 +306,7 @@ class GuShare {
       growth: j['growth']?.toString(),
       website: (j['website'] ?? j['companyWebsite'] ?? j['company_website'])?.toString().trim(),
       priceHistorySince: j['priceHistorySince']?.toString(),
+      balanceSheetUrl: j['balanceSheetUrl']?.toString().trim(),
       changePositive: j['changePositive'] ?? j['change_positive'] ?? true,
       priceHistory: _parsePriceHistory(j['priceHistory'] ?? j['price_history']),
       chartLabels: _parseChartLabels(j['chartLabels'] ?? j['chart_labels']),

@@ -4973,6 +4973,10 @@ switch ($action) {
             'bookValue' => trim($data['bookValue'] ?? ''),
             'faceValue' => trim($data['faceValue'] ?? ''),
             'website' => trim($data['website'] ?? $data['companyWebsite'] ?? ''),
+            // Optional uploaded file (from uploadShareBalanceSheet) — empty = not shown on the public site
+            'balanceSheetUrl' => preg_match('#^uploads/shares/balance_[a-zA-Z0-9._-]+$#', ltrim(trim((string) ($data['balanceSheetUrl'] ?? '')), '/'))
+                ? ltrim(trim((string) $data['balanceSheetUrl']), '/')
+                : '',
         ]);
 
         if (!$share_id && $name) {
@@ -5396,6 +5400,52 @@ switch ($action) {
         $url = 'uploads/shares/' . $filename;
         logAudit($conn, 'Upload Share Logo', $_SESSION['admin_id'], ['file' => $filename]);
         sendResponse(["success" => true, "url" => $url]);
+        break;
+
+    case 'uploadShareBalanceSheet':
+        requirePermission('prices');
+        $fileErr = (int) ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($fileErr !== UPLOAD_ERR_OK) {
+            http_response_code(400);
+            sendResponse(['error' => $fileErr === UPLOAD_ERR_INI_SIZE || $fileErr === UPLOAD_ERR_FORM_SIZE
+                ? 'File is larger than the server allows. Try a smaller PDF.'
+                : 'No file received. Try again.']);
+            break;
+        }
+        $tmpName = $_FILES['file']['tmp_name'];
+        $fileSize = (int) $_FILES['file']['size'];
+        if ($fileSize <= 0 || $fileSize > 10 * 1024 * 1024) {
+            http_response_code(400);
+            sendResponse(['error' => 'Balance sheet must be under 10MB']);
+            break;
+        }
+        $mime = '';
+        if (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string) finfo_file($finfo, $tmpName);
+            finfo_close($finfo);
+        }
+        $allowedMimes = ['application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+        if (!isset($allowedMimes[$mime])) {
+            http_response_code(400);
+            sendResponse(['error' => "Invalid file type ($mime). Use PDF, JPG, PNG or WEBP."]);
+            break;
+        }
+        $uploadDir = __DIR__ . '/../uploads/shares/';
+        if (!is_dir($uploadDir) && !@mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            http_response_code(500);
+            sendResponse(['error' => 'Could not create upload folder. Create public_html/uploads/shares on the server.']);
+            break;
+        }
+        $filename = 'balance_' . time() . '_' . random_int(1000, 9999) . '.' . $allowedMimes[$mime];
+        if (!is_writable($uploadDir) || !move_uploaded_file($tmpName, $uploadDir . $filename)) {
+            http_response_code(500);
+            sendResponse(['error' => 'Failed to save the file. Check permissions on uploads/shares.']);
+            break;
+        }
+        @chmod($uploadDir . $filename, 0644);
+        logAudit($conn, 'Upload Balance Sheet', $_SESSION['admin_id'], ['file' => $filename]);
+        sendResponse(['success' => true, 'url' => 'uploads/shares/' . $filename]);
         break;
 
     case 'uploadQr':

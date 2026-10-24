@@ -2737,3 +2737,10 @@
 .admin-rzp-box a {
   font-weight: 600;
 }
+
+.slm-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
