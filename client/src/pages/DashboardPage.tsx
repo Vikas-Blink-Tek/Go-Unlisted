@@ -116,7 +116,6 @@ export default function DashboardPage() {
     queryKey: ['orders'],
     queryFn: getOrders,
     enabled: !!user,
-    refetchInterval: 30_000,
     refetchOnMount: 'always',
     staleTime: 0,
   });

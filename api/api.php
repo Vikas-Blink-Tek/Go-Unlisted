@@ -82,6 +82,46 @@ if ($conn->connect_error) {
 date_default_timezone_set('Asia/Kolkata');
 $conn->query("SET time_zone = '+05:30'");
 
+// Live-update check — the app and website poll this every 30s and re-download shares / settings / offers /
+// articles / orders only when this fingerprint changes. Answered before the schema migration so polling stays cheap.
+if (($_GET['action'] ?? '') === 'getDataVersion') {
+    $sqls = [
+        "SELECT CONCAT(COUNT(*), '-', IFNULL(MAX(updated_at), '')) FROM shares",
+        'SELECT IFNULL(MAX(id), 0) FROM share_price_history',
+        "SELECT CONCAT(COUNT(*), '-', IFNULL(SUM(CRC32(CONCAT(setting_key, '=', IFNULL(setting_value, '')))), 0)) FROM settings",
+        "SELECT CONCAT(COUNT(*), '-', IFNULL(MAX(updated_at), '')) FROM festival_offers",
+        "SELECT CONCAT(COUNT(*), '-', IFNULL(SUM(CRC32(CONCAT_WS('|', title, slug, status, image_url, category, LENGTH(content)))), 0)) FROM articles",
+    ];
+    $parts = [];
+    foreach ($sqls as $sql) {
+        try {
+            $r = $conn->query($sql);
+            $parts[] = $r ? (string) ($r->fetch_row()[0] ?? '') : '';
+        } catch (Throwable $e) {
+            $parts[] = ''; // table missing on a fresh install — migration creates it on the next normal request
+        }
+    }
+    $uid = (string) ($_SESSION['user_id'] ?? '');
+    if ($uid !== '') {
+        // The buyer's own orders, so status changes made in the admin panel show up too
+        try {
+            $o = $conn->prepare(
+                "SELECT CONCAT(COUNT(*), '-', IFNULL(SUM(CRC32(CONCAT_WS('|', order_id, status, transaction_id, total_amount, IFNULL(deleted_at, '')))), 0))
+                 FROM orders WHERE user_id = ?"
+            );
+            $o->bind_param('s', $uid);
+            $o->execute();
+            $parts[] = (string) ($o->get_result()->fetch_row()[0] ?? '');
+        } catch (Throwable $e) {
+            $parts[] = '';
+        }
+    }
+    header('Content-Type: application/json');
+    header('Cache-Control: no-store');
+    echo json_encode(['version' => md5(implode('#', $parts))]);
+    exit;
+}
+
 // -----------------------------------------
 // AUTO-MIGRATE SCHEMA (structure only — never UPDATE/DELETE existing rows)
 // -----------------------------------------

@@ -16,8 +16,6 @@ export function useShares() {
     staleTime: 0,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
-    // Admin price / listing edits show up without a page refresh (paused while the tab is hidden)
-    refetchInterval: 30_000,
     retry: 1,
   });
 

@@ -2,6 +2,11 @@ import { apiRequest } from './client';
 import { ensureCsrfToken } from './csrf';
 import type { Article, SiteSettings } from '../types';
 
+/** Tiny fingerprint of public data (+ the buyer's orders) — changes whenever an admin edits something. */
+export function getDataVersion() {
+  return apiRequest<{ version: string }>('getDataVersion', 'GET');
+}
+
 export function getSettings() {
   return apiRequest<SiteSettings>('getSettings', 'GET');
 }

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { getSettings } from '../../api/content';
+import { useLiveUpdates } from '../../hooks/useLiveUpdates';
 import SiteFooter from './SiteFooter';
 
 import WhatsAppFloat from './WhatsAppFloat';
@@ -74,7 +75,8 @@ function MainLayoutInner() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdown, setDropdown] = useState(false);
 
-  useQuery({ queryKey: ['site-settings'], queryFn: getSettings, refetchInterval: 30_000 });
+  useQuery({ queryKey: ['site-settings'], queryFn: getSettings });
+  useLiveUpdates();
 
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);

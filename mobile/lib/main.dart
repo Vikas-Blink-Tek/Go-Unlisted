@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import 'core/api/gu_api.dart';
 import 'core/router.dart';
 import 'core/theme/gu_theme.dart';
 import 'providers/auth_provider.dart';
@@ -40,11 +41,13 @@ class _GoUnlistedAppState extends State<GoUnlistedApp> with WidgetsBindingObserv
   late final GoRouter _router = createRouter(_auth);
   Timer? _autoRefresh;
   bool _refreshing = false;
+  String _lastVersion = '';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _refreshAll(); // record the starting version alongside the splash-screen load
     _startAutoRefresh();
   }
 
@@ -70,16 +73,25 @@ class _GoUnlistedAppState extends State<GoUnlistedApp> with WidgetsBindingObserv
     _autoRefresh = Timer.periodic(_autoRefreshEvery, (_) => _refreshAll());
   }
 
-  /// Quiet background refresh — screens only rebuild when the data actually changed.
+  /// Quiet background refresh. Each tick asks the server for a tiny version fingerprint and
+  /// downloads shares / offers / orders only when an admin actually changed something.
   Future<void> _refreshAll() async {
     if (_refreshing || _catalog.loading) return;
     _refreshing = true;
     try {
+      final res = await GuApi.instance.get('getDataVersion');
+      final version = (res['version'] ?? '').toString();
+      if (version.isNotEmpty && version == _lastVersion) return;
+      final firstCheck = _lastVersion.isEmpty;
+      _lastVersion = version;
+      if (firstCheck) return; // data was just loaded at startup
       await Future.wait([
         _catalog.load(silent: true),
         _offers.load(silent: true),
         if (_auth.isLoggedIn) _portfolio.load(silent: true),
       ]);
+    } catch (_) {
+      // Offline or server busy — keep showing the current data and try again next tick
     } finally {
       _refreshing = false;
     }
